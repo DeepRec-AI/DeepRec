@@ -113,6 +113,8 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
         MEMORY_FORMAT::nc, this->is_weight_const_);
 
     // Extend the basic parameters for data types and fusions.
+    auto st = ExecuteSingleThreadedGemm(batch, k, channel);
+    MklDnnThreadPool eigen_tp(ctx, st ? 1 : -1);
     ExtendMklDnnMatMulFwdParams(ctx, matmul_params);
     bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled();
     MklDnnMatMulFwdPrimitive<T, T, T, T, T>* matmul_prim =
@@ -225,13 +227,11 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
       }
       std::shared_ptr<stream> cpu_stream;
       if (ExecuteSingleThreadedGemm(batch, k, channel)) {
-        MklDnnThreadPool eigen_tp(ctx, 1);
         cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
         // Execute fused matmul op.
         matmul_prim->Execute(src_data, weight_data, bias_data, dst_data,
                              cpu_stream);
       } else {
-        MklDnnThreadPool eigen_tp(ctx);
         cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
         // Execute fused matmul op.
         matmul_prim->Execute(src_data, weight_data, bias_data, dst_data,

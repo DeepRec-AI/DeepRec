@@ -468,6 +468,7 @@ class MklConvCustomBackpropFilterOp
           fwd_src_dims, fwd_filter_dims, diff_bias_dims, diff_dst_dims, strides,
           dilations, padding_left, padding_right);
 
+      MklDnnThreadPool eigen_tp(context);
       // OneDNN allocates large buffers when a conv gradient filter primitive
       // is created. So we don't cache conv backward primitives when the env
       // variable TF_MKL_OPTIMIZE_PRIMITIVE_MEMUSE is set to true.
@@ -591,7 +592,6 @@ class MklConvCustomBackpropFilterOp
 
       // Execute convolution backward filter.
       std::shared_ptr<stream> bwd_cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
       bwd_cpu_stream.reset(
           CreateStream(&eigen_tp, conv_bwd_filter->GetEngine()));
       if (bias_enabled) {
