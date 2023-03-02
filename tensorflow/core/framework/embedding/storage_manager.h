@@ -194,6 +194,14 @@ class StorageManager {
       const Eigen::GpuDevice& device) {
     storage_->BatchLookupOrCreateKeys(key, item_idxs, n, device);
   }
+
+  void ImportToHbm(const std::vector<K>& keys,
+      const std::vector<V>& values, const Eigen::GpuDevice* device,
+      const EmbeddingConfig& emb_config) {
+    storage_->ImportToHbm(keys, values, device, emb_config);
+  }
+
+
 #endif  // GOOGLE_CUDA
 
   Status Remove(K key) {

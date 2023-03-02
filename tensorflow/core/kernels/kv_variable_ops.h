@@ -568,6 +568,12 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
     ev->storage_manager()->iterator_mutex_unlock();
     delete it;
   }
+
+  if (ev->IsSingleHbm()) {
+    TypedAllocator::Deallocate(
+        cpu_allocator(), tot_valueptr_list[0],
+        partitioned_tot_freq_list.size() * ev->ValueLen());
+  }
   return Status::OK();
 }
 
@@ -577,7 +583,7 @@ const static string part_str = "part_";
 
 template<typename K, typename V>
 Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
-    std::string name_string, int orig_partnum,
+    std::string name_string, int orig_partnum, const GPUDevice* device,
     int64 partition_id = 0, int64 partition_num = 1, bool reset_version = false) {
   string curr_partid_str = std::to_string(partition_id);
   bool filter_flag = true;
@@ -737,7 +743,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
           restore_buff.value_buffer = tmp;
         }
         st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
-            partition_id, partition_num, false);
+            partition_id, partition_num, false, device);
         if (cache_for_restore_hbm) {
           cache_for_restore_hbm->add_to_rank(
               (K*)restore_buff.key_buffer, read_key_num,
@@ -776,7 +782,9 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
 template<typename K, typename V>
 Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string tensor_key, std::string tensor_value,
-    std::string tensor_version, std::string tensor_freq, bool reset_version=false) {
+    std::string tensor_version, std::string tensor_freq,
+    const GPUDevice* device,
+    bool reset_version=false) {
   TensorShape key_shape;
   TensorShape value_shape;
   TensorShape version_shape;
@@ -944,7 +952,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
               "but got read_key_num * value_unit_bytes != value_bytes_read!");
         }
 
-	std::unique_ptr<char[]> tmp_ptr(new char[buffer_size]);
+        std::unique_ptr<char[]> tmp_ptr(new char[buffer_size]);
         size_t read_once = std::min(value_unit_bytes, value_unit_bytes_new);
         for (int i = 0; i < read_key_num; ++i) {
           memcpy(tmp_ptr.get() + i * value_unit_bytes_new,
@@ -960,7 +968,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
         tmp_ptr.reset(restore_buff.value_buffer);
         restore_buff.value_buffer = tmp;
       }
-      st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false);
+      st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false, device);
       if (cache_for_restore_hbm) {
         cache_for_restore_hbm->add_to_rank(
             (K*)restore_buff.key_buffer, read_key_num,
@@ -997,7 +1005,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
         read_key_num = key_filter_bytes_read / sizeof(K);
         VLOG(2) << "restore, read_key_num:" << read_key_num;
 
-        st = ev->Import(restore_buff, read_key_num, 1, 0, 1, true);
+        st = ev->Import(restore_buff, read_key_num, 1, 0, 1, true, device);
         if (cache_for_restore_hbm) {
           cache_for_restore_hbm->add_to_rank(
               (K*)restore_buff.key_buffer, read_key_num,
@@ -1062,7 +1070,8 @@ template<typename K, typename V>
 Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
     const std::string& name_string, const std::string& curr_partid_str,
     const std::string& key_suffix, int partition_id,
-    BundleReader* reader, int partition_num, bool reset_version=false) {
+    BundleReader* reader, int partition_num,
+    const GPUDevice* device, bool reset_version=false) {
   // first get original partition number
   int orig_partnum = 0;
   for (;  ; orig_partnum++) {
@@ -1085,7 +1094,7 @@ Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
           << ", old partition_num:" << orig_partnum
           << ", new partition num:" << partition_num;
   Status s = DynamicRestoreValue(ev, reader, name_string,
-      orig_partnum, partition_id, partition_num, reset_version);
+      orig_partnum, device, partition_id, partition_num, reset_version);
   if (!s.ok()) {
     LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
   }
@@ -1099,14 +1108,14 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     BundleReader* reader, const std::string& part_offset_tensor_suffix,
     const std::string& key_suffix, const std::string& value_suffix,
     const std::string& version_suffix, const std::string& freq_suffix,
-    bool reset_version = false) {
+    bool reset_version = false, const Eigen::GpuDevice* device = nullptr) {
 
   // first check whether there is partition
   if (name_string.find(part_str) == std::string::npos) {
     Status s = EVRestoreNoPartition(
         ev, reader, name_string + key_suffix,
         name_string + value_suffix, name_string + version_suffix,
-        name_string + freq_suffix, reset_version);
+        name_string + freq_suffix, device, reset_version);
     if (!s.ok()) {
       LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
     }
@@ -1119,7 +1128,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
 
   if (is_oldform) {
     EVRestoreOldFromCheckpoint(ev, name_string, curr_partid_str, key_suffix,
-        partition_id, reader, partition_num, reset_version);
+        partition_id, reader, partition_num, device, reset_version);
   } else {
     // first find out which sub parts we should load
     bool filter_flag = true;
@@ -1402,7 +1411,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
             }
 
             st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
-                partition_id, partition_num, false);
+                partition_id, partition_num, false, device);
             if (cache_for_restore_hbm) {
               cache_for_restore_hbm->add_to_rank(
                   (K*)restore_buff.key_buffer, read_key_num,
@@ -1455,7 +1464,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
               read_key_num = key_filter_bytes_read / sizeof(K);
               VLOG(2) << "restore, read_key_num:" << read_key_num;
               st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
-                  partition_id, partition_num, true);
+                  partition_id, partition_num, true, device);
               if (cache_for_restore_hbm) {
                 cache_for_restore_hbm->add_to_rank(
                     (K*)restore_buff.key_buffer, read_key_num,

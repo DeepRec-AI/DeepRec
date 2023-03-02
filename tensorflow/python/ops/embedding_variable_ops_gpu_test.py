@@ -833,5 +833,34 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
       for j in range(0, 30):
         self.assertAllCloseAccordingToType(emb1[i][j], emb2[i][j])
 
+  def testSaveV3(self):
+    print("testSaveV3")
+    with ops.device("/gpu:0"):
+      emb_var = variable_scope.get_embedding_variable("emb_var", 10)
+      var = variable_scope.get_variable("var", [10, 10])
+    emb1 = embedding_ops.embedding_lookup(emb_var, math_ops.cast([1,2,3], dtypes.int64))
+    emb2 = embedding_ops.embedding_lookup(var, math_ops.cast([1,2,3], dtypes.int64))
+    emb = emb1 + emb2
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, global_step=gs)
+    init = variables.global_variables_initializer()
+    saver = saver = saver_module.Saver()
+    checkpoint_directory = self.get_temp_dir()
+    model_path = os.path.join(checkpoint_directory, "model.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([train_op])
+      sess.run([train_op])
+      saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        ckpt_value = checkpoint_utils.load_variable(model_path, name)
+        print(name, shape, ckpt_value)
+    with self.test_session() as sess:
+      saver.restore(sess, model_path)
+
 if __name__ == "__main__":
   googletest.main()

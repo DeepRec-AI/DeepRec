@@ -197,7 +197,7 @@ class SingleTierStorage : public Storage<K, V> {
     return kv_->GetSnapshot(key_list, value_ptr_list);
   }
 
-  int64 GetSnapshot(std::vector<K>* key_list,
+  virtual int64 GetSnapshot(std::vector<K>* key_list,
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
@@ -262,7 +262,8 @@ class SingleTierStorage : public Storage<K, V> {
     LOG(FATAL)<<"The Storage dosen't have ssd storage.";
   }
 
-  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) {
+  virtual void ImportToHbm (
+      K* ids, int64 size, int64 value_len, int64 emb_index) override {
     LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
   }
 
@@ -379,6 +380,28 @@ class HbmStorage : public SingleTierStorage<K, V> {
   void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
       const Eigen::GpuDevice& device) override {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreateKeys(key, n, item_idxs, device);
+  }
+
+  int64 GetSnapshot(std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
+      embedding::Iterator** it) override {
+    GPUHashMapKV<K, V>* gpu_kv =
+        dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+    gpu_kv->GetSnapshot(key_list, value_list, emb_config.emb_index);
+    return key_list->size();
+  }
+
+  void ImportToHbm(
+      const std::vector<K>& keys, const std::vector<V>& values,
+      const Eigen::GpuDevice* device,
+      const EmbeddingConfig& emb_config) override {
+    GPUHashMapKV<K, V>* gpu_kv =
+        dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+    gpu_kv->Import(keys, values, device, emb_config);
   }
 
   GPUHashTable<K, V>* HashTable() override {

@@ -50,8 +50,8 @@ class EmbeddingVar : public ResourceBase {
  public:
   EmbeddingVar(const string& name,
                embedding::StorageManager<K, V>* storage_manager,
-               EmbeddingConfig emb_cfg = EmbeddingConfig(),
-               Allocator* alloc = nullptr):
+               EmbeddingConfig emb_cfg,
+               Allocator* alloc):
       name_(name),
       storage_manager_(storage_manager),
       default_value_(nullptr),
@@ -401,8 +401,10 @@ class EmbeddingVar : public ResourceBase {
                 int bucket_num,
                 int64 partition_id,
                 int64 partition_num,
-                bool is_filter) {
+                bool is_filter,
+                const Eigen::GpuDevice* device) {
     if (IsMultiLevel() && IsUseHbm()) {
+      Status s = Status::OK();
 #if GOOGLE_CUDA
       V* default_value_host = nullptr;
       if (is_filter) {
@@ -411,11 +413,31 @@ class EmbeddingVar : public ResourceBase {
                    sizeof(V) * emb_config_.default_value_dim * value_len_,
                    cudaMemcpyDeviceToHost);
       }
-      Status s = filter_->ImportToDram(restore_buff, key_num, bucket_num,
+      s = filter_->ImportToDram(restore_buff, key_num, bucket_num,
           partition_id, partition_num, is_filter, default_value_host);
       delete[] default_value_host;
-      return s;
 #endif //GOOGLE_CUDA
+      return s;
+    } else if (IsSingleHbm()) {
+#if GOOGLE_CUDA
+      K* key_buff = (K*)restore_buff.key_buffer;
+      V* value_buff = (V*)restore_buff.value_buffer;
+      std::vector<K> key_import;
+      std::vector<V> value_import;
+      for (auto i = 0; i < key_num; ++ i) {
+        if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+          LOG(INFO) << "skip EV key:" << *(key_buff + i);
+          continue;
+        }
+        key_import.emplace_back(*(key_buff + i));
+        register auto row_offset = value_buff + i * value_len_;
+        for (int j = 0; j < value_len_; j++) {
+          value_import.emplace_back(*(row_offset + j));
+        }
+      }
+      storage_manager_->ImportToHbm(key_import, value_import, device, emb_config_);
+#endif //GOOGLE_CUDA
+      return Status::OK();
     } else {
       return filter_->Import(restore_buff, key_num, bucket_num,
           partition_id, partition_num, is_filter);
