@@ -69,7 +69,8 @@ def model_fn(self, features, labels, mode, params):
                save_secs=params['save_checkpoints_secs'],
                save_steps=params['save_checkpoints_steps'],
                scaffold=scaffold,
-               incremental_save_secs=120)])
+               incremental_save_secs=120)],
+           scaffold=scaffold)
 ```
 
 ## 模型导出
