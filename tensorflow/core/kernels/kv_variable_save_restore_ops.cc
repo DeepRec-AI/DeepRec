@@ -158,8 +158,10 @@ class KvResourceImportV2Op: public AsyncOpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname,
+            [this, default_values, opname, context,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+             Allocator* allocator =
+                context->device()->GetAllocator(AllocatorAttributes());
              auto embedding_config = EmbeddingConfig(
                  emb_index_ + block_num_ * slot_index_,
                  emb_index_,
@@ -178,7 +180,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                     embedding_config));
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         embedding_config);
+                         embedding_config,
+                         allocator);
              return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -188,9 +191,11 @@ class KvResourceImportV2Op: public AsyncOpKernel {
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
            context, handle_primary, &primary_variable,
-           [this, default_values, opname,
+           [this, default_values, opname, context,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
+             Allocator* allocator =
+                context->device()->GetAllocator(AllocatorAttributes());
              auto embedding_config = EmbeddingConfig(
                  primary_emb_index + block_num_ * primary_slot_index,
                  primary_emb_index, block_num_, slot_num_,
@@ -205,7 +210,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                    storage_type_, storage_path_, storage_size_,
                    layout_, embedding_config));
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                 storage_manager, embedding_config);
+                 storage_manager, embedding_config, allocator);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -215,7 +220,9 @@ class KvResourceImportV2Op: public AsyncOpKernel {
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
             [this, default_values, opname, primary_variable,
-             handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+             handle_self, context](EmbeddingVar<TKey, TValue>** ptr) {
+              Allocator* allocator =
+                context->device()->GetAllocator(AllocatorAttributes());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                   primary_variable->storage_manager(),
                   EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
@@ -225,7 +232,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                     false_positive_probability_,
                     counter_type_, default_value_dim_,
                     default_value_no_permission_,
-                    record_freq_, record_version_));
+                    record_freq_, record_version_),
+                    allocator);
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -310,7 +318,7 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
 #undef REGISTER_KERNELS_ALL
 #undef REGISTER_KERNELS
 
-template <typename TKey, typename TValue>
+template <typename Device, typename TKey, typename TValue>
 class KvResourceImportV3Op: public AsyncOpKernel {
  public:
   explicit KvResourceImportV3Op(OpKernelConstruction* c)
@@ -378,11 +386,11 @@ class KvResourceImportV3Op: public AsyncOpKernel {
           LoadSsdData(ev, ssd_record_file_name, ssd_emb_file_name);
         }
       }
-
+      const Device& device = context->eigen_device<Device>();
       EVRestoreDynamically(
           ev, name_string, partition_id_, partition_num_, context, &reader,
           "-partition_offset", "-keys", "-values", "-versions", "-freqs",
-          reset_version_);
+          reset_version_, (Eigen::GpuDevice*)(&device));
       ev->SetInitialized();
       done();
     };
@@ -404,7 +412,7 @@ class KvResourceImportV3Op: public AsyncOpKernel {
   bool ev_async_restore_;
 };
 
-#define REGISTER_KERNELS(dev, ktype, vtype)                    \
+#define REGISTER_KERNELS(dev, ktype, vtype, device)            \
   REGISTER_KERNEL_BUILDER(Name("KvResourceImportV3")           \
                             .Device(DEVICE_##dev)              \
                             .HostMemory("prefix")              \
@@ -412,16 +420,16 @@ class KvResourceImportV3Op: public AsyncOpKernel {
                             .HostMemory("empty_key")           \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
-                          KvResourceImportV3Op<ktype, vtype>);
-#define REGISTER_KERNELS_ALL(dev, type)                        \
-  REGISTER_KERNELS(dev, int32, type)                           \
-  REGISTER_KERNELS(dev, int64, type)
-#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+                          KvResourceImportV3Op<device, ktype, vtype>);
+#define REGISTER_KERNELS_ALL(dev, type, device)                        \
+  REGISTER_KERNELS(dev, int32, type, device)                           \
+  REGISTER_KERNELS(dev, int64, type, device)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type, CPUDevice)
 TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_CPU)
 #undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type, GPUDevice)
 TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
 #undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA

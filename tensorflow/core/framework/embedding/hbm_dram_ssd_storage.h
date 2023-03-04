@@ -185,7 +185,8 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     dram_cache_ = new LRUCache<K>();
   }
 
-  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) override {
+  void ImportToHbm(
+      K* ids, int64 size, int64 value_len, int64 emb_index) override {
     V* memcpy_buffer_cpu = new V[size * value_len];
     V** value_address = new V*[size];
     V* memcpy_buffer_gpu =

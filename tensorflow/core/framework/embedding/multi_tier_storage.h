@@ -195,7 +195,8 @@ class MultiTierStorage : public Storage<K, V> {
               <<" RestoreSsdHashmap yet";
   }
 
-  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) override {
+  void ImportToHbm(
+      K* ids, int64 size, int64 value_len, int64 emb_index) override {
     LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
   }
 

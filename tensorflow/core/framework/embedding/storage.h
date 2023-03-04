@@ -127,6 +127,9 @@ class Storage {
       size_t n, const Eigen::GpuDevice& device) {}
   virtual void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
       const Eigen::GpuDevice& device) {}
+  virtual void ImportToHbm(const std::vector<K>& keys,
+      const std::vector<V>& values, const Eigen::GpuDevice* device,
+      const EmbeddingConfig& emb_config) {};
   virtual GPUHashTable<K, V>* HashTable() {
     return nullptr;
   }
