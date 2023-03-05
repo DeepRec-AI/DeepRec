@@ -1961,11 +1961,13 @@ class FactoryKeyCreator {
     Append(StringPiece(buffer, sizeof(T)));
   }
 
+#ifdef DNNL_AARCH64_USE_ACL
   // generalisation to handle pointers
   void AddAsKey(const void* data) {
     auto buffer = reinterpret_cast<const char*>(&data);
     Append(StringPiece(buffer, sizeof(data)));
   }
+#endif
 
   string GetKey() { return key_; }
 
