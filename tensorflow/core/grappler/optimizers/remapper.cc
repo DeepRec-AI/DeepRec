@@ -2207,9 +2207,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
 
     // TODO(penporn):
     // Remove this once TF-OneDNN supports _FusedConv2D with these operations.
-    // if (DisableMKL()) {
-
-#ifndef DNNL_AARCH64_USE_ACL
+    if (DisableMKL()) {
       // Remap Conv2D+Squeeze+BiasAdd into the _FusedConv2D+Squeeze.
       ContractionWithSqueezeAndBiasAdd contract_with_squeeze_and_bias;
       if (allow_non_differentiable_rewrites &&
@@ -2242,8 +2240,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
                                &invalidated_nodes, &nodes_to_delete));
         continue;
       }
-#endif  // !DNNL_AARCH64_USE_ACL
-    // } else {
+    } else {
       // Remap FusedBatchNorm+<SideInput>+<Activation> into the
       // _FusedBatchNormEx.
       FusedBatchNormEx fused_batch_norm_ex;
@@ -2253,7 +2250,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
             &ctx, fused_batch_norm_ex, &invalidated_nodes, &nodes_to_delete));
         continue;
       }
-    // }
+    }
 
     // During inference, most of the inputs to FusedBatchNorm are constant, and
     // we can therefore replace the op with a much cheaper set of primitives.

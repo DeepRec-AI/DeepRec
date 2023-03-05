@@ -208,8 +208,6 @@ class BatchMatMulMkl : public OpKernel {
                          out->flat<Scalar>().data(), cpu_stream);
   }
   
-  engine cpu_engine_ = engine(engine::kind::cpu, 0);
-
  protected:
   void set_fuse_mul(bool fuse_mul) { fuse_mul_ = fuse_mul; }
 
@@ -220,6 +218,9 @@ class BatchMatMulMkl : public OpKernel {
   float alpha_;
   float beta_;
   BatchMatMulV2Op<CPUDevice, Scalar> eigen_batch_mm_v2_;
+#ifdef DNNL_AARCH64_USE_ACL
+  engine cpu_engine_ = engine(engine::kind::cpu, 0);
+#endif
 
   using dims = dnnl::memory::dims;
 
