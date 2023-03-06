@@ -20,7 +20,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/lockless_hash_map_cpu.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
 #include "tensorflow/core/framework/embedding/hbm_storage_iterator.h"
-#include "tensorflow/core/kernels/gpu_device_array.h"
 #include "tensorflow/core/platform/stream_executor.h"
 
 namespace tensorflow {

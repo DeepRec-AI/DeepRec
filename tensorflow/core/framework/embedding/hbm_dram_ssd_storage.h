@@ -5,7 +5,7 @@
 #define EIGEN_USE_GPU
 #include "tensorflow/core/framework/embedding/lockless_hash_map_cpu.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
-#include "tensorflow/core/kernels/gpu_device_array.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
 #include "tensorflow/core/platform/stream_executor.h"
 
 namespace tensorflow {

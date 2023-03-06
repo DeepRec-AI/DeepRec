@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/batch.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
-#include "tensorflow/core/kernels/gpu_device_array.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/stream_executor.h"
 
