@@ -277,7 +277,7 @@ def build_model_input(filename, batch_size, num_epochs):
     else:
         files = filename
     # Extract lines from input files using the Dataset API.
-    if args.parquet_dataset:
+    if args.parquet_dataset and not args.tf:
         from tensorflow.python.data.experimental.ops import parquet_dataset_ops
         dataset = parquet_dataset_ops.ParquetDataset(files, batch_size=batch_size)
         if args.parquet_dataset_shuffle:
@@ -300,7 +300,7 @@ def build_feature_columns():
     wide_column = []
     deep_column = []
     fm_column = []
-    if args.group_embedding:
+    if args.group_embedding and not args.tf:
         with tf.feature_column.group_embedding_column_scope(name="categorical"):
             for column_name in FEATURE_COLUMNS:
                 if column_name in CATEGORICAL_COLUMNS:
@@ -546,7 +546,7 @@ def main(tf_config=None, server=None):
     print('Checking dataset')
     train_file = args.data_location
     test_file = args.data_location
-    if args.parquet_dataset:
+    if args.parquet_dataset and not args.tf:
         train_file += '/train.parquet'
         test_file += '/eval.parquet'
     else:
@@ -557,7 +557,7 @@ def main(tf_config=None, server=None):
         sys.exit()
     no_of_training_examples = 0
     no_of_test_examples = 0
-    if args.parquet_dataset:
+    if args.parquet_dataset and not args.tf:
         import pyarrow.parquet as pq
         no_of_training_examples = pq.read_table(train_file).num_rows
         no_of_test_examples = pq.read_table(test_file).num_rows
