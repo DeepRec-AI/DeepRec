@@ -19,6 +19,11 @@ namespace tensorflow {
 namespace processor {
 namespace util {
 
+struct TensorWithStatus {
+  Status status;
+  Tensor tensor;
+};
+
 Status GetAssetFileDefs(const MetaGraphDef& meta_graph_def,
                         std::vector<AssetFileDef>* asset_file_defs);
 
@@ -84,7 +89,8 @@ Status GetInitOp(const string& export_dir,
 
 Status ValidateSavedTensors(const GraphDef& graph_def);
 
-Tensor Proto2Tensor(const eas::ArrayProto& input);
+TensorWithStatus Proto2Tensor(const std::string& key,
+                              const eas::ArrayProto& input);
 
 eas::PredictResponse Tensor2Response(
     const processor::Request& req,

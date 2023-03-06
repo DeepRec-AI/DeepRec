@@ -18,9 +18,13 @@ Status ProtoBufParser::ParseRequest(
       LOG(FATAL) << "Request contain invalid input key : " << input.first;
     }
     int idx = signature_info->input_key_idx.at(input.first);
+    auto pb_to_tensor = util::Proto2Tensor(input.first, input.second);
+    if (!pb_to_tensor.status.ok()) {
+      return pb_to_tensor.status;
+    }
     call.request.inputs.emplace_back(
         signature_info->input_value_name[idx],
-        util::Proto2Tensor(input.second));
+        std::move(pb_to_tensor.tensor));
   }
 
   if (request.output_filter().size() > 0) {
@@ -87,9 +91,13 @@ Status ProtoBufParser::ParseBatchRequestFromBuf(
           LOG(FATAL) << "Request contain invalid input key : " << input.first;
         }
         int idx = signature_info->input_key_idx.at(input.first);
+        auto pb_to_tensor = util::Proto2Tensor(input.first, input.second);
+        if (!pb_to_tensor.status.ok()) {
+          return pb_to_tensor.status;
+        }
         call.request[i].inputs.emplace_back(
             signature_info->input_value_name[idx],
-            util::Proto2Tensor(input.second));
+            std::move(pb_to_tensor.tensor));
       }
  
       if (i == 0) {
