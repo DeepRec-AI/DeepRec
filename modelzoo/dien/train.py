@@ -641,7 +641,7 @@ def build_model_input(filename, neg_filename, batch_size, num_epochs):
         files = filename
         neg_files = neg_filename
     # Extract lines from input files using the Dataset API.
-    if args.parquet_dataset:
+    if args.parquet_dataset and not args.tf:
         from tensorflow.python.data.experimental.ops import parquet_dataset_ops
         dataset = parquet_dataset_ops.ParquetDataset(files, batch_size=batch_size)
         dataset_neg_samples = parquet_dataset_ops.ParquetDataset(neg_files,
@@ -854,7 +854,7 @@ def main(tf_config=None, server=None):
     test_file = args.data_location + '/local_test_splitByUser'
     train_neg_file = train_file + '_neg'
     test_neg_file = test_file + '_neg'
-    if args.parquet_dataset:
+    if args.parquet_dataset and not args.tf:
         train_file += '.parquet'
         train_neg_file += '.parquet'
         test_file += '.parquet'
@@ -866,7 +866,7 @@ def main(tf_config=None, server=None):
         sys.exit()
     no_of_training_examples = 0
     no_of_test_examples = 0
-    if args.parquet_dataset:
+    if args.parquet_dataset and not args.tf:
         import pyarrow.parquet as pq
         no_of_training_examples = pq.read_table(train_file).num_rows
         no_of_test_examples = pq.read_table(test_file).num_rows
