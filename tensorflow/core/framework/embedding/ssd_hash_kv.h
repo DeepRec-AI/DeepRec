@@ -411,6 +411,7 @@ class SSDHashKV : public KVInterface<K, V> {
         evict_version_ = ++current_version_;
         CreateFile(evict_version_);
       }
+      TF_CHECK_OK(UpdateFlushStatus());
       current_offset_ = 0;
       buffer_cur_ = 0;
     }
@@ -929,11 +930,11 @@ class SSDHashKV : public KVInterface<K, V> {
 
  private:
   size_t val_len_;
-  size_t current_version_;
-  size_t evict_version_;
-  size_t compaction_version_;
-  size_t current_offset_;
-  size_t buffer_cur_;
+  volatile size_t current_version_;
+  volatile size_t evict_version_;
+  volatile size_t compaction_version_;
+  volatile size_t current_offset_;
+  volatile size_t buffer_cur_;
   size_t total_app_count_;
   size_t max_app_count_;
 
