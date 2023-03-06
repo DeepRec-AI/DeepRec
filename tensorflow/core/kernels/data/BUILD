@@ -6,11 +6,36 @@ load(
     "tf_cc_test",
     "tf_kernel_library",
     "pybind_extension",
+    "transitive_hdrs",
 )
 
 package(
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],  # Apache 2.0
+)
+
+transitive_hdrs(
+    name = "name_utils_headers",
+    deps = [
+        "//tensorflow/core/kernels/data:name_utils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+transitive_hdrs(
+    name = "dataset_utils_headers",
+    deps = [
+        "//tensorflow/core/kernels/data:dataset_utils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+transitive_hdrs(
+    name = "captured_function_headers",
+    deps = [
+        "//tensorflow/core/kernels/data:captured_function",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 # TODO(mrry): Remove this empty forwarding library.
