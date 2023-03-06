@@ -272,7 +272,7 @@ message OptimizerOptions {
   bool stage_subgraph_on_cpu = 11;
   bool do_async_embedding = 12;
   AsyncEmbeddingOptions async_embedding_options = 13;
-  bool embedding_layer_device_placement_optimization = 14;
+  bool device_placement_optimization = 14;
   bool stage_multi_stream = 15;
 }
 
