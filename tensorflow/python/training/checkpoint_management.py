@@ -462,6 +462,10 @@ def remove_checkpoint(checkpoint_prefix,
     # V2 has a metadata file and some data files.
     _delete_file_if_exists(checkpoint_prefix + ".index")
     _delete_file_if_exists(checkpoint_prefix + ".data-?????-of-?????")
+    _delete_file_if_exists(checkpoint_prefix + "*-ssd_record*")
+    emb_file_dirs = file_io.get_matching_files(checkpoint_prefix + "*-emb_files")
+    for emb_file_dir in emb_file_dirs:
+      file_io.delete_recursively(emb_file_dir)
   else:
     # V1, Legacy.  Exact match on the data file.
     _delete_file_if_exists(checkpoint_prefix)

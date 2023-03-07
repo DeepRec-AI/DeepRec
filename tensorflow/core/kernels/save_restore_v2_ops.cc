@@ -695,6 +695,8 @@ class MergeV2Checkpoints : public OpKernel {
     const string& merged_prefix = destination_prefix.scalar<tstring>()();
     OP_REQUIRES_OK(
         context, tensorflow::MergeBundles(env, input_prefixes, merged_prefix));
+    OP_REQUIRES_OK(
+        context, MoveSsdFiles(env, input_prefixes, merged_prefix));
 
     if (delete_old_dirs_) {
       const string merged_dir(io::Dirname(merged_prefix));
