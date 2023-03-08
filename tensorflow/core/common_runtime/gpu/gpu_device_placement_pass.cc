@@ -20,22 +20,27 @@ limitations under the License.
 #include <queue>
 
 #include "tensorflow/core/common_runtime/optimization_registry.h"
-#include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph_constructor.h"
+#include "tensorflow/core/public/session_options.h"
 
 namespace tensorflow {
 
-class EmbeddingLayerDevicePlacementPass : public GraphOptimizationPass {
+class DevicePlacementPass : public GraphOptimizationPass {
  public:
   Status Run(const GraphOptimizationPassOptions& options) override {
-    bool is_enable_embedding_layer_placement_optimization =
-      options.session_options->config.graph_options().optimizer_options()
-            .embedding_layer_device_placement_optimization();
-    if (is_enable_embedding_layer_placement_optimization)
-      LOG(INFO) << "Run EmbeddingLayerDevicePlacement Optimization";
-    else
+    if (options.session_options == nullptr) {
       return Status::OK();
+    }
+    
+    bool is_enable_device_placement_optimization =
+      options.session_options->config.graph_options().optimizer_options()
+            .device_placement_optimization();
+    if (is_enable_device_placement_optimization) {
+      LOG(INFO) << "Run DevicePlacement Optimization";
+    } else {
+      return Status::OK();
+    }
     
     Graph* graph = options.graph->get();
     if (graph == nullptr)
@@ -47,8 +52,8 @@ class EmbeddingLayerDevicePlacementPass : public GraphOptimizationPass {
     std::unordered_set<Node *> boundary_node_set;
     GetDevicePlacementBoundaryNodes(device_graph.get(), boundary_node_set);
     if (boundary_node_set.empty()) {
-      LOG(FATAL) << "EmbeddingLayerDeivcePlace: Failed to get boundary_node, "
-                    "disable EmbeddingLayerDevicePlacementOptimization";
+      LOG(FATAL) << "DevicePlacementOptimization: Failed to get boundary_node, "
+                    "disable DevicePlacementOptimization";
       return Status::OK();
     }
 
@@ -57,13 +62,13 @@ class EmbeddingLayerDevicePlacementPass : public GraphOptimizationPass {
     std::string cpu_device_name = "";
     GetCpuDeviceName(devices, cpu_device_name);
     if (cpu_device_name.empty()) {
-      LOG(FATAL) << "EmbeddingLayerPlacement: Failed to get CPU Device, "
-                    "disable EmbeddingLayerDevicePlacementOptimization";
+      LOG(FATAL) << "DevicePlacementOptimization: Failed to get CPU Device, "
+                    "disable DevicePlacementOptimization";
       return Status::OK();
     }
 
-    // place embedding layer node on cpu
-    PlaceEmbeddingLayerNodeOnCPU(cpu_device_name, boundary_node_set,
+    // Put the nodes in front of the boundary nodes on the CPU
+    PlaceNodesOnCPU(cpu_device_name, boundary_node_set,
                                  device_graph.get());
     
     options.graph->swap(device_graph);
@@ -126,8 +131,7 @@ class EmbeddingLayerDevicePlacementPass : public GraphOptimizationPass {
     }    
   }
 
-  void PlaceEmbeddingLayerNodeOnCPU(
-      const std::string& cpu_device_name,
+  void PlaceNodesOnCPU(const std::string& cpu_device_name,
       const std::unordered_set<Node*> boundary_node_set, Graph *device_graph) {
     
     auto set_stage_subgraph_node_device = [cpu_device_name](Node *n) {
@@ -145,7 +149,7 @@ class EmbeddingLayerDevicePlacementPass : public GraphOptimizationPass {
 };
 
 REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_PLACEMENT, 0,
-                      EmbeddingLayerDevicePlacementPass);
+                      DevicePlacementPass);
 
 } // end of namespace tensorflow
 
