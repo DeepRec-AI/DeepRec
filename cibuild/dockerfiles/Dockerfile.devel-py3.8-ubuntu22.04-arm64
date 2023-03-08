@@ -1,0 +1,28 @@
+FROM ubuntu:18.04 AS bazel_image
+
+WORKDIR /root
+RUN sed -i -E 's/(security|archive|ports).ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+RUN apt update && apt install -y build-essential openjdk-8-jdk zip unzip wget python3
+RUN ln -s $(which python3) /usr/local/bin/python
+
+# Build bazel 0.26.1
+RUN wget https://releases.bazel.build/0.26.1/release/bazel-0.26.1-dist.zip
+RUN mkdir bazel-0.26.1
+RUN unzip bazel-0.26.1-dist.zip -d bazel-0.26.1
+WORKDIR bazel-0.26.1
+# env EXTRA_BAZEL_ARGS="--host_javabase=@local_jdk//:jdk" bash ./compile.sh
+ENV EXTRA_BAZEL_ARGS "--host_javabase=@local_jdk//:jdk"
+RUN bash ./compile.sh
+RUN cp output/bazel /root/
+
+
+FROM accc-registry.cn-hangzhou.cr.aliyuncs.com/deeprec/deeprec:deeprec-base-cpu-py38-ubuntu22.04
+
+WORKDIR /root
+ENV EXTRA_BAZEL_ARGS "--host_javabase=@local_jdk//:jdk"
+COPY --from=bazel_image /root/bazel /usr/local/bin/
+
+RUN sed -i -E 's/(security|archive|ports).ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+RUN apt update && apt install -y openjdk-8-jdk
+
+RUN pip install h5py==2.10.0 tensorflow-estimator==1.15.2 grpcio==1.51.3
