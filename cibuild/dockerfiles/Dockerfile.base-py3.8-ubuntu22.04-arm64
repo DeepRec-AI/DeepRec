@@ -1,0 +1,50 @@
+ARG UBUNTU_VERSION=22.04
+
+FROM ubuntu:${UBUNTU_VERSION} AS base
+
+ENV PATH /root/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libcurl3-dev \
+        libfreetype6-dev \
+        libhdf5-serial-dev \
+        libzmq3-dev \
+        pkg-config \
+        rsync \
+        software-properties-common \
+        sudo \
+        zlib1g \
+        unzip \
+        zip \
+        zlib1g-dev \
+        wget \
+        git \
+        openjdk-8-jre-headless \
+        autoconf \
+        automake \
+        libtool \
+        libffi-dev \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*
+
+#install python
+WORKDIR /home/workdir     
+RUN wget https://www.python.org/ftp/python/3.8.10/Python-3.8.10.tgz \
+    && tar -xzvf Python-3.8.10.tgz \
+    && cd Python-3.8.10 \
+    && ./configure --prefix=/usr/local/python3 --enable-optimizations \
+    && make -j96 \
+    && make install 
+RUN rm -f /usr/bin/python \
+    && rm -f /usr/bin/pip \
+    && ln -s /usr/local/python3/bin/python3.8 /usr/bin/python \
+    && ln -s /usr/local/python3/bin/pip3 /usr/bin/pip \
+    && rm -rf /home/workdir
+
+RUN python -m pip --no-cache-dir install --upgrade \
+    "pip<20.3" \
+    setuptools==52.0.0
+
+RUN pip install wheel==0.37.1 protobuf==3.19.6 astor==0.8.1 numpy==1.16.6
+RUN pip install --no-deps keras-preprocessing==1.0.5
