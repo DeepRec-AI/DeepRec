@@ -400,6 +400,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
           input.float_val_size() * sizeof(float));
 
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_DOUBLE: {
       if (total_size != input.double_val_size()) {
@@ -413,6 +414,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
       memcpy(flat.data(), input.double_val().data(),
           input.double_val_size() * sizeof(double));
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_INT32: {
       if (total_size != input.int_val_size()) {
@@ -426,6 +428,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
       memcpy(flat.data(), input.int_val().data(),
           input.int_val_size() * sizeof(int));
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_UINT8: {
       if (total_size != input.int_val_size()) {
@@ -440,6 +443,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = (uint8)input.int_val(i);
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_INT16: {
       if (total_size != input.int_val_size()) {
@@ -454,6 +458,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = (int16)input.int_val(i);
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_UINT16: {
       if (total_size != input.int_val_size()) {
@@ -468,6 +473,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = (uint16)input.int_val(i);
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_INT8: {
       if (total_size != input.int_val_size()) {
@@ -482,6 +488,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = (int8)input.int_val(i);
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_STRING: {
       if (total_size != input.string_val_size()) {
@@ -496,6 +503,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = input.string_val(i);
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_COMPLEX64: {
       if (total_size != input.float_val_size() / 2) {
@@ -510,6 +518,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = complex64(input.float_val(i), input.float_val(i + 1));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_COMPLEX128: {
       if (total_size != input.double_val_size() / 2) {
@@ -524,6 +533,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = complex64(input.double_val(i), input.double_val(i + 1));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_INT64: {
       if (total_size != input.int64_val_size()) {
@@ -537,6 +547,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
       memcpy(flat.data(), input.int64_val().data(),
           input.int64_val_size() * sizeof(int64));
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_BOOL: {
       if (total_size != input.bool_val_size()) {
@@ -551,6 +562,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = input.bool_val(i);
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_QINT8: {
       if (total_size != input.int_val_size()) {
@@ -565,6 +577,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = qint8(input.int_val(i));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_QUINT8: {
       if (total_size != input.int_val_size()) {
@@ -579,6 +592,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = quint8(input.int_val(i));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_QINT32: {
       if (total_size != input.int_val_size()) {
@@ -593,6 +607,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = qint32(input.int_val(i));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_QINT16: {
       if (total_size != input.int_val_size()) {
@@ -607,6 +622,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = qint16(input.int_val(i));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_QUINT16: {
       if (total_size != input.int_val_size()) {
@@ -621,6 +637,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = quint16(input.int_val(i));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_BFLOAT16: {
       if (total_size != input.float_val_size()) {
@@ -635,6 +652,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
                                   flat.data(),
                                   input.float_val_size());
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_HALF: {
       if (total_size != input.float_val_size()) {
@@ -649,6 +667,7 @@ TensorWithStatus Proto2Tensor(const std::string& key,
         flat(i) = Eigen::half(input.float_val(i));
       }
       ret.tensor = std::move(tensor);
+      break;
     }
     case tensorflow::eas::DT_RESOURCE: {
       ret.status = errors::InvalidArgument(
