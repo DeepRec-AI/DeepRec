@@ -39,11 +39,11 @@ HASH_INPUTS = [
     "occupation",
     "new_user_class_level",
     "tag_category_list",
-    "tag_brand_list"
+    "tag_brand_list",
+    "price"
     ]
-IDENTITY_INPUTS = ["price"]
-ALL_FEATURE_COLUMNS = HASH_INPUTS + IDENTITY_INPUTS
-ALL_INPUT = LABEL_COLUMNS + HASH_INPUTS + IDENTITY_INPUTS
+ALL_FEATURE_COLUMNS = HASH_INPUTS
+ALL_INPUT = LABEL_COLUMNS + HASH_INPUTS
 NOT_USED_CATEGORY = ["final_gender_code"]
 
 HASH_BUCKET_SIZES = {
@@ -63,10 +63,7 @@ HASH_BUCKET_SIZES = {
     'occupation': 10,
     'new_user_class_level': 10,
     'tag_category_list': 100000,
-    'tag_brand_list': 100000
-}
-
-NUM_BUCKETS = {
+    'tag_brand_list': 100000,
     'price': 50
 }
 
@@ -308,9 +305,8 @@ def build_model_input(filename, batch_size, num_epochs):
         tf.logging.info('Parsing {}'.format(filename))
         HASH_defaults = [[" "] for i in range(0, len(HASH_INPUTS))]
         label_defaults = [[0] for i in range (0, len(LABEL_COLUMNS))]
-        IDENTITY_defaults = [[0] for i in range(0, len(IDENTITY_INPUTS))]
-        column_headers = LABEL_COLUMNS + HASH_INPUTS + IDENTITY_INPUTS
-        record_defaults = label_defaults + HASH_defaults + IDENTITY_defaults
+        column_headers = LABEL_COLUMNS + HASH_INPUTS
+        record_defaults = label_defaults + HASH_defaults
         columns = tf.io.decode_csv(value, record_defaults=record_defaults)
         all_columns = collections.OrderedDict(zip(column_headers, columns))
         labels = []
@@ -433,24 +429,6 @@ def build_feature_cols():
                             do_fusion=args.emb_fusion)
 
                     feature_cols.append(embedding_column)
-
-                elif column_name in IDENTITY_INPUTS:
-                    column = tf.feature_column.categorical_column_with_identity(column_name, 50)
-
-                    if args.tf or not args.emb_fusion:
-                        embedding_column = tf.feature_column.embedding_column(
-                            column, 
-                            dimension=EMBEDDING_DIM, 
-                            combiner='mean')
-                    else:
-                        '''Embedding Fusion Feature'''
-                        embedding_column = tf.feature_column.embedding_column(
-                            column,
-                            dimension=EMBEDDING_DIM,
-                            combiner='mean',
-                            do_fusion=args.emb_fusion)
-
-                    feature_cols.append(embedding_column)
                 else:
                     raise ValueError('Unexpected column name occured')
     else:
@@ -521,24 +499,6 @@ def build_feature_cols():
                     '''Embedding Fusion Feature'''
                     embedding_column = tf.feature_column.embedding_column(
                         categorical_column,
-                        dimension=EMBEDDING_DIM,
-                        combiner='mean',
-                        do_fusion=args.emb_fusion)
-
-                feature_cols.append(embedding_column)
-
-            elif column_name in IDENTITY_INPUTS:
-                column = tf.feature_column.categorical_column_with_identity(column_name, 50)
-
-                if args.tf or not args.emb_fusion:
-                    embedding_column = tf.feature_column.embedding_column(
-                        column, 
-                        dimension=EMBEDDING_DIM, 
-                        combiner='mean')
-                else:
-                    '''Embedding Fusion Feature'''
-                    embedding_column = tf.feature_column.embedding_column(
-                        column,
                         dimension=EMBEDDING_DIM,
                         combiner='mean',
                         do_fusion=args.emb_fusion)
