@@ -180,10 +180,10 @@ Train & eval dataset using ***Taobao dataset***.
 We provide the dataset in two formats:
 1. **CSV Format**
 Put data file **taobao_train_data & taobao_test_data** into ./data/
-These files are available at [Taobao CSV Dataset](https://github.com/AlibabaPAI/Modelzoo-Data/tree/main/csv/taobao).
+These files are available at [Taobao CSV Dataset](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/csv_dataset/taobao.tar.gz).
 2. **Parquet Format**
 Put data file **taobao_train_data.parquet & taobao_test_data.parquet** into ./data/
-These files are available at [Taobao Parquet Dataset](https://github.com/AlibabaPAI/Modelzoo-Data/tree/main/parquet_dataset/dbmtl_taobao).
+These files are available at [Taobao Parquet Dataset](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/parquet_dataset/taobao_price_string.tar.gz).
 
 ### Fields
 The dataset contains 20 columns, details as follow:
