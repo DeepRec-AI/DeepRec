@@ -124,10 +124,17 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 1.0));
   //float* fill_v = (float*)malloc(value_size * sizeof(float));
+  EmbeddingConfig emb_config = 
+      EmbeddingConfig(0, 0, 1, 1, "", 0, 0, 99999, 14.0);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "name", embedding::StorageConfig());
+                 "name",
+                 embedding::StorageConfig(
+                     StorageType::DRAM,
+                     "", {1024, 1024, 1024, 1024},
+                     "light",
+                     emb_config));
   auto emb_var = new EmbeddingVar<int64, float>("name",
-        storage_manager, EmbeddingConfig(0, 0, 1, 1, "", -1, 0, 99999, 14.0),
+        storage_manager, emb_config,
         cpu_allocator());
   emb_var ->Init(value, 1);
   
@@ -155,10 +162,16 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
 
   int steps_to_live = 5;
+  EmbeddingConfig emb_config = EmbeddingConfig(0, 0, 1, 1, "", steps_to_live);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "name", embedding::StorageConfig());
+                 "name",
+                  embedding::StorageConfig(
+                     StorageType::DRAM,
+                     "", {1024, 1024, 1024, 1024},
+                     "normal",
+                     emb_config));
   auto emb_var = new EmbeddingVar<int64, float>("name",
-      storage_manager, EmbeddingConfig(0, 0, 1, 1, "", steps_to_live),
+      storage_manager, emb_config,
       cpu_allocator());
   emb_var ->Init(value, 1);
   LOG(INFO) << "size:" << emb_var->Size();

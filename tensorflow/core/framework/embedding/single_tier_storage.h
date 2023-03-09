@@ -49,6 +49,19 @@ class SingleTierStorage : public Storage<K, V> {
       KVInterface<K, V>* kv, LayoutCreator<V>* lc)
       : kv_(kv), alloc_(alloc), layout_creator_(lc),
         Storage<K, V>(sc) {
+    if (sc.embedding_config.steps_to_live != 0) {
+      shrink_policy_ = new GlobalStepShrinkPolicy<K, V>(
+          kv_, alloc_, sc.embedding_config.slot_num + 1);
+    } else if (sc.embedding_config.l2_weight_threshold != -1.0) {
+      shrink_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              kv_, alloc_, sc.embedding_config.slot_num + 1);
+    } else {
+      shrink_policy_ = nullptr;
+    }
   }
   
   ~SingleTierStorage() override {
@@ -61,6 +74,7 @@ class SingleTierStorage : public Storage<K, V> {
       delete value_ptr;
     }  
     delete kv_;
+    if (shrink_policy_ != nullptr) delete shrink_policy_;
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(SingleTierStorage);
@@ -267,20 +281,19 @@ class SingleTierStorage : public Storage<K, V> {
     LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
   }
 
-  Status Shrink(const EmbeddingConfig& emb_config,
-      int64 value_len) override {
+  Status Shrink(int64 value_len) override {
     mutex_lock l(Storage<K, V>::mu_);
-    L2WeightShrinkPolicy<K, V> policy(emb_config.primary_emb_index,
-        Storage<K, V>::GetOffset(emb_config.primary_emb_index),
-        kv_, alloc_);
-    policy.Shrink(value_len, (V)emb_config.l2_weight_threshold);
+    L2WeightShrinkPolicy<K, V>* l2_weight_shrink =
+        reinterpret_cast<L2WeightShrinkPolicy<K, V>*>(shrink_policy_);
+    l2_weight_shrink->Shrink(value_len);
     return Status::OK();
   }
 
   Status Shrink(int64 global_step, int64 steps_to_live) override {
     mutex_lock l(Storage<K, V>::mu_);
-    GlobalStepShrinkPolicy<K, V> policy(kv_, alloc_);
-    policy.Shrink(global_step, steps_to_live);
+    GlobalStepShrinkPolicy<K, V>* global_step_shrink =
+        reinterpret_cast<GlobalStepShrinkPolicy<K, V>*>(shrink_policy_);
+    global_step_shrink->Shrink(global_step, steps_to_live);
     return Status::OK();
   }
 
@@ -331,6 +344,7 @@ class SingleTierStorage : public Storage<K, V> {
 
  protected:
   KVInterface<K, V>* kv_;
+  ShrinkPolicy<K, V>* shrink_policy_;
   Allocator* alloc_;
   LayoutCreator<V>* layout_creator_;
 };

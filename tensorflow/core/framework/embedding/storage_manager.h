@@ -263,8 +263,8 @@ class StorageManager {
     storage_->ImportToHbm(ids, size, value_len, emb_index);
   }
 
-  Status Shrink(const EmbeddingConfig& emb_config, int64 value_len) {
-    return storage_->Shrink(emb_config, value_len);
+  Status Shrink(int64 value_len) {
+    return storage_->Shrink(value_len);
   }
 
   Status Shrink(int64 gs, int64 steps_to_live) {

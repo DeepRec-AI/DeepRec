@@ -200,14 +200,12 @@ class MultiTierStorage : public Storage<K, V> {
     LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
   }
 
-  Status Shrink(const EmbeddingConfig& emb_config,
-      int64 value_len) override {
+  Status Shrink(int64 value_len) override {
     for (auto kv : kvs_) {
       mutex_lock l(kv.mu_);
-      L2WeightShrinkPolicy<K, V> policy(emb_config.primary_emb_index,
-          Storage<K, V>::GetOffset(emb_config.primary_emb_index),
-          kv.kv_, kv.allocator_);
-      policy.Shrink(value_len, (V)emb_config.l2_weight_threshold);
+      L2WeightShrinkPolicy<K, V>* l2_weight_shrink =
+          reinterpret_cast<L2WeightShrinkPolicy<K, V>*>(kv.shrink_policy_);
+      l2_weight_shrink->Shrink(value_len);
     }
     return Status::OK();
   }
@@ -215,8 +213,9 @@ class MultiTierStorage : public Storage<K, V> {
   Status Shrink(int64 global_step, int64 steps_to_live) override {
     for (auto kv : kvs_) {
       mutex_lock l(kv.mu_);
-      GlobalStepShrinkPolicy<K, V> policy(kv.kv_, kv.allocator_);
-      policy.Shrink(global_step, steps_to_live);
+      GlobalStepShrinkPolicy<K, V>* global_step_shrink =
+          reinterpret_cast<GlobalStepShrinkPolicy<K, V>*>(kv.shrink_policy_);
+      global_step_shrink->Shrink(global_step, steps_to_live);
     }
     return Status::OK();
   }
