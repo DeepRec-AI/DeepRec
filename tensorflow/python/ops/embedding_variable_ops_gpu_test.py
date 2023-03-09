@@ -853,6 +853,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     model_path = os.path.join(checkpoint_directory, "model.ckpt")
     with self.test_session() as sess:
       sess.run([init])
+      saver.save(sess, model_path)
       sess.run([train_op])
       sess.run([train_op])
       saver.save(sess, model_path)
