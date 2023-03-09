@@ -27,37 +27,36 @@ namespace embedding {
 template<typename K, typename V>
 class ShrinkPolicy {
  public:
-  ShrinkPolicy(KVInterface<K, V>* kv, Allocator* alloc)
-      : kv_(kv), alloc_(alloc) {}
+  ShrinkPolicy(KVInterface<K, V>* kv, Allocator* alloc, int slot_num)
+      : kv_(kv), alloc_(alloc),
+        slot_num_(slot_num), shrink_count_(0) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(ShrinkPolicy);
 
   inline Status GetSnapshot() {
+    shrink_count_ = (shrink_count_ + 1) % slot_num_;
     return kv_->GetSnapshot(&key_list_, &value_list_);
   }
   
   void ReleaseDeleteValues() {
-    for (auto it : to_delete_) {
-      (it.value_ptr)->Destroy(alloc_);
-      delete it.value_ptr;
-      kv_->Remove(it.key);
+    if (shrink_count_ == 0) {
+      for (auto it : to_delete_) {
+        it->Destroy(alloc_);
+        delete it;
+      }
+      to_delete_.clear();
     }
   }
-
-  struct KeyValuePair {
-    KeyValuePair(const K& k, ValuePtr<V>* v) : key(k), value_ptr(v) {}
-
-    K key;
-    ValuePtr<V>* value_ptr;
-  };
 
  protected: 
   std::vector<K> key_list_;
   std::vector<ValuePtr<V>*> value_list_;
-  std::vector<KeyValuePair> to_delete_;
+  std::vector<ValuePtr<V>*> to_delete_;
 
   KVInterface<K, V>* kv_;
   Allocator* alloc_;
+  int slot_num_;
+  int shrink_count_;
 };
 } // embedding
 } // tensorflow

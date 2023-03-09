@@ -21,19 +21,56 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     hbm_kv_ = new LocklessHashMap<K, V>();
     dram_kv_ = new LocklessHashMapCPU<K, V>(gpu_alloc);
     ssd_kv_ = new SSDHashKV<K, V>(sc.path, cpu_alloc);
+    if (sc.embedding_config.steps_to_live != 0) {
+      hbm_policy_ = new GlobalStepShrinkPolicy<K, V>(hbm_kv_, gpu_alloc_,
+          sc.embedding_config.slot_num + 1);
+      dram_policy_ = new GlobalStepShrinkPolicy<K, V>(dram_kv_, cpu_alloc_,
+          sc.embedding_config.slot_num + 1);
+      ssd_policy_ = new GlobalStepShrinkPolicy<K, V>(ssd_kv_, cpu_alloc_,
+          sc.embedding_config.slot_num + 1);
+    } else if (sc.embedding_config.l2_weight_threshold != -1.0) {
+      hbm_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              hbm_kv_, gpu_alloc_,
+              sc.embedding_config.slot_num + 1);
+      dram_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              dram_kv_, cpu_alloc_,
+              sc.embedding_config.slot_num + 1);
+      ssd_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              ssd_kv_, cpu_alloc_,
+              sc.embedding_config.slot_num + 1);
+    } else {
+      hbm_policy_ = nullptr;
+      dram_policy_ = nullptr;
+      ssd_policy_ = nullptr;
+    }
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(hbm_kv_, gpu_alloc_, hbm_mu_));
+        KVInterfaceDescriptor<K, V>(hbm_kv_, gpu_alloc_, hbm_mu_, hbm_policy_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(dram_kv_, cpu_alloc_, dram_mu_));
+        KVInterfaceDescriptor<K, V>(dram_kv_, cpu_alloc_, dram_mu_, dram_policy_));
      MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(ssd_kv_, cpu_alloc_, ssd_mu_));
+        KVInterfaceDescriptor<K, V>(ssd_kv_, cpu_alloc_, ssd_mu_, ssd_policy_));
   }
 
   ~HbmDramSsdStorage() override {
     ReleaseValues({std::make_pair(hbm_kv_, gpu_alloc_),
                    std::make_pair(dram_kv_, cpu_alloc_)});
     delete dram_cache_;
+    if (hbm_policy_ != nullptr) delete hbm_policy_;
+    if (dram_policy_ != nullptr) delete dram_policy_;
+    if (ssd_policy_ != nullptr) delete ssd_policy_;
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(HbmDramSsdStorage);
@@ -380,6 +417,9 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
   EmbeddingMemoryPool<V>* embedding_mem_pool_;
   Allocator* gpu_alloc_;
   Allocator* cpu_alloc_;
+  ShrinkPolicy<K, V>* hbm_policy_;
+  ShrinkPolicy<K, V>* dram_policy_;
+  ShrinkPolicy<K, V>* ssd_policy_;
   LayoutCreator<V>* layout_creator_;
   BatchCache<K>* dram_cache_;
   int64 dram_capacity_;

@@ -26,15 +26,18 @@ namespace embedding {
 template<typename K, typename V>
 class GlobalStepShrinkPolicy : public ShrinkPolicy<K, V> {
  public:
-  GlobalStepShrinkPolicy(KVInterface<K, V>* kv, Allocator* alloc)
-      : ShrinkPolicy<K, V>(kv, alloc) {}
+  GlobalStepShrinkPolicy(
+      KVInterface<K, V>* kv,
+      Allocator* alloc,
+      int slot_num)
+      : ShrinkPolicy<K, V>(kv, alloc, slot_num) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(GlobalStepShrinkPolicy);
 
   void Shrink(int64 global_step, int64 steps_to_live) {
+    ShrinkPolicy<K, V>::ReleaseDeleteValues();
     ShrinkPolicy<K, V>::GetSnapshot();
     FilterToDelete(global_step, steps_to_live);
-    ShrinkPolicy<K, V>::ReleaseDeleteValues();
   }
 
  private:
@@ -45,12 +48,14 @@ class GlobalStepShrinkPolicy : public ShrinkPolicy<K, V> {
         ShrinkPolicy<K, V>::value_list_[i]->SetStep(global_step);
       } else {
         if (global_step - version > steps_to_live) {
+          ShrinkPolicy<K, V>::kv_->Remove(ShrinkPolicy<K, V>::key_list_[i]);
           ShrinkPolicy<K, V>::to_delete_.emplace_back(
-              ShrinkPolicy<K, V>::key_list_[i],
               ShrinkPolicy<K, V>::value_list_[i]);
         }
       }
     }
+    ShrinkPolicy<K, V>::key_list_.clear();
+    ShrinkPolicy<K, V>::value_list_.clear();
   }
 };
 } // embedding

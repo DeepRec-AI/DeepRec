@@ -35,16 +35,43 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
         MultiTierStorage<K, V>(sc, name) {
     dram_kv_ = new LocklessHashMap<K, V>();
     leveldb_ = new LevelDBKV<K, V>(sc.path);
+    if (sc.embedding_config.steps_to_live != 0) {
+      dram_policy_ = new GlobalStepShrinkPolicy<K, V>(dram_kv_, alloc_,
+          sc.embedding_config.slot_num + 1);
+      leveldb_policy_ = new GlobalStepShrinkPolicy<K, V>(leveldb_, alloc_,
+          sc.embedding_config.slot_num + 1);
+    } else if (sc.embedding_config.l2_weight_threshold != -1.0) {
+      dram_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              dram_kv_, alloc_,
+              sc.embedding_config.slot_num + 1);
+      leveldb_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              leveldb_, alloc_,
+              sc.embedding_config.slot_num + 1);
+    } else {
+      dram_policy_ = nullptr;
+      leveldb_policy_ = nullptr;
+    }
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_));
+        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_, dram_policy_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(leveldb_, alloc_, leveldb_mu_));
+        KVInterfaceDescriptor<K, V>(leveldb_, alloc_,
+                                    leveldb_mu_, leveldb_policy_));
   }
 
   ~DramLevelDBStore() override {
     MultiTierStorage<K, V>::ReleaseValues(
         {std::make_pair(dram_kv_, alloc_)});
+    if (dram_policy_ != nullptr) delete dram_policy_;
+    if (leveldb_policy_ != nullptr) delete leveldb_policy_;
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(DramLevelDBStore);
@@ -169,6 +196,8 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   KVInterface<K, V>* dram_kv_;
   KVInterface<K, V>* leveldb_;
   Allocator* alloc_;
+  ShrinkPolicy<K, V>* dram_policy_;
+  ShrinkPolicy<K, V>* leveldb_policy_;
   LayoutCreator<V>* layout_creator_;
   mutex dram_mu_; //must be locked before leveldb_mu_ is locked
   mutex leveldb_mu_;
