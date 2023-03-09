@@ -48,6 +48,37 @@ const int64 kEmbeddingVarUseDB = -214;
 const int64 kInitializableEmbeddingVarUseDB = -215;
 }
 
+Status MoveMatchingFiles(
+    Env* env,
+    const tstring& pattern,
+    const tstring& merged_prefix,
+    int64 input_prefix_size) {
+  std::vector<tstring> file_vec;
+  TF_RETURN_IF_ERROR(env->GetMatchingPaths(pattern, &file_vec));
+  for (int64 i = 0; i < file_vec.size(); i++) {
+    const tstring& filename = file_vec[i].substr(input_prefix_size);
+    TF_RETURN_IF_ERROR(env->RenameFile(file_vec[i], merged_prefix + filename));
+  }
+  return Status::OK();
+}
+
+Status MoveSsdFiles(Env* env,
+    const gtl::ArraySlice<tstring>& input_prefixes,
+    const tstring& merged_prefix) {
+  for (auto input_prefix : input_prefixes) {
+    const tstring& input_ssd_record_pattern =
+        input_prefix + "*-ssd_record*";
+    TF_RETURN_IF_ERROR(MoveMatchingFiles(
+        env, input_ssd_record_pattern, merged_prefix, input_prefix.size()));
+
+    const tstring& input_emb_files_pattern =
+        input_prefix + "*-emb_files";
+    TF_RETURN_IF_ERROR(MoveMatchingFiles(
+        env, input_emb_files_pattern, merged_prefix, input_prefix.size()));
+  }
+  return Status::OK();
+}
+
 #define REGISTER_KV_VAR_HANDLE(dev, ktype, vtype)                      \
   REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
                           .Device(DEVICE_##dev)                        \

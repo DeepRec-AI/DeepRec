@@ -1599,6 +1599,22 @@ void LoadSsdData(
   delete[] key_file_id_list;
   delete[] key_offset_list;
 }
+
+Status MoveMatchingFiles(
+    Env* env,
+    const tstring& pattern,
+    const tstring& merged_prefix,
+    int64 input_prefix_size);
+
+/*Move two files and one directory:
+1. xxxxx-ssd_record.index
+2. xxxxx-ssd_record.data 
+3. xxxxxx-emb_files/ 
+1 and 2 record the meta data of SSDHash,
+and 3 records the embeddings on SSD*/
+Status MoveSsdFiles(Env* env,
+    const gtl::ArraySlice<tstring>& input_prefixes,
+    const tstring& merged_prefix);
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_KERNELS_KV_VARIABLE_OPS_H_
