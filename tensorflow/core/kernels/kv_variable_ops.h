@@ -569,10 +569,10 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
     delete it;
   }
 
-  if (ev->IsSingleHbm()) {
+  if (ev->IsSingleHbm() && tot_valueptr_list.size() > 0) {
     TypedAllocator::Deallocate(
         cpu_allocator(), tot_valueptr_list[0],
-        partitioned_tot_freq_list.size() * ev->ValueLen());
+        tot_valueptr_list.size() * ev->ValueLen());
   }
   return Status::OK();
 }
