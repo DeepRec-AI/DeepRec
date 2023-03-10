@@ -1280,7 +1280,6 @@ int64 ReadRecord(
   reader->LookupSegment(
       record_key, sizeof(K) * shape.dim_size(0),
       (char*)*buffer, bytes_read);
-  delete[] buffer;
   return shape.dim_size(0);
 }
 

@@ -18,6 +18,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/shrink_policy.h"
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
@@ -44,13 +45,17 @@ template<typename K, typename V>
 struct KVInterfaceDescriptor {
   KVInterfaceDescriptor(KVInterface<K, V>* kv,
                     Allocator* allocator,
-                    mutex mu) : kv_(kv),
-                                 allocator_(allocator),
-                                 mu_(mu) {}
+                    mutex mu,
+                    ShrinkPolicy<K, V>* shrink_policy)
+                    : kv_(kv),
+                      allocator_(allocator),
+                      mu_(mu),
+                      shrink_policy_(shrink_policy) {}
   ~KVInterfaceDescriptor() {}
 
   KVInterface<K, V>* kv_;
   Allocator* allocator_;
+  ShrinkPolicy<K, V>* shrink_policy_;
   mutex mu_;
 };
 
@@ -98,8 +103,7 @@ class Storage {
       int64* file_list, int64* invalid_record_count_list,
       int64* record_count_list, int64 num_of_files,
       const std::string& ssd_emb_file_name) = 0;
-  virtual Status Shrink(const EmbeddingConfig& emb_config,
-      int64 value_len) = 0;
+  virtual Status Shrink(int64 value_len) = 0;
   virtual Status Shrink(int64 gs, int64 steps_to_live) = 0;
 
   virtual Status BatchCommit(const std::vector<K>& keys,

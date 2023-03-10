@@ -35,16 +35,42 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
         MultiTierStorage<K, V>(sc, name) {
     dram_kv_ = new LocklessHashMap<K, V>();
     ssd_kv_ = new SSDHashKV<K, V>(sc.path, alloc_);
+    if (sc.embedding_config.steps_to_live != 0) {
+      dram_policy_ = new GlobalStepShrinkPolicy<K, V>(dram_kv_, alloc_,
+          sc.embedding_config.slot_num + 1);
+      ssd_policy_ = new GlobalStepShrinkPolicy<K, V>(ssd_kv_, alloc_,
+         sc.embedding_config.slot_num + 1);
+    } else if (sc.embedding_config.l2_weight_threshold != -1.0) {
+      dram_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              dram_kv_, alloc_,
+              sc.embedding_config.slot_num + 1);
+      ssd_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              ssd_kv_, alloc_,
+              sc.embedding_config.slot_num + 1);
+    } else {
+      dram_policy_ = nullptr;
+      ssd_policy_ = nullptr;
+    }
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_));
+        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_, dram_policy_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(ssd_kv_, alloc_, ssd_mu_));
+        KVInterfaceDescriptor<K, V>(ssd_kv_, alloc_, ssd_mu_, ssd_policy_));
   }
 
   ~DramSsdHashStorage() override {
     MultiTierStorage<K, V>::ReleaseValues(
         {std::make_pair(dram_kv_, alloc_)});
+    if (dram_policy_ != nullptr) delete dram_policy_;
+    if (ssd_policy_ != nullptr) delete ssd_policy_;
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(DramSsdHashStorage);
@@ -211,6 +237,8 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
   KVInterface<K, V>* dram_kv_;
   SSDHashKV<K, V>* ssd_kv_;
   Allocator* alloc_;
+  ShrinkPolicy<K, V>* dram_policy_;
+  ShrinkPolicy<K, V>* ssd_policy_;
   LayoutCreator<V>* layout_creator_;
   mutex dram_mu_; // must be locked before ssd_mu_ is locked
   mutex ssd_mu_;
