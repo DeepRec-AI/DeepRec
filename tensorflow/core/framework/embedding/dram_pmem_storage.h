@@ -36,17 +36,43 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
         layout_creator_(lc), MultiTierStorage<K, V>(sc, name) {
     dram_kv_ = new LocklessHashMap<K, V>();
     pmem_kv_ = new LocklessHashMap<K, V>();
+    if (sc.embedding_config.steps_to_live != 0) {
+      dram_policy_ = new GlobalStepShrinkPolicy<K, V>(dram_kv_, dram_alloc_,
+          sc.embedding_config.slot_num + 1);
+      pmem_policy_ = new GlobalStepShrinkPolicy<K, V>(pmem_kv_, pmem_alloc_,
+          sc.embedding_config.slot_num + 1);
+    } else if (sc.embedding_config.l2_weight_threshold != -1.0) {
+      dram_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              dram_kv_, dram_alloc_,
+              sc.embedding_config.slot_num + 1);
+      pmem_policy_ =
+          new L2WeightShrinkPolicy<K, V>(
+              sc.embedding_config.l2_weight_threshold,
+              sc.embedding_config.primary_emb_index,
+              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
+              pmem_kv_, pmem_alloc_,
+              sc.embedding_config.slot_num + 1);
+    } else {
+      dram_policy_ = nullptr;
+      pmem_policy_ = nullptr;
+    }
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(dram_kv_, dram_alloc_, dram_mu_));
+        KVInterfaceDescriptor<K, V>(dram_kv_, dram_alloc_, dram_mu_, dram_policy_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(pmem_kv_, pmem_alloc_, pmem_mu_));
+        KVInterfaceDescriptor<K, V>(pmem_kv_, pmem_alloc_, pmem_mu_, pmem_policy_));
   }
 
   ~DramPmemStorage() override {
     MultiTierStorage<K, V>::ReleaseValues(
         {std::make_pair(dram_kv_, dram_alloc_),
          std::make_pair(pmem_kv_, pmem_alloc_)});
+    if (dram_policy_ != nullptr) delete dram_policy_;
+    if (pmem_policy_ != nullptr) delete pmem_policy_;
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(DramPmemStorage);
@@ -163,6 +189,8 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
   KVInterface<K, V>* pmem_kv_;
   Allocator* dram_alloc_;
   Allocator* pmem_alloc_;
+  ShrinkPolicy<K, V>* dram_policy_;
+  ShrinkPolicy<K, V>* pmem_policy_;
   LayoutCreator<V>* layout_creator_;
   mutex dram_mu_; // must be locked before pmem_mu_ is locked
   mutex pmem_mu_;

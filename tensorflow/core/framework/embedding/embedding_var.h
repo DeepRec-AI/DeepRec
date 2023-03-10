@@ -545,7 +545,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   Status Shrink() {
-    return storage_manager_->Shrink(emb_config_, value_len_);
+    return storage_manager_->Shrink(value_len_);
   }
 
   Status Shrink(int64 gs) {

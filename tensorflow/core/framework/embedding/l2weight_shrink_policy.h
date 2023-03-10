@@ -26,21 +26,24 @@ namespace embedding {
 template<typename K, typename V>
 class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
  public:
-  L2WeightShrinkPolicy(int64 primary_index, int64 primary_offset,
-      KVInterface<K, V>* kv, Allocator* alloc)
-      : primary_index_(primary_index), primary_offset_(primary_offset),
-        ShrinkPolicy<K, V>(kv, alloc) {}
+  L2WeightShrinkPolicy(float l2_weight_threshold,
+      int64 primary_index, int64 primary_offset,
+      KVInterface<K, V>* kv, Allocator* alloc,
+      int slot_num)
+      : l2_weight_threshold_(l2_weight_threshold),
+        primary_index_(primary_index), primary_offset_(primary_offset),
+        ShrinkPolicy<K, V>(kv, alloc, slot_num) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(L2WeightShrinkPolicy);
   
-  void Shrink(int64 value_len, V l2_weight_threshold) {
-    ShrinkPolicy<K, V>::GetSnapshot();
-    FilterToDelete(value_len, l2_weight_threshold);
+  void Shrink(int64 value_len) {
     ShrinkPolicy<K, V>::ReleaseDeleteValues();
+    ShrinkPolicy<K, V>::GetSnapshot();
+    FilterToDelete(value_len);
   }
 
  private: 
-  void FilterToDelete(int64 value_len, V l2_weight_threshold) {
+  void FilterToDelete(int64 value_len) {
     for (int64 i = 0; i < ShrinkPolicy<K, V>::key_list_.size(); ++i) {
       V* val = ShrinkPolicy<K, V>::value_list_[i]->GetValue(
           primary_index_, primary_offset_);
@@ -50,17 +53,21 @@ class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
             l2_weight += val[j] * val[j];
         }
         l2_weight *= (V)0.5;
-        if (l2_weight < l2_weight_threshold) {
+        if (l2_weight < (V)l2_weight_threshold_) {
+          ShrinkPolicy<K, V>::kv_->Remove(ShrinkPolicy<K, V>::key_list_[i]);
           ShrinkPolicy<K, V>::to_delete_.emplace_back(
-              ShrinkPolicy<K, V>::key_list_[i], ShrinkPolicy<K, V>::value_list_[i]);
+              ShrinkPolicy<K, V>::value_list_[i]);
         }
       }
     }
+    ShrinkPolicy<K, V>::key_list_.clear();
+    ShrinkPolicy<K, V>::value_list_.clear();
   }
 
  private:
   int64 primary_index_; // Shrink only handle primary slot
   int64 primary_offset_;
+  float l2_weight_threshold_;
 };
 } // embedding
 } // tensorflow
