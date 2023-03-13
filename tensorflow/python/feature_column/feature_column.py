@@ -387,7 +387,8 @@ def linear_model(features,
                  sparse_combiner='sum',
                  weight_collections=None,
                  trainable=True,
-                 cols_to_vars=None):
+                 cols_to_vars=None,
+                 do_fusion=False):
   """Returns a linear prediction `Tensor` based on given `feature_columns`.
 
   This function generates a weighted sum based on output dimension `units`.
@@ -494,6 +495,7 @@ def linear_model(features,
       If a column creates no variables, its value will be an empty list. Note
       that cols_to_vars will also contain a string key 'bias' that maps to a
       list of Variables.
+    do_fusion: fusion for get categorical_column's weight. Default to False.
 
   Returns:
     A `Tensor` which represents predictions/logits of a linear model. Its shape
@@ -511,7 +513,8 @@ def linear_model(features,
       sparse_combiner=sparse_combiner,
       weight_collections=weight_collections,
       trainable=trainable,
-      name=model_name)
+      name=model_name,
+      do_fusion=do_fusion)
   retval = linear_model_layer(features)  # pylint: disable=not-callable
   if cols_to_vars is not None:
     cols_to_vars.update(linear_model_layer.cols_to_vars())
@@ -553,6 +556,7 @@ class _FCLinearWrapper(base.Layer):
                weight_collections=None,
                trainable=True,
                name=None,
+               do_fusion=False,
                **kwargs):
     super(_FCLinearWrapper, self).__init__(
         trainable=trainable, name=name, **kwargs)
@@ -560,6 +564,7 @@ class _FCLinearWrapper(base.Layer):
     self._units = units
     self._sparse_combiner = sparse_combiner
     self._weight_collections = weight_collections
+    self._do_fusion = do_fusion
 
   def build(self, _):
     if isinstance(self._feature_column, _CategoricalColumn):
@@ -596,7 +601,8 @@ class _FCLinearWrapper(base.Layer):
         sparse_combiner=self._sparse_combiner,
         weight_collections=self._weight_collections,
         trainable=self.trainable,
-        weight_var=self._weight_var)
+        weight_var=self._weight_var,
+        do_fusion=self._do_fusion)
     return weighted_sum
 
 
@@ -652,6 +658,7 @@ class _LinearModel(training.Model):
                weight_collections=None,
                trainable=True,
                name=None,
+               do_fusion=False,
                **kwargs):
     super(_LinearModel, self).__init__(name=name, **kwargs)
     self._feature_columns = _normalize_feature_columns(
@@ -672,7 +679,7 @@ class _LinearModel(training.Model):
         column_name = _strip_leading_slashes(vs.name)
       column_layer = _FCLinearWrapper(column, units, sparse_combiner,
                                       self._weight_collections, trainable,
-                                      column_name, **kwargs)
+                                      column_name, do_fusion, **kwargs)
       column_layers[column_name] = column_layer
     self._column_layers = self._add_layers(column_layers)
     self._bias_layer = _BiasLayer(
@@ -1936,7 +1943,8 @@ def _create_weighted_sum(column,
                          sparse_combiner,
                          weight_collections,
                          trainable,
-                         weight_var=None):
+                         weight_var=None,
+                         do_fusion=False):
   """Creates a weighted sum for a dense/categorical column for linear_model."""
   if isinstance(column, _CategoricalColumn):
     return _create_categorical_column_weighted_sum(
@@ -1946,7 +1954,8 @@ def _create_weighted_sum(column,
         sparse_combiner=sparse_combiner,
         weight_collections=weight_collections,
         trainable=trainable,
-        weight_var=weight_var)
+        weight_var=weight_var,
+        do_fusion=do_fusion)
   else:
     return _create_dense_column_weighted_sum(
         column=column,
@@ -2034,7 +2043,8 @@ def _create_categorical_column_weighted_sum(column,
                                             sparse_combiner,
                                             weight_collections,
                                             trainable,
-                                            weight_var=None):
+                                            weight_var=None,
+                                            do_fusion=False):
   # pylint: disable=g-doc-return-or-yield,g-doc-args
   """Create a weighted sum of a categorical column for linear_model.
 
@@ -2084,12 +2094,20 @@ def _create_categorical_column_weighted_sum(column,
         initializer=init_ops.zeros_initializer(),
         trainable=trainable,
         collections=weight_collections)
-  return embedding_ops.safe_embedding_lookup_sparse(
-      weight,
-      id_tensor,
-      sparse_weights=weight_tensor,
-      combiner=sparse_combiner,
-      name='weighted_sum')
+  if do_fusion:
+    return embedding_ops.fused_safe_embedding_lookup_sparse(
+        weight,
+        id_tensor,
+        sparse_weights=weight_tensor,
+        combiner=sparse_combiner,
+        name='weighted_sum')
+  else:
+    return embedding_ops.safe_embedding_lookup_sparse(
+        weight,
+        id_tensor,
+        sparse_weights=weight_tensor,
+        combiner=sparse_combiner,
+        name='weighted_sum')
 
 
 class _SequenceDenseColumn(_FeatureColumn):

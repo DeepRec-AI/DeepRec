@@ -489,6 +489,7 @@ class _LinearModelLayer(Layer):
                sparse_combiner='sum',
                trainable=True,
                name=None,
+               do_fusion=False,
                **kwargs):
     super(_LinearModelLayer, self).__init__(
         name=name, trainable=trainable, **kwargs)
@@ -510,6 +511,7 @@ class _LinearModelLayer(Layer):
 
     self._state_manager = _StateManagerImpl(self, self.trainable)
     self.bias = None
+    self._do_fusion = do_fusion
 
   def build(self, _):
     # We need variable scopes for now because we want the variable partitioning
@@ -568,7 +570,8 @@ class _LinearModelLayer(Layer):
               transformation_cache=transformation_cache,
               state_manager=self._state_manager,
               sparse_combiner=self._sparse_combiner,
-              weight_var=weight_var)
+              weight_var=weight_var,
+              do_fusion=self._do_fusion)
           weighted_sums.append(weighted_sum)
 
       _verify_static_batch_size_equality(weighted_sums, self._feature_columns)
@@ -651,6 +654,7 @@ class LinearModel(training.Model):
                sparse_combiner='sum',
                trainable=True,
                name=None,
+               do_fusion=False,
                **kwargs):
     """Constructs a LinearLayer.
 
@@ -702,6 +706,7 @@ class LinearModel(training.Model):
         `GraphKeys.TRAINABLE_VARIABLES` (see `tf.Variable`).
       name: Name to give to the Linear Model. All variables and ops created will
         be scoped by this name.
+      do_fusion: fusion for get categorical_column's weight. Default to False.
       **kwargs: Keyword arguments to construct a layer.
 
     Raises:
@@ -716,6 +721,7 @@ class LinearModel(training.Model):
         sparse_combiner,
         trainable,
         name=self.name,
+        do_fusion=do_fusion,
         **kwargs)
 
   def call(self, features):
@@ -3108,7 +3114,7 @@ def is_feature_column_v2(feature_columns):
 
 
 def _create_weighted_sum(column, transformation_cache, state_manager,
-                         sparse_combiner, weight_var):
+                         sparse_combiner, weight_var, do_fusion=False):
   """Creates a weighted sum for a dense/categorical column for linear_model."""
   if isinstance(column, CategoricalColumn):
     return _create_categorical_column_weighted_sum(
@@ -3116,7 +3122,8 @@ def _create_weighted_sum(column, transformation_cache, state_manager,
         transformation_cache=transformation_cache,
         state_manager=state_manager,
         sparse_combiner=sparse_combiner,
-        weight_var=weight_var)
+        weight_var=weight_var,
+        do_fusion=do_fusion)
   else:
     return _create_dense_column_weighted_sum(
         column=column,
@@ -3173,7 +3180,7 @@ class CategoricalColumn(FeatureColumn):
 
 
 def _create_categorical_column_weighted_sum(
-    column, transformation_cache, state_manager, sparse_combiner, weight_var):
+    column, transformation_cache, state_manager, sparse_combiner, weight_var, do_fusion=False):
   # pylint: disable=g-doc-return-or-yield,g-doc-args
   """Create a weighted sum of a categorical column for linear_model.
 
@@ -3212,12 +3219,20 @@ def _create_categorical_column_weighted_sum(
     weight_tensor = sparse_ops.sparse_reshape(
         weight_tensor, [array_ops.shape(weight_tensor)[0], -1])
 
-  return embedding_ops.safe_embedding_lookup_sparse(
-      weight_var,
-      id_tensor,
-      sparse_weights=weight_tensor,
-      combiner=sparse_combiner,
-      name='weighted_sum')
+  if do_fusion:
+    return embedding_ops.fused_safe_embedding_lookup_sparse(
+        weight_var,
+        id_tensor,
+        sparse_weights=weight_tensor,
+        combiner=sparse_combiner,
+        name='weighted_sum')
+  else:
+    return embedding_ops.safe_embedding_lookup_sparse(
+        weight_var,
+        id_tensor,
+        sparse_weights=weight_tensor,
+        combiner=sparse_combiner,
+        name='weighted_sum')
 
 
 class SequenceDenseColumn(FeatureColumn):

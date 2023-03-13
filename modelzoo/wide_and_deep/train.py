@@ -207,13 +207,23 @@ class WDL():
         # linear part
         with tf.variable_scope(
                 'linear', partitioner=self._dense_layer_partitioner) as scope:
-            linear_logits = tf.feature_column.linear_model(
-                units=1,
-                features=self._feature,
-                feature_columns=self._wide_column,
-                sparse_combiner='sum',
-                weight_collections=None,
-                trainable=True)
+            if args.tf or not args.emb_fusion:
+                linear_logits = tf.feature_column.linear_model(
+                    units=1,
+                    features=self._feature,
+                    feature_columns=self._wide_column,
+                    sparse_combiner='sum',
+                    weight_collections=None,
+                    trainable=True)
+            else:
+                linear_logits = tf.feature_column.linear_model(
+                    units=1,
+                    features=self._feature,
+                    feature_columns=self._wide_column,
+                    sparse_combiner='sum',
+                    weight_collections=None,
+                    trainable=True,
+                    do_fusion=args.emb_fusion)
 
             self._add_layer_summary(linear_logits, scope.name)
 
