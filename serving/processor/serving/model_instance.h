@@ -59,6 +59,7 @@ class LocalSessionInstance {
   std::pair<std::string, SignatureDef> model_signature_;
   std::string model_json_signature_;
   SignatureInfo signature_info_;
+  std::string signature_hash_value_;
 
   std::string warmup_file_name_;
   IParser* parser_ = nullptr;
@@ -109,6 +110,7 @@ class RemoteSessionInstance {
   std::pair<std::string, SignatureDef> model_signature_;
   std::string model_json_signature_;
   SignatureInfo signature_info_;
+  std::string signature_hash_value_;
 
   std::string warmup_file_name_;
   IParser* parser_ = nullptr;

@@ -227,9 +227,10 @@ Status ModelSessionMgr::RunRestoreOps(
 
 ModelSession::ModelSession(SessionGroup* s,
     const std::string& select_session_policy,
-    const Version& version, IFeatureStoreMgr* sparse_storage)
+    const Version& version, IFeatureStoreMgr* sparse_storage,
+    const std::string& graph_hash_value)
     : session_group_(s), counter_(0), is_local_(false),
-      version_(version) {
+      version_(version), graph_hash_value_(graph_hash_value) {
   if (select_session_policy == "MOD") {
     select_session_policy_ = SelectSessionPolicy::MOD;
   } else if (select_session_policy == "RR") {
@@ -251,9 +252,10 @@ ModelSession::ModelSession(SessionGroup* s,
 }
 
 ModelSession::ModelSession(SessionGroup* s,
-    const std::string& select_session_policy, const Version& version)
+    const std::string& select_session_policy, const Version& version,
+    const std::string& graph_hash_value)
     : session_group_(s), counter_(0), is_local_(true),
-      version_(version) {
+      version_(version), graph_hash_value_(graph_hash_value) {
   if (select_session_policy == "MOD") {
     select_session_policy_ = SelectSessionPolicy::MOD;
   } else if (select_session_policy == "RR") {
@@ -313,18 +315,20 @@ Status ModelSession::InternalPredict(Request& req, Response& resp,
   req.inputs.emplace_back(model_version_name_, model_version_tensor_);
   ++counter_;
   Status status;
+  tensorflow::RunOptions run_options;
+  tensorflow::RunMetadata run_metadata;
+  run_metadata.set_graph_signature(graph_hash_value_);
   if (Tracer::GetTracer()->NeedTracing()) {
-    tensorflow::RunOptions run_options;
     run_options.set_trace_level(tensorflow::RunOptions::FULL_TRACE);
-    tensorflow::RunMetadata run_metadata;
     // TODO: which session selected to run on, add some policy here
     status = session_group_->Run(run_options, req.inputs,
         req.output_tensor_names, {}, &resp.outputs,
         &run_metadata, sess_id);
     Tracer::GetTracer()->GenTimeline(run_metadata);
   } else {
-    status = session_group_->Run(req.inputs, req.output_tensor_names,
-        {}, &resp.outputs, sess_id);
+    status = session_group_->Run(run_options, req.inputs,
+		req.output_tensor_names, {}, &resp.outputs,
+		&run_metadata, sess_id);
   }
   --counter_;
   return status;
@@ -351,18 +355,20 @@ Status ModelSession::InternalLocalPredict(Request& req,
   }
   ++counter_;
   Status status;
+  tensorflow::RunOptions run_options;
+  tensorflow::RunMetadata run_metadata;
+  run_metadata.set_graph_signature(graph_hash_value_);
   if (Tracer::GetTracer()->NeedTracing()) {
-    tensorflow::RunOptions run_options;
     run_options.set_trace_level(tensorflow::RunOptions::FULL_TRACE);
-    tensorflow::RunMetadata run_metadata;
     // TODO: which session selected to run on, add some policy here
     status = session_group_->Run(run_options, req.inputs,
         req.output_tensor_names, {}, &resp.outputs,
         &run_metadata, sess_id);
     Tracer::GetTracer()->GenTimeline(run_metadata); 
   } else {
-    status = session_group_->Run(req.inputs, req.output_tensor_names,
-        {}, &resp.outputs, sess_id);
+    status = session_group_->Run(run_options, req.inputs,
+        req.output_tensor_names, {}, &resp.outputs,
+        &run_metadata, sess_id);
   }
   --counter_;
   return status;
@@ -398,12 +404,13 @@ Status ModelSessionMgr::Warmup(Request& req, Response& resp, bool local) {
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
     IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt,
-    bool is_initialize, ModelConfig* config) {
+    bool is_initialize, ModelConfig* config,
+    const std::string& graph_hash_value) {
   ModelSession* new_model_session = nullptr;
   TF_RETURN_IF_ERROR(
       CreateModelSession(version, ckpt_name, sparse_storage,
                          is_incr_ckpt, is_initialize, config,
-                         &new_model_session));
+                         &new_model_session, graph_hash_value));
   ResetServingSession(new_model_session);
   return Status::OK();
 }
@@ -412,7 +419,8 @@ Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
     IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt,
     bool is_initialize, ModelConfig* config,
-    ModelSession** new_model_session) {
+    ModelSession** new_model_session,
+    const std::string& graph_hash_value) {
   SessionGroup* session_group = nullptr;
   std::vector<Session*> sessions;
   TF_RETURN_IF_ERROR(CreateSessionGroup(&session_group, config));
@@ -493,7 +501,7 @@ Status ModelSessionMgr::CreateModelSession(
   // ResetServingSession(session, real_version, sparse_storage);
   *new_model_session = new ModelSession(
       session_group, config->select_session_policy,
-      version, sparse_storage);
+      version, sparse_storage, graph_hash_value);
 
   return Status::OK();
 }
@@ -501,7 +509,8 @@ Status ModelSessionMgr::CreateModelSession(
 Status ModelSessionMgr::CreateModelSession(
     const Version& version,
     const char* saved_model_path,
-    ModelConfig* config) {
+    ModelConfig* config,
+    const std::string& graph_hash_value) {
   SessionGroup* session_group = nullptr;
   std::vector<Session*> sessions;
   TF_RETURN_IF_ERROR(CreateSessionGroup(&session_group, config));
@@ -527,7 +536,8 @@ Status ModelSessionMgr::CreateModelSession(
   }
 
   auto new_model_session = new ModelSession(
-      session_group, config->select_session_policy, version);
+      session_group, config->select_session_policy,
+      version, graph_hash_value);
   ResetServingSession(new_model_session);
 
   return Status::OK();
@@ -536,12 +546,13 @@ Status ModelSessionMgr::CreateModelSession(
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* full_ckpt_name,
     const char* incr_ckpt_name, bool is_incr_ckpt,
-    bool is_initialize, ModelConfig* config) {
+    bool is_initialize, ModelConfig* config,
+    const std::string& graph_hash_value) {
   ModelSession* new_model_session = nullptr;
   TF_RETURN_IF_ERROR(
       CreateModelSession(version, full_ckpt_name, incr_ckpt_name,
                          is_incr_ckpt, is_initialize, config,
-                         &new_model_session));
+                         &new_model_session, graph_hash_value));
   if (!is_incr_ckpt) {
     ResetServingSession(new_model_session);
   }
@@ -553,7 +564,8 @@ Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* full_ckpt_name,
     const char* incr_ckpt_name, bool is_incr_ckpt,
     bool is_initialize, ModelConfig* config,
-    ModelSession** new_model_session) {
+    ModelSession** new_model_session,
+    const std::string& graph_hash_value) {
   std::string restore_op_name =
       meta_graph_def_.saver_def().restore_op_name();
   std::string filename_tensor_name =
@@ -607,7 +619,8 @@ Status ModelSessionMgr::CreateModelSession(
 
   if (!is_incr_ckpt) {
     *new_model_session = new ModelSession(
-      session_group, config->select_session_policy, version);
+      session_group, config->select_session_policy,
+      version, graph_hash_value);
   } else {
     serving_model_session_->UpdateVersion(version);
   }

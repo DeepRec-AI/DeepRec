@@ -27,9 +27,10 @@ enum SelectSessionPolicy {
 };
 struct ModelSession {
   ModelSession(SessionGroup* s, const std::string& select_session_policy,
-      const Version& version, IFeatureStoreMgr* sparse_storage);
+      const Version& version, IFeatureStoreMgr* sparse_storage,
+      const std::string& graph_hash_value);
   ModelSession(SessionGroup* s, const std::string& select_session_policy,
-      const Version& version);
+      const Version& version, const std::string& graph_hash_value);
   virtual ~ModelSession();
 
   Status Predict(Request& req, Response& resp);
@@ -54,6 +55,7 @@ struct ModelSession {
   // Local storage or remote storage for sparse variable.
   bool is_local_ = true;
   Version version_;
+  std::string graph_hash_value_;
 
  private:
   int GetServingSessionId();
@@ -74,31 +76,35 @@ class ModelSessionMgr {
   Status CreateModelSession(
       const Version& version,
       const char* saved_model_path,
-      ModelConfig* config);
+      ModelConfig* config,
+      const std::string& graph_hash_value);
 
   Status CreateModelSession(
       const Version& version, const char* ckpt_name,
       IFeatureStoreMgr* sparse_storage,
       bool is_incr_ckpt, bool is_initialize,
-      ModelConfig* config);
+      ModelConfig* config, const std::string& graph_hash_value);
 
   Status CreateModelSession(
       const Version& version, const char* ckpt_name,
       IFeatureStoreMgr* sparse_storage,
       bool is_incr_ckpt, bool is_initialize,
       ModelConfig* config,
-      ModelSession** new_model_session);
+      ModelSession** new_model_session,
+      const std::string& graph_hash_value);
 
   Status CreateModelSession(
       const Version& version, const char* full_ckpt_name,
       const char* incr_ckpt_name, bool is_incr_ckpt,
-      bool is_initialize, ModelConfig* config);
+      bool is_initialize, ModelConfig* config,
+      const std::string& graph_hash_value);
  
   Status CreateModelSession(
       const Version& version, const char* full_ckpt_name,
       const char* incr_ckpt_name, bool is_incr_ckpt,
       bool is_initialize, ModelConfig* config,
-      ModelSession** new_model_session);
+      ModelSession** new_model_session,
+      const std::string& graph_hash_value);
 
   Status CleanupModelSession();
 
