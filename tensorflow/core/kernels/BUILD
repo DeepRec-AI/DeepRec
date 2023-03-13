@@ -2549,7 +2549,6 @@ tf_kernel_library(
     name = "sparse_conditional_accumulator_op",
     prefix = "sparse_conditional_accumulator_op",
     deps = DATA_FLOW_DEPS,
-    nocopts = "-fno-exceptions",
 )
 
 cc_library(
@@ -2831,8 +2830,7 @@ tf_kernel_library(
     srcs = ["kv_variable_ops.cc",
             "kv_variable_lookup_ops.cc",
             "kv_variable_save_restore_ops.cc"],
-    copts = ["-g"],
-    nocopts = "-fno-exceptions",
+    copts = tf_copts() + ["-g"],
     deps = [
         ":bounds_check",
         ":dense_update_functor",
@@ -2864,7 +2862,7 @@ cuda_library(
     srcs = [
         "//tensorflow/core:framework/embedding/embedding_var.cu.cc"
     ],
-    copts = ["-g"]
+    copts = tf_copts() + ["-g"]
         + if_cuda(["-DGOOGLE_CUDA=1"]) +
         select({
         "//conditions:default": [],
@@ -2875,7 +2873,6 @@ cuda_library(
             "-fcuda-flush-denormals-to-zero",
         ],
         }),
-    nocopts = "-fno-exceptions",
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/core:stream_executor",
@@ -6357,8 +6354,7 @@ tf_kernel_library(
         "training_ali_ops_gpu.h",
         "training_ali_ops.h"
     ],
-    copts = ["-g"],
-    nocopts = "-fno-exceptions",
+    copts = tf_copts(),
     deps = [
         ":bounds_check",
         ":training_op_helpers",
@@ -9019,8 +9015,7 @@ tf_kernel_library(
     gpu_srcs = [
         "unique_ali_op_gpu.cu.cc",
     ],
-    copts = ["-fexceptions"],
-    nocopts = "-fno-exceptions",
+    copts = tf_copts(),
     deps = ARRAY_DEPS + [
         "@com_google_absl//absl/container:flat_hash_map",
         "@sparsehash_c11//:dense_hash_map",
