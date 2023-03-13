@@ -1,7 +1,7 @@
 FROM ubuntu:18.04 AS bazel_image
 
 WORKDIR /root
-RUN sed -i -E 's/(security|archive|ports).ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+
 RUN apt update && apt install -y build-essential openjdk-8-jdk zip unzip wget python3
 RUN ln -s $(which python3) /usr/local/bin/python
 
@@ -16,7 +16,7 @@ RUN bash ./compile.sh
 RUN cp output/bazel /root/
 
 
-FROM accc-registry.cn-hangzhou.cr.aliyuncs.com/deeprec/deeprec:deeprec-base-cpu-py38-ubuntu22.04
+FROM alideeprec/deeprec-base:deeprec-base-cpu-py38-ubuntu22.04-arm64
 
 WORKDIR /root
 ENV EXTRA_BAZEL_ARGS "--host_javabase=@local_jdk//:jdk"
