@@ -15,6 +15,7 @@
 #include "tensorflow/cc/saved_model/constants.h"
 #include "tensorflow/cc/saved_model/signature_constants.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
+#include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
 
@@ -219,6 +220,10 @@ void InternalGetSignatureInfo(
   }
 }
 
+std::string GetHashValue(const std::string& s) {
+  return std::to_string(MurMurHash64(s));
+}
+
 } // namespace
 
 LocalSessionInstance::LocalSessionInstance(
@@ -297,7 +302,7 @@ Status LocalSessionInstance::LoadModelFromCheckpoint(
       version_.delta_ckpt_name.c_str(),
       /*is_incr_ckpt*/false,
       /*is_initialize*/is_initialize,
-      config));
+      config, signature_hash_value_));
 
   // Load delta model if existed
   if (version_.delta_ckpt_name.empty()) {
@@ -309,13 +314,14 @@ Status LocalSessionInstance::LoadModelFromCheckpoint(
       version_.delta_ckpt_name.c_str(),
       /*is_incr_ckpt*/true,
       /*is_initialize*/is_initialize,
-      config);
+      config, signature_hash_value_);
 }
 
 Status LocalSessionInstance::LoadSavedModel(
     ModelConfig* config) {
   return session_mgr_->CreateModelSession(version_,
-      version_.savedmodel_dir.c_str(), config);
+      version_.savedmodel_dir.c_str(), config,
+      signature_hash_value_);
 }
 
 Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
@@ -327,6 +333,7 @@ Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
                                   model_json_signature_);
       InternalGetSignatureInfo(model_signature_,
                                signature_info_);
+      signature_hash_value_ = GetHashValue(model_json_signature_);
       return Status::OK();
     }
   }
@@ -407,7 +414,8 @@ Status LocalSessionInstance::FullModelUpdate(
           /*is_incr_ckpt*/false,
           /*is_initialize*/false,
           model_config,
-          &new_model_session));
+          &new_model_session,
+          signature_hash_value_));
 
   // warmup model
   Warmup(new_model_session);
@@ -426,7 +434,8 @@ Status LocalSessionInstance::DeltaModelUpdate(
           version.delta_ckpt_name.c_str(),
           /*is_incr_ckpt*/true,
           /*is_initialize*/false,
-          model_config));
+          model_config,
+          signature_hash_value_));
 
   // Delta model update: No need to warmup model and
   // reset serving session, we don't create a new session.
@@ -454,6 +463,7 @@ Status RemoteSessionInstance::ReadModelSignature(ModelConfig* model_config) {
                                   model_json_signature_);
       InternalGetSignatureInfo(model_signature_,
                                signature_info_);
+      signature_hash_value_ = GetHashValue(model_json_signature_);
       return Status::OK();
     }
   }
@@ -467,7 +477,7 @@ Status RemoteSessionInstance::RecursionCreateSession(const Version& version,
         version.full_ckpt_name.c_str(),
         sparse_storage, /*is_incr_ckpt*/false,
         /*is_initialize*/storage_options_->is_init_storage_,
-        model_config));
+        model_config, signature_hash_value_));
 
   if (version.delta_ckpt_name.empty()) {
     return Status::OK();
@@ -476,7 +486,7 @@ Status RemoteSessionInstance::RecursionCreateSession(const Version& version,
         version.delta_ckpt_name.c_str(),
         sparse_storage, /*is_incr_ckpt*/true,
         /*is_initialize*/storage_options_->is_init_storage_,
-        model_config);
+        model_config, signature_hash_value_);
   }
 }
 
@@ -595,7 +605,7 @@ Status RemoteSessionInstance::FullModelUpdate(
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
       version.full_ckpt_name.c_str(), backup_storage_,
       /*is_incr_ckpt*/false, /*is_initialize*/false,
-      model_config, &new_model_session));
+      model_config, &new_model_session, signature_hash_value_));
 
   // warmup model
   Warmup(new_model_session);
@@ -615,7 +625,7 @@ Status RemoteSessionInstance::DeltaModelUpdate(
       session_mgr_->CreateModelSession(version,
           version.delta_ckpt_name.c_str(), serving_storage_,
           /*is_incr_ckpt*/true, /*is_initialize*/false,
-          model_config, &new_model_session));
+          model_config, &new_model_session, signature_hash_value_));
 
   // warmup model
   Warmup(new_model_session);
