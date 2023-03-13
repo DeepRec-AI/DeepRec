@@ -3072,7 +3072,6 @@ tf_cuda_library(
     ),
     hdrs = FRAMEWORK_INTERNAL_PUBLIC_HEADERS,
     copts = tf_copts(),
-    nocopts = "-fno-exceptions",
     linkopts = select({
         "//tensorflow:freebsd": ["-lm"],
         "//tensorflow:windows": [],
@@ -6053,23 +6052,23 @@ cuda_library(
         "framework/embedding/batch.cu.cc",
         "framework/embedding/gpu_hash_table.cu.cc",
     ],
-    copts = ["-g"] + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
-        + if_cuda(["-DGOOGLE_CUDA=1"]) +
-	select({
-        "//conditions:default": [],
-        "@local_config_cuda//cuda:using_nvcc": [
-            "-nvcc_options=relaxed-constexpr",
-            #"-nvcc_options=ftz=true",
-        ],
-        "@local_config_cuda//cuda:using_clang": [
-            "-fcuda-flush-denormals-to-zero",
-        ],
+    copts = tf_copts(allow_exceptions = True)
+        + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
+        + if_cuda(["-DGOOGLE_CUDA=1"])
+        + select({
+            "//conditions:default": [],
+            "@local_config_cuda//cuda:using_nvcc": [
+                "-nvcc_options=relaxed-constexpr",
+                #"-nvcc_options=ftz=true",
+            ],
+            "@local_config_cuda//cuda:using_clang": [
+                "-fcuda-flush-denormals-to-zero",
+            ],
         }),
-    nocopts = "-fno-exceptions",
     visibility = ["//visibility:public"],
     alwayslink = 1,
     deps = ["//tensorflow/stream_executor/cuda:cudart_stub",
-	    ":stream_executor",
+            ":stream_executor",
             "@sparsehash_c11//:dense_hash_map",
             "@libcuckoo//:libcuckoo",
             "@com_github_google_leveldb//:leveldb",

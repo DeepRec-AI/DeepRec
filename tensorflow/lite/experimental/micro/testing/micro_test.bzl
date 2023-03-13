@@ -7,7 +7,6 @@ def tflite_micro_cc_test(
         includes = [],
         defines = [],
         copts = ["-Werror", "-Wno-unused-variable"],
-        nocopts = "",
         linkopts = [],
         deps = [],
         tags = [],
@@ -27,8 +26,6 @@ def tflite_micro_cc_test(
         defines: list of `VAR` or `VAR=VAL` to pass to CPP for this rule and
                  its dependents.
         copts: gcc compilation flags for this rule only.
-        nocopts: list of gcc compilation flags to remove for this rule
-                 only. No regexp like for `cc_library`.
         linkopts: `gcc` flags to add to the linking phase. For "pure" ld flags,
                   prefix them with the `-Wl,` prefix here.
         deps: dependencies. only `tflite_bare_metal_cc_library()` dependencies
@@ -41,7 +38,6 @@ def tflite_micro_cc_test(
         includes = includes,
         defines = defines,
         copts = copts,
-        nocopts = nocopts,
         linkopts = linkopts,
         deps = deps,
         tags = tags,
