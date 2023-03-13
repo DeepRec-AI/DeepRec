@@ -1,6 +1,92 @@
-diff -uprN cpp/src/arrow/filesystem/api.h arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/api.h
---- cpp/src/arrow/filesystem/api.h	2021-07-22 20:38:01.000000000 +0800
-+++ arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/api.h	2022-09-29 17:54:02.517916929 +0800
+From 25bff8ede6a979f1667808bec1b0a6d1d78afdd5 Mon Sep 17 00:00:00 2001
+From: Tongxuan Liu <tongxuan.ltx@alibaba-inc.com>
+Date: Mon, 13 Mar 2023 16:38:27 +0800
+Subject: [PATCH] [AVX2] Add ARROW_HAVE_AVX2 for arrow to build code with AVX2.
+
+---
+ cpp/src/arrow/compute/exec/key_compare_avx2.cc |  2 ++
+ cpp/src/arrow/compute/exec/key_encode_avx2.cc  |  2 ++
+ cpp/src/arrow/compute/exec/key_hash_avx2.cc    |  2 ++
+ cpp/src/arrow/compute/exec/key_map_avx2.cc     |  2 ++
+ cpp/src/arrow/compute/exec/util_avx2.cc        |  2 ++
+ cpp/src/arrow/filesystem/api.h                 |  3 ---
+ cpp/src/arrow/filesystem/filesystem.cc         | 10 ----------
+ 7 files changed, 10 insertions(+), 13 deletions(-)
+
+diff --git a/cpp/src/arrow/compute/exec/key_compare_avx2.cc b/cpp/src/arrow/compute/exec/key_compare_avx2.cc
+index 6abdf6c..00e2fa6 100644
+--- a/cpp/src/arrow/compute/exec/key_compare_avx2.cc
++++ b/cpp/src/arrow/compute/exec/key_compare_avx2.cc
+@@ -15,7 +15,9 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++#if defined(ARROW_HAVE_AVX2)
+ #include <immintrin.h>
++#endif
+ 
+ #include "arrow/compute/exec/key_compare.h"
+ #include "arrow/util/bit_util.h"
+diff --git a/cpp/src/arrow/compute/exec/key_encode_avx2.cc b/cpp/src/arrow/compute/exec/key_encode_avx2.cc
+index d875412..992b2ae 100644
+--- a/cpp/src/arrow/compute/exec/key_encode_avx2.cc
++++ b/cpp/src/arrow/compute/exec/key_encode_avx2.cc
+@@ -15,7 +15,9 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++#if defined(ARROW_HAVE_AVX2)
+ #include <immintrin.h>
++#endif
+ 
+ #include "arrow/compute/exec/key_encode.h"
+ 
+diff --git a/cpp/src/arrow/compute/exec/key_hash_avx2.cc b/cpp/src/arrow/compute/exec/key_hash_avx2.cc
+index b58db01..f210c6a 100644
+--- a/cpp/src/arrow/compute/exec/key_hash_avx2.cc
++++ b/cpp/src/arrow/compute/exec/key_hash_avx2.cc
+@@ -15,7 +15,9 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++#if defined(ARROW_HAVE_AVX2)
+ #include <immintrin.h>
++#endif
+ 
+ #include "arrow/compute/exec/key_hash.h"
+ 
+diff --git a/cpp/src/arrow/compute/exec/key_map_avx2.cc b/cpp/src/arrow/compute/exec/key_map_avx2.cc
+index a2efb4d..dc097f2 100644
+--- a/cpp/src/arrow/compute/exec/key_map_avx2.cc
++++ b/cpp/src/arrow/compute/exec/key_map_avx2.cc
+@@ -15,7 +15,9 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++#if defined(ARROW_HAVE_AVX2)
+ #include <immintrin.h>
++#endif
+ 
+ #include "arrow/compute/exec/key_map.h"
+ 
+diff --git a/cpp/src/arrow/compute/exec/util_avx2.cc b/cpp/src/arrow/compute/exec/util_avx2.cc
+index 8cf0104..92aaddd 100644
+--- a/cpp/src/arrow/compute/exec/util_avx2.cc
++++ b/cpp/src/arrow/compute/exec/util_avx2.cc
+@@ -15,7 +15,9 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++#if defined(ARROW_HAVE_AVX2)
+ #include <immintrin.h>
++#endif
+ 
+ #include "arrow/compute/exec/util.h"
+ #include "arrow/util/bit_util.h"
+diff --git a/cpp/src/arrow/filesystem/api.h b/cpp/src/arrow/filesystem/api.h
+index 5b0c97d..4ab104d 100644
+--- a/cpp/src/arrow/filesystem/api.h
++++ b/cpp/src/arrow/filesystem/api.h
 @@ -23,6 +23,3 @@
  #include "arrow/filesystem/hdfs.h"        // IWYU pragma: export
  #include "arrow/filesystem/localfs.h"     // IWYU pragma: export
@@ -8,9 +94,10 @@ diff -uprN cpp/src/arrow/filesystem/api.h arrow-apache-arrow-5.0.0/cpp/src/arrow
 -#ifdef ARROW_S3
 -#include "arrow/filesystem/s3fs.h"  // IWYU pragma: export
 -#endif
-diff -uprN cpp/src/arrow/filesystem/filesystem.cc arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/filesystem.cc
---- cpp/src/arrow/filesystem/filesystem.cc	2021-07-22 20:38:01.000000000 +0800
-+++ arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/filesystem.cc	2022-09-29 17:53:44.388365471 +0800
+diff --git a/cpp/src/arrow/filesystem/filesystem.cc b/cpp/src/arrow/filesystem/filesystem.cc
+index 6b94d61..0a14816 100644
+--- a/cpp/src/arrow/filesystem/filesystem.cc
++++ b/cpp/src/arrow/filesystem/filesystem.cc
 @@ -24,9 +24,6 @@
  #ifdef ARROW_HDFS
  #include "arrow/filesystem/hdfs.h"
@@ -21,7 +108,7 @@ diff -uprN cpp/src/arrow/filesystem/filesystem.cc arrow-apache-arrow-5.0.0/cpp/s
  #include "arrow/filesystem/localfs.h"
  #include "arrow/filesystem/mockfs.h"
  #include "arrow/filesystem/path_util.h"
-@@ -692,14 +689,7 @@ Result<std::shared_ptr<FileSystem>> File
+@@ -692,14 +689,7 @@ Result<std::shared_ptr<FileSystem>> FileSystemFromUriReal(const Uri& uri,
  #endif
    }
    if (scheme == "s3") {
@@ -36,68 +123,6 @@ diff -uprN cpp/src/arrow/filesystem/filesystem.cc arrow-apache-arrow-5.0.0/cpp/s
    }
  
    if (scheme == "mock") {
-diff -uprN cpp/src/arrow/compute/exec/util_avx2.cc cpp/src/arrow/compute/exec/util_avx2.cc
---- cpp/src/arrow/compute/exec/util_avx2.cc     2021-07-22 12:38:01.000000000 +0000
-+++ cpp/src/arrow/compute/exec/util_avx2.cc     2022-10-25 08:21:22.873717048 +0000
-@@ -15,7 +15,9 @@
- // specific language governing permissions and limitations
- // under the License.
+-- 
+2.37.1
 
-+#if defined(ARROW_HAVE_AVX2)
- #include <immintrin.h>
-+#endif
-
- #include "arrow/compute/exec/util.h"
- #include "arrow/util/bit_util.h"
-diff -uprN cpp/src/arrow/compute/exec/key_encode_avx2.cc cpp/src/arrow/compute/exec/key_encode_avx2.cc
---- cpp/src/arrow/compute/exec/key_encode_avx2.cc       2021-07-22 12:38:11.000000000 +0000
-+++ cpp/src/arrow/compute/exec/key_encode_avx2.cc       2022-10-25 08:28:20.122506667 +0000
-@@ -15,7 +15,9 @@
- // specific language governing permissions and limitations
- // under the License.
-
-+#if defined(ARROW_HAVE_AVX2)
- #include <immintrin.h>
-+#endif
-
- #include "arrow/compute/exec/key_encode.h
-
-diff -uprN cpp/src/arrow/compute/exec/key_compare_avx2.cc cpp/src/arrow/compute/exec/key_compare_avx2.cc
---- cpp/src/arrow/compute/exec/key_compare_avx2.cc      2021-07-22 12:38:01.000000000 +0000
-+++ cpp/src/arrow/compute/exec/key_compare_avx2.cc      2022-10-25 08:21:22.873717048 +0000
-@@ -15,7 +15,9 @@
- // specific language governing permissions and limitations
- // under the License.
-
-+#if defined(ARROW_HAVE_AVX2)
- #include <immintrin.h>
-+#endif
-
- #include "arrow/compute/exec/key_compare.h"
- #include "arrow/util/bit_util.h"
-diff -uprN cpp/src/arrow/compute/exec/key_map_avx2.cc cpp/src/arrow/compute/exec/key_map_avx2.cc
---- cpp/src/arrow/compute/exec/key_map_avx2.cc  2021-07-22 12:38:01.000000000 +0000
-+++ cpp/src/arrow/compute/exec/key_map_avx2.cc      2022-10-25 08:39:30.419017559 +0000
-@@ -15,7 +15,9 @@
- // specific language governing permissions and limitations
- // under the License.
-
-+#if defined(ARROW_HAVE_AVX2)
- #include <immintrin.h>
-+#endif
-
- #include "arrow/compute/exec/key_map.h"
- 
-diff -uprN cpp/src/arrow/compute/exec/key_hash_avx2.cc cpp/src/arrow/compute/exec/key_hash_avx2.cc
---- cpp/src/arrow/compute/exec/key_hash_avx2.cc       2021-07-22 12:39:02.000000000 +0000
-+++ cpp/src/arrow/compute/exec/key_hash_avx2.cc       2022-10-25 08:33:17.623264893 +0000
-@@ -15,7 +15,9 @@
- // specific language governing permissions and limitations
- // under the License.
-
-+#if defined(ARROW_HAVE_AVX2)
- #include <immintrin.h>
-+#endif
-
- #include "arrow/compute/exec/key_hash.h"
- 

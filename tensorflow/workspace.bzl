@@ -1112,13 +1112,14 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         ],
     )
 
-    http_archive(
+    tf_http_archive(
         name = "arrow",
         build_file = clean_dep("//third_party:arrow.BUILD"),
-        patches = ["//third_party:arrow.patch"],
+        patch_file = [clean_dep("//third_party:arrow.patch")],
         sha256 = "ec3bdae6ccc08de5b5adcf9cbe7cbc085cab0ba06c8e6d3abfc3ed1cd4c1c9a2",
         strip_prefix = "arrow-apache-arrow-5.0.0",
         urls = [
+            "https://github.com/apache/arrow/archive/apache-arrow-5.0.0.tar.gz",
             "https://github.com/apache/arrow/archive/apache-arrow-5.0.0.tar.gz",
         ],
     )
