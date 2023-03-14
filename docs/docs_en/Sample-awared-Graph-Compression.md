@@ -38,15 +38,23 @@ TODO
 ### Inference
 
 ```
+USER_FEATURE = ['user_feature_0', 'user_feature_1']
+ITEM_FEATURE = ['item_feature_0', 'item_feature_1']
+ALL_FEATURE = USER_FEATURE + ITEM_FEATURE
+
 def serving_input_receiver_fn():
-    item_size = tf.placeholder(dtype=tf.int32, shape=[None], name='item_size')
-    user_tensors=[]
-    item_tensors=[]
-    for feature, tensor in feature_map:
-        if is_user_feature(feature):
-            user_tensors.append(tensor)
-        else:
-            item_tensors.append(tensor)
+  item_size = tf.placeholder(dtype=tf.int32, shape=[None], name='item_size')
+  features = {}
+  inputs = {"item_size": item_size}
+  user_tensors = []
+  item_tensors = []
+  for fea_name in ALL_FEATURE:
+    features[fea_name] = tf.placeholder(tf.string, [None], name=fea_name)
+    inputs[fea_name] = features[fea_name]
+    if fea_name in ITEM_FEATURE:
+      item_tensors.append(features[fea_name])
+    else:
+      user_tensors.append(features[fea_name])
 
     """Enable Sample-awared Graph Compression"""
     tf.graph_optimizer.enable_sample_awared_graph_compression(
@@ -54,7 +62,7 @@ def serving_input_receiver_fn():
         item_tensors,
         item_size)
 
-    return tf.estimator.export.ServingInputReceiver(feature_map, inputs)
+  return tf.estimator.export.ServingInputReceiver(features, inputs)
 
 estiamtor = ...
 estiamtor.export_savedmodel(output_dir, serving_input_receiver_fn)
@@ -63,3 +71,9 @@ estiamtor.export_savedmodel(output_dir, serving_input_receiver_fn)
 
 2. Input data format
     Generally, in the inference scenario, the input data is protobuf, which contains the values of each feature required by the model and the tensor indicating the number of items in the sample. The user tensor shape is [Duser], and the item tensor shape is [N, Ditem]
+
+## Performance
+
+Compressing user-side features reduces the end-to-end delay of Inference. In a cloud online service case, the performance results are as follows:
+
+![img_1.png](Sample-awared-Graph-Compression/img_1.png)

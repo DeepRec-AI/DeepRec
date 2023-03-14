@@ -76,7 +76,7 @@ def find_boundery_tensors(user_ops, item_ops):
         else:
           user_sets.add(op2)
           queue_user.append(op2)
-  logging.info("boundery_tensor_sets: %s", boundery_tensor_sets)
+  logging.info("[SampleAwaredGraphCompression] boundery_tensor_sets: %s", boundery_tensor_sets)
   return user_sets, item_sets, boundery_tensor_sets
 
 def is_shape_op(op):
@@ -94,7 +94,6 @@ def add_tile_op(boundery_tensor_sets, item_seq_length, user_sets, seq_mask_resha
     # as some constant operations, such as reshape, should not be tiled
     if len(t.get_shape().as_list()) > 0 and not t.get_shape().as_list()[0]:
       with ops.colocate_with(t.op):
-        logging.info("add_tile_op [%d]: %s, %s", tiled_num, t, t.consumers())
         user_expand = array_ops.expand_dims(t, 1)
         tile_shape = array_ops.concat([[1], item_seq_length, [1 for i in range(len(t.get_shape()[1:]))]], axis=0)
         user_tiled = array_ops.tile(user_expand, tile_shape)
@@ -113,9 +112,8 @@ def add_tile_op(boundery_tensor_sets, item_seq_length, user_sets, seq_mask_resha
           for index, input_t in enumerate(op.inputs):
             if input_t is t:
               op._update_input(index, seq_user_input)
-              logging.info("add_tile_op detail: %s, %s, %s", op, index, seq_user_input)
         tiled_num += 1
-  logging.info("add_tile_op: total %d", tiled_num)
+  logging.info("[SampleAwaredGraphCompression] add %d TileOp", tiled_num)
 
 class SampleAwaredGraph(object):
   # user_tensors: list of common tensor

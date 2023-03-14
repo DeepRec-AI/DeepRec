@@ -11,7 +11,7 @@ user_1_feature, item_2_feature, label_2
 user_1_feature, item_N_feature, label_N
 ```
 
-这导致在样本的存储存在冗余，浪费了存储空间，表达了无效信息量。
+这导致在样本的存储存在冗余，浪费了存储/传输空间，表达了无效信息量。
 ### 模型特点
 在这样的样本特点下，读入的冗余样本必然也衍生了计算冗余，针对上面的样本，训练模型的时候，batch内部，user_1_feature会重复的run sub-graph（如：Attention Graph）若干次。这部分计算是完全冗余的，可以在运行时节省掉，只计算一次。
 ## 功能
@@ -34,15 +34,23 @@ TODO
 ### Inference
 
 ```
+USER_FEATURE = ['user_feature_0', 'user_feature_1']
+ITEM_FEATURE = ['item_feature_0', 'item_feature_1']
+ALL_FEATURE = USER_FEATURE + ITEM_FEATURE
+
 def serving_input_receiver_fn():
-    item_size = tf.placeholder(dtype=tf.int32, shape=[None], name='item_size')
-    user_tensors=[]
-    item_tensors=[]
-    for feature, tensor in feature_map:
-        if is_user_feature(feature):
-            user_tensors.append(tensor)
-        else:
-            item_tensors.append(tensor)
+  item_size = tf.placeholder(dtype=tf.int32, shape=[None], name='item_size')
+  features = {}
+  inputs = {"item_size": item_size}
+  user_tensors = []
+  item_tensors = []
+  for fea_name in ALL_FEATURE:
+    features[fea_name] = tf.placeholder(tf.string, [None], name=fea_name)
+    inputs[fea_name] = features[fea_name]
+    if fea_name in ITEM_FEATURE:
+      item_tensors.append(features[fea_name])
+    else:
+      user_tensors.append(features[fea_name])
 
     """Enable Sample-awared Graph Compression"""
     tf.graph_optimizer.enable_sample_awared_graph_compression(
@@ -50,7 +58,7 @@ def serving_input_receiver_fn():
         item_tensors,
         item_size)
 
-    return tf.estimator.export.ServingInputReceiver(feature_map, inputs)
+  return tf.estimator.export.ServingInputReceiver(features, inputs)
 
 estiamtor = ...
 estiamtor.export_savedmodel(output_dir, serving_input_receiver_fn)
@@ -59,3 +67,8 @@ estiamtor.export_savedmodel(output_dir, serving_input_receiver_fn)
 
 2. 输入数据格式
 一般在inference场景下，输入数据为protobuf，protobuf中包含模型所需各个特征的值以及指示该样本中item数目的tensor, user tensor shape为[Duser], item tensor shape为[N, Ditem]
+
+## 性能
+该功能，将user侧特征进行压缩，减少了Inference端到端时延，在某云上业务线上服务中，性能结果如下：
+
+![img_1.png](Sample-awared-Graph-Compression/img_1.png)
