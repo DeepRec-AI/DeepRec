@@ -275,6 +275,7 @@ tf_cuda_library(
         "//tensorflow/core/platform",
         "@com_google_absl//absl/strings",
     ],
+    alwayslink = 1,
 )
 
 exports_files(
