@@ -96,7 +96,7 @@ swift_rules_dependencies()
 # files, in case the parsing of those build files depends on the bazel
 # version we require here.
 load("//tensorflow:version_check.bzl", "check_bazel_version_at_least")
-check_bazel_version_at_least("0.19.0")
+check_bazel_version_at_least("0.26.1")
 
 load("//third_party/android:android_configure.bzl", "android_configure")
 android_configure(name="local_config_android")
@@ -204,17 +204,6 @@ http_archive(
     sha256 = "cfbb0b136799c48cb79435facd0969c5a60a587a458e2d16f9752771027efbec",
     strip_prefix = "xfsprogs-5.5.0",
     urls = ["https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/xfsprogs/xfsprogs-5.5.0.tar.xz"],
-)
-
-http_archive(
-    name = "libaio",
-    build_file = "//third_party:libaio.BUILD",
-    sha256 = "b7cf93b29bbfb354213a0e8c0e82dfcf4e776157940d894750528714a0af2272",
-    strip_prefix = "libaio-libaio-0.3.112",
-    patches = [
-        "//third_party:libaio.patch",
-    ],
-    urls = ["https://pagure.io/libaio/archive/libaio-0.3.112/libaio-libaio-0.3.112.tar.gz"],
 )
 
 http_archive(

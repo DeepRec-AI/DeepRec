@@ -1113,6 +1113,17 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
+        name = "libaio",
+        build_file = clean_dep("//third_party:libaio.BUILD"),
+        sha256 = "b7cf93b29bbfb354213a0e8c0e82dfcf4e776157940d894750528714a0af2272",
+        strip_prefix = "libaio-libaio-0.3.112",
+        urls = [
+            "https://pagure.io/libaio/archive/libaio-0.3.112/libaio-libaio-0.3.112.tar.gz",
+            "https://pagure.io/libaio/archive/libaio-0.3.112/libaio-libaio-0.3.112.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
         name = "arrow",
         build_file = clean_dep("//third_party:arrow.BUILD"),
         patch_file = [clean_dep("//third_party:arrow.patch")],
