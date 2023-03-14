@@ -50,7 +50,7 @@ _TF_WORKSPACE_ROOT = ''
 _TF_BAZELRC = ''
 _TF_CURRENT_BAZEL_VERSION = None
 _TF_MIN_BAZEL_VERSION = '0.26.1'
-_TF_MAX_BAZEL_VERSION = '0.26.1'
+_TF_MAX_BAZEL_VERSION = '1.2.1'
 
 NCCL_LIB_PATHS = [
     'lib64/', 'lib/powerpc64le-linux-gnu/', 'lib/x86_64-linux-gnu/', ''
@@ -143,16 +143,17 @@ def write_action_env_to_bazelrc(var_name, var):
   write_to_bazelrc('build --action_env %s="%s"' % (var_name, str(var)))
 
 
-def run_shell(cmd, allow_non_zero=False):
+def run_shell(cmd, allow_non_zero=False, stderr=None):
+  if stderr is None:
+    stderr = sys.stdout
   if allow_non_zero:
     try:
-      output = subprocess.check_output(cmd)
+      output = subprocess.check_output(cmd, stderr=stderr)
     except subprocess.CalledProcessError as e:
       output = e.output
   else:
-    output = subprocess.check_output(cmd)
+    output = subprocess.check_output(cmd, stderr=stderr)
   return output.decode('UTF-8').strip()
-
 
 def cygpath(path):
   """Convert path from posix to windows."""
@@ -470,14 +471,14 @@ def check_bazel_version(min_version, max_version):
   """
   if which('bazel') is None:
     print('Cannot find bazel. Please install bazel.')
-    sys.exit(0)
-  curr_version = run_shell(
-      ['bazel', '--batch', '--bazelrc=/dev/null', 'version'])
+    sys.exit(1)
 
-  for line in curr_version.split('\n'):
-    if 'Build label: ' in line:
-      curr_version = line.split('Build label: ')[1]
-      break
+  stderr = open(os.devnull, 'wb')
+  curr_version = run_shell(['bazel', '--version'],
+                           allow_non_zero=True,
+                           stderr=stderr)
+  if curr_version.startswith('bazel '):
+    curr_version = curr_version.split('bazel ')[1]
 
   min_version_int = convert_version_to_int(min_version)
   curr_version_int = convert_version_to_int(curr_version)
