@@ -122,6 +122,7 @@ cc_library(
         "//tensorflow/core/util/tensor_bundle:naming",
         # mobile not supported yet
     ]),
+    alwayslink = 1,
 )
 
 tf_cc_test(

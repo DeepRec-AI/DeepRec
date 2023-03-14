@@ -25,6 +25,7 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
     ],
+    alwayslink = 1,
 )
 
 tf_gen_op_wrapper_cc(
