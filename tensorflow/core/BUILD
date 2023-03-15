@@ -2873,6 +2873,7 @@ cc_library(
     srcs = ["util/version_info.cc"],
     hdrs = ["public/version.h"],
     copts = tf_copts(),
+    alwayslink = 1,
 )
 
 FRAMEWORK_INTERNAL_PRIVATE_HEADERS = [
