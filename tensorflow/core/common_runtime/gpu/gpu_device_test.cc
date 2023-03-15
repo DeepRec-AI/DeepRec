@@ -63,7 +63,10 @@ void ExpectErrorMessageSubstr(const Status& s, StringPiece substr) {
 
 class GPUDeviceTest : public ::testing::Test {
  public:
-  void TearDown() override { GPUProcessState::singleton()->TestOnlyReset(); }
+  void TearDown() override {
+    BaseGPUDevice::TestOnlyReset();
+    GPUProcessState::singleton()->TestOnlyReset();
+  }
 
  protected:
   static SessionOptions MakeSessionOptions(

@@ -258,6 +258,35 @@ int VisibleDeviceCount() {
 #endif
 }
 
+void ParseStreamPriority(const std::string& priority_str,
+                         std::vector<std::vector<int>>& priority,
+                         int device_count, int stream_num_per_device) {
+  if (priority_str.empty()) return;
+
+  // 0,0,1;1,0,1;...
+  std::vector<std::string> strs =
+      str_util::Split(priority_str, ";");
+  if (device_count != strs.size()) {
+    LOG(FATAL) << "User set gpu device priority num " << strs.size()
+               << " must be equal to device count " << device_count;
+  }
+  // s: "0,0,1"
+  for (auto& s : strs) {
+    std::vector<std::string> tmp = str_util::Split(s, ",");
+    std::vector<int> each_priority;
+    for (auto& t : tmp) {
+      each_priority.emplace_back(std::stoi(t));
+    }
+    if (stream_num_per_device != each_priority.size()) {
+      LOG(FATAL) << "User set gpu device priority num per device: "
+                 << each_priority.size()
+                 << " must be equal to stream num per device: "
+                 << stream_num_per_device;
+    }
+    priority.emplace_back(each_priority);
+  }
+}
+
 }  // namespace
 
 class DirectSessionFactory : public SessionFactory {
@@ -421,6 +450,19 @@ class DirectSessionFactory : public SessionFactory {
         }
       }
 
+      // Check stream priority set by user
+      // "0,0,1;1,1,0" means: there are two physical device,
+      // and each device has three virtual devices,
+      // we set the priority of these streams on virtual devices.
+      std::string priority_str;
+      std::vector<std::vector<int>> priority;
+      Status s = ReadStringFromEnvVar("STREAM_PRIORITY", "", &priority_str);
+      if (!priority_str.empty()) {
+        ParseStreamPriority(priority_str, priority,
+                            user_set_gpu_ids.size(),
+                            stream_num_per_device);
+      }
+
       sorted_gpu_ids = user_set_gpu_ids;
       std::sort(sorted_gpu_ids.begin(), sorted_gpu_ids.end());
       ConfigProto* config = const_cast<ConfigProto*>(&options.config);
@@ -430,12 +472,20 @@ class DirectSessionFactory : public SessionFactory {
         auto virtual_devices =
             gpu_options->mutable_experimental()->add_virtual_devices();
         if (id == sorted_gpu_ids[curr_idx]) {
-          ++curr_idx;
           for (int i = 0; i < stream_num_per_device; ++i) {
             virtual_devices->add_memory_limit_mb(-1);
+            if (priority.size() > curr_idx) {
+              LOG(INFO) << "Device " << id << ", stream " << i
+                        << " priority is set to " << priority[curr_idx][i];
+              virtual_devices->add_priority(priority[curr_idx][i]);
+            }
           }
+          ++curr_idx;
         } else {
           virtual_devices->add_memory_limit_mb(-1);
+          if (!priority.empty()) {
+            virtual_devices->add_priority(0);
+          }
         }
       }
       if (curr_idx != sorted_gpu_ids.size()) {
