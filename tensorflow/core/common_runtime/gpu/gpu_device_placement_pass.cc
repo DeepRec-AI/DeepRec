@@ -68,8 +68,7 @@ class DevicePlacementPass : public GraphOptimizationPass {
     }
 
     // Put the nodes in front of the boundary nodes on the CPU
-    PlaceNodesOnCPU(cpu_device_name, boundary_node_set,
-                                 device_graph.get());
+    PlaceNodesOnCPU(cpu_device_name, boundary_node_set, device_graph.get());
     
     options.graph->swap(device_graph);
     return Status::OK();
@@ -113,10 +112,13 @@ class DevicePlacementPass : public GraphOptimizationPass {
       has_visit_node.insert(n);
       for (auto edge : n->out_edges()) {
 	Node *dst = edge->dst();
-	if (is_var_relate[dst->id()])
-	  boundary_node_set.insert(n);
-	else
+	if (is_var_relate[dst->id()]) {
+	  // skip the constant op that connects to compute graph
+	  if (!n->IsConstant())
+	    boundary_node_set.insert(n);
+	} else {
 	  queue.push(dst);
+	}
       }
     }
   }
