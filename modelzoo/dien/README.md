@@ -244,8 +244,9 @@ We provide the dataset in two formats:
 1. **CSV Format**
 Put data file into ./data/    
 For details of Data download, see [Data Preparation](data/README.md).
-We also provide these files at [Amazon CSV Dataset](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/csv_dataset/amazon_dataset_books.tar.xz).
+We also provide these files at [Amazon CSV Dataset](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/csv_dataset/amazon_dataset_books.tar.xz)(**Recommended**).
 2. **Parquet Format**
+
 Put data file into ./data/
 These files are available at [Amazon Parquet Dataset](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/parquet_dataset/amazon_dataset_books.tar.gz).
 
