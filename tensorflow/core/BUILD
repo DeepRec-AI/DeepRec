@@ -161,6 +161,11 @@ load(
 )
 # Placeholder for Google-internal load statements.
 
+load(
+    "//tensorflow/stream_executor:build_defs.bzl",
+    "if_gpu_is_configured",
+)
+
 package(
     default_visibility = [
         ":dependency_whitelist",
@@ -3796,7 +3801,9 @@ tf_cuda_library(
         ":protos_all_cc",
         ":stream_executor",
         "//third_party/eigen3",
-    ],
+    ] + if_gpu_is_configured([
+        "//tensorflow/stream_executor/cuda:cuda_platform",
+    ]),
     alwayslink = 1,
 )
 

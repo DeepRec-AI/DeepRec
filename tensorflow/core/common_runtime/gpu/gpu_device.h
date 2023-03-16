@@ -137,6 +137,13 @@ class BaseGPUDevice : public LocalDevice {
   // the compute stream and are not yet known to have completed.
   int PendingKernels();
 
+  int priority() const { return streams_[0]->priority; }
+  int priority(int i) const { return streams_[i]->priority; }
+
+  // Helper method for unit tests to reset the streams.
+  // Never use in production.
+  static void TestOnlyReset();
+
   void* GetStream() {
     CHECK(streams_.size() == 1);
     return streams_.front()->compute->implementation()->GpuStreamMemberHack();
@@ -167,6 +174,7 @@ class BaseGPUDevice : public LocalDevice {
     se::Stream* host_to_device = nullptr;
     se::Stream* device_to_host = nullptr;
     gtl::InlinedVector<se::Stream*, 4> device_to_device;
+    int priority = 0;
   };
   class StreamGroupFactory;
 
