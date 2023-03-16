@@ -37,6 +37,7 @@ cc_library(
     srcs = ["decision-tree-resource.cc"],
     hdrs = ["decision-tree-resource.h"],
     deps = DECISION_TREE_RESOURCE_DEPS,
+    alwayslink = 1,
 )
 
 cc_library(

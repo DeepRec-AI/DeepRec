@@ -75,7 +75,7 @@ swift_rules_dependencies()
 # files, in case the parsing of those build files depends on the bazel
 # version we require here.
 load("//tensorflow:version_check.bzl", "check_bazel_version_at_least")
-check_bazel_version_at_least("5.3.1")
+check_bazel_version_at_least("0.26.1")
 
 load("//third_party/android:android_configure.bzl", "android_configure")
 android_configure(name="local_config_android")
