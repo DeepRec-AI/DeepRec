@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/graph/costmodel.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 struct SessionOptions;
@@ -123,10 +124,38 @@ class OptimizationPassRegistration {
                                int phase,
                                std::unique_ptr<GraphOptimizationPass> pass,
                                string optimization_pass_name) {
-    pass->set_name(optimization_pass_name);
-    OptimizationPassRegistry::Global()->Register(grouping, phase,
-                                                 std::move(pass));
+    bool is_disable_current_pass = false;
+
+    // Disable XLA pass or not, default is false.
+    if (xla_pass_list.find(optimization_pass_name) != xla_pass_list.end()) {
+      TF_CHECK_OK(ReadBoolFromEnvVar("TF_DISABLE_XLA", false, &is_disable_current_pass));
+    }
+
+    if (!is_disable_current_pass) {
+      pass->set_name(optimization_pass_name);
+      OptimizationPassRegistry::Global()->Register(grouping, phase,
+						   std::move(pass));
+    }
   }
+
+ private:
+  std::unordered_set<std::string> xla_pass_list = {
+    "AsyncIoConversionPass",
+    "BuildCgmodeOpsPass",
+    "BuildXlaOpsPass",
+    "CloneConstantsForBetterClusteringPass",
+    "ClusterScopingPass",
+    "EncapsulateCGModeSubgraphsPass",
+    "EncapsulateSubgraphsPass",
+    "EncapsulateXlaComputationsPass",
+    "FunctionalizeControlFlowPass",
+    "IncreaseDynamismForAutoJitPass",
+    "IntroduceFloatingPointJitterPass",
+    "MarkForCompilationPass",
+    "MarkForCudaGraphModePass",
+    "PartiallyDeclusterPass",
+    "ReportClusteringInfoPass"
+  };
 };
 
 }  // namespace optimization_registration
