@@ -3,7 +3,6 @@
 The following is a brief directory structure and description for this example:
 ```
 ├── data                          # Data set directory
-│   └── README.md                   # Documentation describing how to prepare dataset
 ├── distribute_k8s                # Distributed training related files
 │   ├── distribute_k8s_BF16.yaml    # k8s yaml to crate a training job with BF16 feature
 │   ├── distribute_k8s_FP32.yaml    # k8s yaml to crate a training job
