@@ -3,15 +3,6 @@ workspace(name = "org_tensorflow")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
 http_archive(
-    name="io_bazel_rules_docker",
-    sha256="e2674bb36d5c39e3dfd28c18fb6f0568083c98209f0c5a0ee8eaf35ab4766f1d",
-    strip_prefix="rules_docker-251f6a68b439744094faff800cd029798edf9faa",
-    urls=[
-      "https://github.com/bazelbuild/rules_docker/archive/251f6a68b439744094faff800cd029798edf9faa.tar.gz"
-    ],
-)
-
-http_archive(
     name = "io_bazel_rules_closure",
     sha256 = "5b00383d08dd71f28503736db0500b6fb4dda47489ff5fc6bed42557c07c6ba9",
     strip_prefix = "rules_closure-308b05b2419edb5c8ee0471b67a40403df940149",
@@ -42,18 +33,6 @@ load(
 )
 
 bazel_toolchains_repositories()
-
-load(
-    "@io_bazel_rules_docker//repositories:repositories.bzl",
-    container_repositories = "repositories",
-)
-
-container_repositories()
-
-load("//third_party/toolchains/preconfig/generate:workspace.bzl",
-     "remote_config_workspace")
-
-remote_config_workspace()
 
 # Apple and Swift rules.
 http_archive(
@@ -96,7 +75,7 @@ swift_rules_dependencies()
 # files, in case the parsing of those build files depends on the bazel
 # version we require here.
 load("//tensorflow:version_check.bzl", "check_bazel_version_at_least")
-check_bazel_version_at_least("3.7.2")
+check_bazel_version_at_least("5.3.1")
 
 load("//third_party/android:android_configure.bzl", "android_configure")
 android_configure(name="local_config_android")
