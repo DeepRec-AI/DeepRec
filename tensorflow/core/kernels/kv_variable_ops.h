@@ -187,7 +187,6 @@ void DumpSsdIndexMeta(
   BundleWriter ssd_record_writer(Env::Default(),
                                  ssd_record_path);
   typedef EVFreqDumpIterator<int64> Int64DataDumpIterator;
-  typedef EVFreqDumpIterator<uint8> StringDumpIterator;
   size_t bytes_limit = 8 << 20;
   char* dump_buffer = new char[bytes_limit];
 

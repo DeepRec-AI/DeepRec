@@ -286,7 +286,6 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
         memcpy((char *)gpu_value_ptr->GetPtr(),
                (char *)memcpy_address[j] - sizeof(FixedLengthHeader),
                sizeof(FixedLengthHeader));
-        V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
         gpu_value_ptrs[i] = gpu_value_ptr;
       }
     }

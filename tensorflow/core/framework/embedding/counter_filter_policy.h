@@ -101,10 +101,10 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
       }
       if (value_ptr->GetFreq() >= config_.filter_freq) {
         if (!is_filter) {
-           V* v = ev_->LookupOrCreateEmb(value_ptr,
+           ev_->LookupOrCreateEmb(value_ptr,
                value_buff + i * ev_->ValueLen());
         } else {
-           V* v = ev_->LookupOrCreateEmb(value_ptr,
+           ev_->LookupOrCreateEmb(value_ptr,
                ev_->GetDefaultValue(key_buff[i]));
         }
       }
@@ -149,10 +149,10 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
       }
       if (value_ptr->GetFreq() >= config_.filter_freq) {
         if (!is_filter) {
-          V* v = ev_->LookupOrCreateEmb(value_ptr,
+          ev_->LookupOrCreateEmb(value_ptr,
                value_buff + i * ev_->ValueLen(), ev_allocator());
         } else {
-          V* v = ev_->LookupOrCreateEmb(value_ptr,
+          ev_->LookupOrCreateEmb(value_ptr,
               default_values +
                 (key_buff[i] % config_.default_value_dim)
                  * ev_->ValueLen(),

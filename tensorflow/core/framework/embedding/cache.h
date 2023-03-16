@@ -284,7 +284,7 @@ class LFUCache : public BatchCache<K> {
                         int64* cached_versions,
                         int64* cached_freqs) override {
     mutex_lock l(mu_);
-    size_t i;
+    size_t i = 0;
     size_t curr_freq = max_freq;
     auto it = freq_table[max_freq - 1].first->begin();
     while (i < k_size && curr_freq >= min_freq) {

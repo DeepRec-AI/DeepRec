@@ -243,11 +243,9 @@ class HbmDramIterator: public Iterator {
              embedding_buffer_ +
                 (hbm_ptr_cursor_ - fill_buffer_st_) * value_len_,
              dim);
-      V* tmp = (V*)val;
       hbm_ptr_cursor_++;
     } else {
       memcpy(val, value_list_[cursor_].first, dim);
-      V* tmp = (V*)val;
     }
   }
 

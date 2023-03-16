@@ -529,7 +529,7 @@ class KvSparseApplyFtrlOp : public OpKernel {
         T lr_scalar = lr.scalar<T>()();
         T l1_scalar = l1.scalar<T>()();
         T l2_scalar = l2.scalar<T>()();
-        T l2_shrinkage_scalar;
+        T l2_shrinkage_scalar = 0.0;
         if (has_l2_shrinkage) {
           l2_shrinkage_scalar = l2_shrinkage->scalar<T>()();
         }
@@ -741,7 +741,7 @@ class KvSparseApplyFtrlOpGPU : public OpKernel {
         T lr_scalar = lr.scalar<T>()();
         T l1_scalar = l1.scalar<T>()();
         T l2_scalar = l2.scalar<T>()();
-        T l2_shrinkage_scalar;
+        T l2_shrinkage_scalar = 0.0;
         if (has_l2_shrinkage) {
           l2_shrinkage_scalar = l2_shrinkage->scalar<T>()();
         }
@@ -1569,11 +1569,6 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
 
     int block_size = 128;
     int embedding_dim = var->ValueLen();
-    void* args[] = {(void*)&dev_var_ptr, (void*)&dev_m_ptr,
-                    (void*)&dev_v_ptr, (void*)&grad_base,
-                    (void*)&alpha, (void*)&beta1, (void*)&beta2,
-                    (void*)&epsilon, (void*)&embedding_dim,
-                    (void*)&task_size};
 
     functor::KvSparseApplyAdamHbm<GPUDevice, Tindex, T>()(
         block_size, embedding_dim,
@@ -2394,8 +2389,6 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
              &lr_scalar, &beta1_scalar,
              &beta1_power, &beta2_power,
              &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
-          auto beta1_power_scalar = beta1_power.scalar<T>();
-          auto beta2_power_scalar = beta2_power.scalar<T>();
 
           if (inner_dim > 0) {
             auto grad_flat = grad.flat_outer_dims<T>();
@@ -2688,7 +2681,6 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
 
         ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
         Tindex* indices_host = new Tindex[N];
-        volatile bool is_cpu_indices_ready = false;
         //Copy ids from GPU to CPU for CPU Lookup.
         auto stream = ctx->op_device_context()->stream();
         auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
