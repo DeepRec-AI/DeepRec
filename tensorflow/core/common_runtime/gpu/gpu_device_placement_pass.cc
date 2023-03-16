@@ -15,9 +15,10 @@ limitations under the License.
 
 #if GOOGLE_CUDA
 
-#include <string.h>
-#include <vector>
 #include <queue>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 #include "tensorflow/core/graph/algorithm.h"
@@ -75,51 +76,92 @@ class DevicePlacementPass : public GraphOptimizationPass {
   }
 
  private:
-  void GetDevicePlacementBoundaryNodes(
-      const Graph* dest, std::unordered_set<Node*>& boundary_node_set) {
+
+  void MarkComputeGraph(const Graph *dest, std::vector<bool> &is_var_relate) {
     // Get the starting node of the coloring algorithm
     std::queue<const Node*> q;
     for (Node *n : dest->op_nodes()) {
       if (n->IsVariable() || n->IsKvVarHandle() || n->IsControlFlow() ||
 	  n->type_string() == "VarHandleOp")
-	q.push(n);
+	q.emplace(n);
     }
 
-    Node* source_node = dest->source_node();
-
     // mark compute graph node
-    std::vector<bool> is_var_relate(dest->num_node_ids(), false);
     while (!q.empty()) {
       const Node *node = q.front();
       q.pop();
       is_var_relate[node->id()] = true;
-      for (const Edge *e : node->out_edges()) {
+      for (auto *e : node->out_edges()) {
 	if (!is_var_relate[e->dst()->id()])
-	  q.push(e->dst());
+	  q.emplace(e->dst());
       }
     }
+  }
+
+  void DealWithNode(Graph* dest, Node* n,
+                    const std::vector<bool>& is_var_relate,
+		    std::queue<Node *> &queue,
+		    std::unordered_set<Node *> has_visit_node,
+		    std::unordered_set<Node *> &boundary_node_set) {    
+    if (n->IsConstant()) {
+      // Classify the output edges of Const Op
+      bool is_connect_to_marked_graph = false;
+      std::unordered_set<const Edge *> edge_to_unmarked_graph;
+      for (auto edge : n->out_edges()) {
+	Node *dst = edge->dst();
+	if (is_var_relate[dst->id()]) {
+	  is_connect_to_marked_graph = true;
+	} else {
+	  edge_to_unmarked_graph.emplace(edge);
+	  queue.emplace(dst);
+	}
+      }
+      
+      // const op connects to marked graph and unmarked graph at the same time,
+      // duplicate a new const op node to avoid memcpy bewteen cpu and gpu.
+      if (is_connect_to_marked_graph && !edge_to_unmarked_graph.empty()) {
+	Node *new_node = dest->CopyNode(n);
+	std::string new_name(n->name() + "_duplicate");
+	new_node->set_name(new_name);
+	has_visit_node.emplace(new_node);
+
+	for (auto edge : edge_to_unmarked_graph) {
+	  Node *dst_node = edge->dst();
+	  dest->AddEdge(new_node, 0, dst_node, edge->dst_input());
+	  dest->RemoveEdge(edge);
+	}
+      }
+    } else {
+      for (auto edge : n->out_edges()) {
+	Node *dst = edge->dst();        
+	if (is_var_relate[dst->id()]) {
+	  boundary_node_set.emplace(n);
+	} else {
+	  queue.emplace(dst);
+	}
+      }
+    }
+  }
+
+  void GetDevicePlacementBoundaryNodes(
+      Graph* dest, std::unordered_set<Node*>& boundary_node_set) {
+    // mark compute graph node
+    std::vector<bool> is_var_relate(dest->num_node_ids(), false);
+    MarkComputeGraph(dest, is_var_relate);
 
     // get boundary node
-    std::queue<Node *> queue;
     std::unordered_set<Node *> has_visit_node;
-    queue.push(source_node);
+    std::queue<Node *> queue;
+    queue.emplace(dest->source_node());
     while (!queue.empty()) {
       Node *n = queue.front();
       queue.pop();
       if (has_visit_node.find(n) != has_visit_node.end())
 	continue;
 
-      has_visit_node.insert(n);
-      for (auto edge : n->out_edges()) {
-	Node *dst = edge->dst();
-	if (is_var_relate[dst->id()]) {
-	  // skip the constant op that connects to compute graph
-	  if (!n->IsConstant())
-	    boundary_node_set.insert(n);
-	} else {
-	  queue.push(dst);
-	}
-      }
+      has_visit_node.emplace(n);
+      DealWithNode(dest, n, is_var_relate, queue, has_visit_node,
+                   boundary_node_set);      
     }
   }
 
@@ -142,7 +184,7 @@ class DevicePlacementPass : public GraphOptimizationPass {
 
     std::vector<Node *> boundary_node_vec;
     for (const auto node : boundary_node_set) {
-      boundary_node_vec.push_back(node);
+      boundary_node_vec.emplace_back(node);
     }
     ReverseDFSFrom(*device_graph, boundary_node_vec,
                    std::move(set_stage_subgraph_node_device), nullptr);    
