@@ -107,10 +107,10 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
         value_ptr->SetStep(version_buff[i]);
       }
       if (!is_filter) {
-        V* v = ev_->LookupOrCreateEmb(value_ptr,
+        ev_->LookupOrCreateEmb(value_ptr,
             value_buff + i * ev_->ValueLen());
       }else {
-        V* v = ev_->LookupOrCreateEmb(value_ptr,
+        ev_->LookupOrCreateEmb(value_ptr,
             ev_->GetDefaultValue(key_buff[i]));
       }
     }
@@ -148,10 +148,10 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
         value_ptr->SetStep(version_buff[i]);
       }
       if (!is_filter) {
-        V* v = ev_->LookupOrCreateEmb(value_ptr,
+        ev_->LookupOrCreateEmb(value_ptr,
             value_buff + i * ev_->ValueLen(), ev_allocator());
-      }else {
-        V* v = ev_->LookupOrCreateEmb(value_ptr,
+      } else {
+        ev_->LookupOrCreateEmb(value_ptr,
             default_values +
                 (key_buff[i] % config_.default_value_dim)
                 * ev_->ValueLen(),

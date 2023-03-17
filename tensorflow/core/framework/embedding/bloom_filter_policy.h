@@ -226,10 +226,10 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
           value_ptr->SetStep(version_buff[i]);
         }
         if (!is_filter){
-          V* v = ev_->LookupOrCreateEmb(value_ptr,
+          ev_->LookupOrCreateEmb(value_ptr,
               value_buff + i * ev_->ValueLen());
         } else {
-          V* v = ev_->LookupOrCreateEmb(value_ptr,
+          ev_->LookupOrCreateEmb(value_ptr,
               ev_->GetDefaultValue(key_buff[i]));
         }
       }

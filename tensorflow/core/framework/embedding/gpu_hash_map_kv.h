@@ -121,9 +121,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
           keys_gpu, size * sizeof(K), cudaMemcpyDeviceToHost);
       cudaMemcpyAsync(values, values_gpu, size * value_len_ * sizeof(V),
           cudaMemcpyDeviceToHost);
-      cudaEvent_t is_finish;
-      cudaEventRecord(is_finish);
-      cudaEventSynchronize(is_finish);
+      EventSynchronize(NULL);
 
       TypedAllocator::Deallocate(alloc_, item_idxs, size);
       TypedAllocator::Deallocate(alloc_, keys_gpu, size);
@@ -156,9 +154,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
           hash_table_->d_bank_ptrs, hash_table_->d_existence_flag_ptrs,
           (emb_config.block_num * (1 + emb_config.slot_num)),
           hash_table_->initial_bank_size, stream);
-      cudaEvent_t is_finish;
-      cudaEventRecord(is_finish, stream);
-      cudaEventSynchronize(is_finish);
+      EventSynchronize(stream);
       TypedAllocator::Deallocate(alloc_, item_idxs, n);
       TypedAllocator::Deallocate(alloc_, value_gpu, value_import.size());
       TypedAllocator::Deallocate(alloc_, key_gpu, n);
@@ -272,6 +268,14 @@ class GPUHashMapKV : public KVInterface<K, V> {
     cudaMemcpy(hash_table_->d_existence_flag_ptrs,
         hash_table_->existence_flag_ptrs.data(),
     num_elements * sizeof(bool*), cudaMemcpyHostToDevice);
+  }
+
+  void EventSynchronize(const cudaStream_t& stream) {
+    cudaEvent_t is_finish;
+    cudaEventCreate(&is_finish);
+    cudaEventRecord(is_finish, stream);
+    cudaEventSynchronize(is_finish);
+    cudaEventDestroy(is_finish);
   }
 
  private:
