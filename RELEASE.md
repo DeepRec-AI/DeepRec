@@ -1,3 +1,105 @@
+# Release r1.15.5-deeprec2302
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Support same saver graph for EmbeddingVariable on GPU/CPU devices.
+- Support save and restore parameters in HBM storage of EmbeddingVariable.
+- Add GPU apply ops of Adam, AdamAsync, AdamW for multi-tier storage of EmbeddingVariable.
+- Place output of KvResourceIsInitializedOp on CPU.
+- Support GroupEmbedding to pack multiple feature columns lookup/apply.
+- Optimize HBM-DRAM storage of EmbeddingVariable with intra parallelism and fine-grained synchronization.
+- Support not saving filtered features when saving checkpoint.
+- Support localized mode fusion in GroupEmbedding.
+- Support to avoid preloaded IDs being eliminated in multi-tier embedding's cache.
+- Support COMPACT layout to reduce memory cost in EmbeddingVariable.
+- Support to ignore version when restore Embedding Variable with TF_EV_RESET_VERSION.
+- Support restore custom dimension of Embedding Variable.
+- Support merge and delete checkpoint files of SSDHash storage.
+
+### **Graph & Grappler Optimization**
+
+- Optimize SmartStage by prefetching LookupID op.
+- Decouple SmartStage and forward backward joint optimization.
+- Support Sample-awared Graph Compression.
+- Support CUDA multi-stream for Stage.
+- Improve Device Placement Optimization performance.
+- Add TensorBufferPutGpuOp to improve SmartStage performance on GPU device.
+
+### **Runtime Optimization**
+
+- Enable EVAllocator by default.
+- Optimize executor to eliminate sort latency and reduce memory.
+
+### **Ops & Hardware Acceleration**
+
+- Add list of GPU Ops for forward backward joint optimization.
+- Optimize FusedBatchNormGrad on CPU device.
+- Support NCHW format input for FusedBatchNormOp.
+- Use new asynchronous evaluation in Eigen to FusedBatchNorm.
+- Add exponential_avg_factor attribute to FusedBatchNorm* kernels.
+- Change AliUniqueGPU kernel implementation to AsyncOpKernel.
+- Support computing exponential running mean and variance in fused_batch_norm.
+- Upgrade oneDNN to 2.7 and ACL to 22.08.
+- Use global cache for MKL primitives for ARM.
+- Disable optimizing batch norm as sequence of post ops on AArch64.
+- Restore re-mapper and fix BatchMatmul and FactoryKeyCreator under AArch64 + ACL.
+
+### **Distributed**
+
+- Speedup SOK by GroupEmbedding which fuse multiple feature column together.
+
+### **Serving**
+
+- Support to setup gpu config in SessionGroup.
+- Support to use multiple GPUs in SessionGroup.
+- Support processor to set multi-stream option.
+- Add flag to disable per_session_host_allocator.
+- Run init_op on all sessions in session_group.
+- Skip invalid request and return error msg to client.
+- Use graph signature as the key to get runtime executor.
+
+### **Environment & Build**
+
+- Optimize compile time for kv_variable_ops module.
+- Add dataset headers for custom op compilation.
+- Add docker images for ARM based on ubuntu22.04.
+- Upgrade BAZEL version to 3.7.2.
+
+### **BugFix**
+
+- Do not cudaSetDevice to invisible GPU in CreateDevices.
+- Fix concurrency issue caused by not reference to same lock in multi-tier storage.
+- Fix parse input request bug.
+-  Fix the bug when saving empty GPU EmbeddingVariable. 
+- Fix the concurrency issue between feature eviction and embedding lookup in asynchronous training.
+
+### **ModelZoo**
+
+- Support Parquet Dataset in list of models.
+- Add GPU benchmark in Modelzoo.
+- Unify the usage of price column in Taobao dataset.
+- Add DeepFM model with int64 categorical id input.
+- Update dataset url in Modelzoo.
+
+### **Tool & Documents**
+
+- Add checkpoint meta transformer tool. 
+- Add list of user documents in English.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2302-cpu-py38-ubuntu20.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2302-gpu-py38-cu116-ubuntu20.04`
+
 # Release r1.15.5-deeprec2212u1
 
 ## **Major Features and Improvements**

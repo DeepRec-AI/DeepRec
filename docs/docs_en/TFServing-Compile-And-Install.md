@@ -43,7 +43,7 @@ We provide optimized TFServing which could highly improve performance in inferen
 
 Source Code: [https://github.com/AlibabaPAI/serving](https://github.com/AlibabaPAI/serving)
 
-Develop Branch: master, Latest Release Branch: deeprec2212
+Develop Branch: master, Latest Release Branch: deeprec2302
 
 ## TFServing Build
 
