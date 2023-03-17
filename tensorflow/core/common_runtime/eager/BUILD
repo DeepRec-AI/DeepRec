@@ -278,7 +278,7 @@ cc_library(
 cc_library(
     name = "mkl_eager_op_rewrite",
     srcs = ["mkl_eager_op_rewrite.cc"],
-    copts = tf_copts(),
+    copts = tf_copts() + ["-fexceptions"],
     deps = [
         ":eager_op_rewrite_registry",
         "//tensorflow/core:all_kernels",
@@ -287,6 +287,7 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:mkl_graph_util",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
