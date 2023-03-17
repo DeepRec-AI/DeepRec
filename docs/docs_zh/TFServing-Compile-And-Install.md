@@ -43,7 +43,7 @@
 
 代码库：[https://github.com/AlibabaPAI/serving](https://github.com/AlibabaPAI/serving)
 
-开发分支：master，最新Release分支：deeprec2212
+开发分支：master，最新Release分支：deeprec2302
 
 ## TFServing编译&打包
 
