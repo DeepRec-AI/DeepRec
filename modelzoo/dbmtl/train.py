@@ -930,8 +930,6 @@ def set_env_for_DeepRec():
     os.environ['STOP_STATISTIC_STEP'] = '110'
     os.environ['MALLOC_CONF'] = \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
-    if args.group_embedding:
-        tf.config.experimental.enable_distributed_strategy(strategy="localized")
 
 def check_stock_tf():
     import pkg_resources
