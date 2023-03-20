@@ -7691,6 +7691,54 @@ class EmbeddingColumnTest(test.TestCase):
     saver = saver_module.Saver()
 
   @test_util.run_deprecated_v1
+  def testEmbeddingVariableForInt32ID(self):
+    print("testEmbeddingVariableForInt32ID")
+    checkpoint_directory = self.get_temp_dir()
+    columns = fc.categorical_column_with_embedding(
+                                        "col_emb",
+                                        dtype=dtypes.int32)
+    W = fc.embedding_column(categorical_column=columns,
+            dimension=3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            combiner="mean")
+    ids = {}
+    ids["col_emb"] = sparse_tensor.SparseTensor(
+                      indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]],
+                      values=math_ops.cast([0,0,0,1,1,2], dtypes.int32),
+                      dense_shape=[6, 1])
+    emb= fc_old.input_layer(
+           ids, [W])
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    saver = saver_module.Saver()
+    init = variables_lib.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb_ori = sess.run([emb, train_op])
+      save_path = saver.save(sess, os.path.join(checkpoint_directory, "model1.ckpt"), global_step=12345)
+      print(save_path)
+      #for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
+      #  print('loading... ', name, shape)
+    with self.test_session() as sess:
+      saver.restore(sess, os.path.join(checkpoint_directory, "model1.ckpt-12345"))
+      emb_right = [[0.8282884, 0.8282884, 0.8282884],
+                   [0.8282884, 0.8282884, 0.8282884],
+                   [0.8282884, 0.8282884, 0.8282884],
+                   [0.7927219, 0.7927219, 0.7927219],
+                   [0.7927219, 0.7927219, 0.7927219],
+                   [0.6880261, 0.6880261, 0.6880261]]
+      emb_ori = sess.run(emb)
+      for i in range(6):
+        for j in range(3):
+          self.assertAlmostEqual(emb_ori[i][j], emb_right[i][j])
+
+
+  @test_util.run_deprecated_v1
   def test_transform_feature(self):
     a = fc.categorical_column_with_identity(key='aaa', num_buckets=3)
     a_embedded = fc.embedding_column(a, dimension=2)

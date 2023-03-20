@@ -4484,10 +4484,19 @@ class EmbeddingColumn(
         partitioner = None
       else:
         partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+      if is_weight_embedding or is_sequence_embedding:
+        categorical_column = self.categorical_column.categorical_column
+      else:
+        categorical_column = self.categorical_column
+      if categorical_column.dtype == dtypes.string:
+        key_dtype = dtypes.int64
+      else:
+        key_dtype = categorical_column.dtype
     if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn):
       ev_embeddings = variable_scope.get_embedding_variable_internal(
         name="ev_weights",
         embedding_dim=self.dimension,
+        key_dtype=key_dtype,
         initializer=self.initializer,
         trainable=(trainable and self.trainable),
         collections=weight_collections,
@@ -4507,6 +4516,7 @@ class EmbeddingColumn(
       embedding_weights = variable_scope.get_embedding_variable_internal(
         name='embedding_weights',
         embedding_dim=self.dimension,
+        key_dtype=key_dtype,
         initializer=self.initializer,
         trainable=self.trainable and trainable,
         collections=weight_collections,
@@ -4564,6 +4574,14 @@ class EmbeddingColumn(
         partitioner = None
       else:
         partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+      if is_weight_embedding or is_sequence_embedding:
+        categorical_column = self.categorical_column.categorical_column
+      else:
+        categorical_column = self.categorical_column
+      if categorical_column.dtype == dtypes.string:
+        key_dtype = dtypes.int64
+      else:
+        key_dtype = categorical_column.dtype
 
     if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn):
       raise TypeError("AdaptiveEmbeddingCategoricalColumn currently not supported")
@@ -4573,6 +4591,7 @@ class EmbeddingColumn(
       embedding_weights = variable_scope.get_embedding_variable_internal(
         name='embedding_weights',
         embedding_dim=self.dimension,
+        key_dtype=key_dtype,
         initializer=self.initializer,
         trainable=self.trainable and trainable,
         collections=weight_collections,

@@ -1094,7 +1094,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
       from tensorflow.python.feature_column import sequence_feature_column
       columns = sequence_feature_column.sequence_categorical_column_with_identity(key="col_emb", num_buckets=6)
-      emb_columns = sequence_feature_column.sequence_categorical_column_with_embedding(key="col_emb", dtype=dtypes.int32)
+      emb_columns = sequence_feature_column.sequence_categorical_column_with_embedding(key="col_emb", dtype=dtypes.int64)
 
       W = feature_column_v2.embedding_column(categorical_column=columns, dimension=3,
                               initializer=init_ops.ones_initializer(dtypes.float32))
