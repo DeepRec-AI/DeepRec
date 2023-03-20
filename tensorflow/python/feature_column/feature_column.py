@@ -2671,9 +2671,14 @@ class _SharedEmbeddingColumn(
             partitioner = None
           else:
             partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+          if self.categorical_column.dtype == dtypes.string:
+            key_dtype = dtypes.int64
+          else:
+            key_dtype = self.categorical_column.dtype
           embedding_weights = variable_scope.get_embedding_variable_internal(
             name='embedding_weights',
             embedding_dim=self.dimension,
+            key_dtype=key_dtype,
             initializer=self.initializer,
             trainable=self.trainable and trainable,
             collections=weight_collections,
