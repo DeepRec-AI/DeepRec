@@ -37,7 +37,7 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops import fused_embedding_ops
-from tensorflow.python.ops import group_embedding_lookup
+from tensorflow.python.ops import group_embedding_lookup_ops
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util.tf_export import tf_export
 
@@ -1657,7 +1657,6 @@ def group_embedding_lookup_sparse(params,
                                   name=None):
   """
     This interface is designed for fused multiple embedding lookup.
-
     Args:
       params: list, tuple
               a list or tuple of trainable *Variable* or *EmbeddingVariable*.
@@ -1668,7 +1667,6 @@ def group_embedding_lookup_sparse(params,
               a list or tuple of string to specify the combiner of each embedding lookup, 
               supported args is *sum* or *mean*
       name: The operations name
-
     Returns
     -------
     emb_vec: list
@@ -1778,12 +1776,12 @@ def group_embedding_lookup_sparse(params,
         output_index = output_index_list[group_id]
         with ops.name_scope(name, "localized_group_embedding_lookup_ev_dim{}".format(dim),
                             params + sp_ids) as name_scope:
-          outputs = group_embedding_lookup.multi_kv_resource_gather(ev_handlers[group_id],
-                                                                    ev_sp_values[group_id],
-                                                                    ev_sp_indices[group_id],
-                                                                    ev_sp_dense_shape[group_id],
-                                                                    ev_combiners[group_id],
-                                                                    dim)[0]
+          outputs = group_embedding_lookup_ops.group_embedding_var_lookup(ev_handlers[group_id],
+                                                                          ev_sp_values[group_id],
+                                                                          ev_sp_indices[group_id],
+                                                                          ev_sp_dense_shape[group_id],
+                                                                          ev_combiners[group_id],
+                                                                          dim)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
     
@@ -1818,12 +1816,12 @@ def group_embedding_lookup_sparse(params,
         output_index = output_index_list[group_id]
         with ops.name_scope(name, "localized_group_embedding_lookup_variable_dim{}".format(dim),
                             params + sp_ids) as name_scope:
-          outputs = group_embedding_lookup.multi_embedding_sparse_look_up(tf_handlers[group_id],
-                                                                                tf_sp_values[group_id],
-                                                                                tf_sp_indices[group_id],
-                                                                                tf_sp_dense_shape[group_id],
-                                                                                tf_combiners[group_id],
-                                                                                dim)[0]
+          outputs = group_embedding_lookup_ops.group_variable_lookup(tf_handlers[group_id],
+                                                                      tf_sp_values[group_id],
+                                                                      tf_sp_indices[group_id],
+                                                                      tf_sp_dense_shape[group_id],
+                                                                      tf_combiners[group_id],
+                                                                      dim)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
                                                                 

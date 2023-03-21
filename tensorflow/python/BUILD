@@ -3513,7 +3513,7 @@ py_library(
 py_library(
     name = "kv_variable_ops",
     srcs = ["ops/kv_variable_ops.py",
-            "ops/group_embedding_lookup.py"],
+            "ops/group_embedding_lookup_ops.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":array_ops",
