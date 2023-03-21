@@ -803,8 +803,10 @@ def get_arg_parser():
                         type=boolean_string,
                         default=False)
     parser.add_argument("--group_embedding", \
-                        help='Whether to enable Group Embedding. Defualt to False.',
-                        action='store_true')
+                        help='Whether to enable Group Embedding. Defualt to None.',
+                        type=str,
+                        choices=[None, 'localized', 'collective'],
+                        default=None)
 
     return parser
 
@@ -882,9 +884,9 @@ def set_env_for_DeepRec():
     os.environ['STOP_STATISTIC_STEP'] = '110'
     os.environ['MALLOC_CONF'] = \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
-    if args.group_embedding:
-        tf.config.experimental.enable_distributed_strategy(strategy="localized")
-
+    if args.group_embedding == "collective":
+        tf.config.experimental.enable_distributed_strategy(strategy="collective")
+        
 if __name__ == '__main__':
     parser = get_arg_parser()
     args = parser.parse_args()
