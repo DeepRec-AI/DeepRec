@@ -151,7 +151,12 @@ English (WIP): [https://deeprec.readthedocs.io/en/latest/](https://deeprec.readt
 
 Join the Official Discussion Group on DingTalk
 
-<img src="docs/README/deeprec_dingtalk.png" width="200">
+<img src="docs/README/dingtalk.JPG" width="200">
+
+Join the Official Discussion Group on WeChat
+
+<img src="docs/README/wechat.JPG" width="200">
+
 
 ## **License**
 
