@@ -235,7 +235,7 @@ Considering the above methods, we implement EV Initializer. EV Initializer gener
 ```python
 init_opt = tf.InitializerOption(initializer=tf.glorot_uniform_initializer,
                                 default_value_dim = 10000)
-ev_opt = tf.EmbeddingVariableOption(init_option=init)
+ev_opt = tf.EmbeddingVariableOption(init_option=init_opt)
 
 #Create EmbeddingVariable with get_embedding_variable
 emb_var = tf.get_embedding_variable("var", embedding_dim = 16, ev_option=ev_opt)
