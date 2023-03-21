@@ -11,11 +11,11 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.framework import dtypes
 
-__all__ = ["multi_kv_resource_gather", "_GroupGatherGrad",
-           "multi_embedding_sparse_look_up", "_GroupEmbeddingLookup"]
+__all__ = ["group_embedding_var_lookup", "_GroupGatherGrad",
+           "group_variable_lookup", "_GroupEmbeddingLookup"]
 
 #for GPU EV group_lookup
-def multi_kv_resource_gather(params,
+def group_embedding_var_lookup(params,
                              sp_values,
                              sp_indices,
                              sp_dense_shape,
@@ -28,7 +28,7 @@ def multi_kv_resource_gather(params,
   else:
     default_value = ops.convert_to_tensor(1.0)
     is_use_default_value_tensor = False
-  return gen_kv_variable_ops.multi_kv_resource_gather(params,
+  return gen_kv_variable_ops.group_embedding_var_lookup(params,
                                                       sp_values,
                                                       sp_indices,
                                                       sp_dense_shape,
@@ -37,7 +37,7 @@ def multi_kv_resource_gather(params,
                                                       dimensions,
                                                       is_use_default_value_tensor)
 
-@ops.RegisterGradient("MultiKvResourceGather")
+@ops.RegisterGradient("GroupEmbeddingVarLookup")
 def _GroupGatherGrad(op, *grads):
   ev_num = op.get_attr("num_lookups")
   return_grads = []
@@ -70,20 +70,30 @@ def _GroupGatherGrad(op, *grads):
   return return_grads
   
 #for GPU EV group_lookup
-def multi_embedding_sparse_look_up(params,
-                                  sp_values,
-                                  sp_indices,
-                                  sp_dense_shape,
-                                  combiners,
-                                  dimensions):
-  return gen_kv_variable_ops.multi_embedding_sparse_look_up(params,
-                                                      sp_values,
-                                                      sp_indices,
-                                                      sp_dense_shape,
-                                                      combiners,
-                                                      dimensions)
+def group_variable_lookup(params,
+                          sp_values,
+                          sp_indices,
+                          sp_dense_shape,
+                          combiners,
+                          dimensions,
+                          default_id=None):
+  if default_id is not None:
+    default_value = default_id
+  else:
+    default_value = ops.convert_to_tensor(0.0)
 
-@ops.RegisterGradient("MultiEmbeddingSparseLookUp")
+  is_use_default_value_tensor = True
+
+  return gen_kv_variable_ops.group_variable_lookup(params,
+                                                  sp_values,
+                                                  sp_indices,
+                                                  sp_dense_shape,
+                                                  default_value,
+                                                  combiners,
+                                                  dimensions,
+                                                  is_use_default_value_tensor)
+
+@ops.RegisterGradient("GroupVariableLookup")
 def _GroupEmbeddingLookup(op, *grads):
   ev_num = op.get_attr("num_lookups")
   return_grads = []
@@ -110,6 +120,6 @@ def _GroupEmbeddingLookup(op, *grads):
     grad = array_ops.reshape(grad, values_shape)
     indice = array_ops.reshape(indice, size)
     return_grads.append(ops.IndexedSlices(grad, indice, params_shape))
-  for _ in range(ev_num*3):
+  for _ in range(ev_num*3+1):
     return_grads.append(None)
   return return_grads
