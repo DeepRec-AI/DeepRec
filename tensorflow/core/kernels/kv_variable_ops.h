@@ -365,7 +365,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
 
   // save the ev with kSavedPartitionNum piece of tensor
   // so that we can dynamically load ev with changed partition number
-  bool save_unfiltered_features;
+  bool save_unfiltered_features = true;
   TF_CHECK_OK(ReadBoolFromEnvVar(
       "TF_EV_SAVE_FILTERED_FEATURES", true, &save_unfiltered_features));
   int64 filter_freq = ev->MinFreq();
@@ -375,7 +375,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
         if (tot_valueptr_list[i] == reinterpret_cast<V*>(-1)) {
             // only forward, no backward, bypass
         } else if (tot_valueptr_list[i] == nullptr) {
-          if (filter_freq) {
+          if (filter_freq != 0) {
             if (save_unfiltered_features) {
               key_filter_list_parts[partid].push_back(tot_key_list[i]);
             }
@@ -396,9 +396,15 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   for (size_t i = 0; i < tot_version_list.size(); i++) {
     for (int partid = 0; partid < kSavedPartitionNum; partid++) {
       if (tot_key_list[i] % kSavedPartitionNum == partid) {
-        if (tot_valueptr_list[i] == nullptr) {
-          if (save_unfiltered_features) {
-            version_filter_list_parts[partid].push_back(tot_version_list[i]);
+        if (tot_valueptr_list[i] == reinterpret_cast<V*>(-1)) {
+          // only forward, no backward, bypass
+        } else if (tot_valueptr_list[i] == nullptr) {
+          if (filter_freq != 0) {
+            if (save_unfiltered_features) {
+              version_filter_list_parts[partid].push_back(tot_version_list[i]);
+            }
+          } else {
+            version_list_parts[partid].push_back(tot_version_list[i]);
           }
         } else {
           version_list_parts[partid].push_back(tot_version_list[i]);
@@ -411,9 +417,15 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   for (size_t i = 0; i < tot_freq_list.size(); i++) {
     for (int partid = 0; partid < kSavedPartitionNum; partid++) {
       if (tot_key_list[i] % kSavedPartitionNum == partid) {
-        if (tot_valueptr_list[i] == nullptr) {
-          if (save_unfiltered_features) {
-            freq_filter_list_parts[partid].push_back(tot_freq_list[i]);
+        if (tot_valueptr_list[i] == reinterpret_cast<V*>(-1)) {
+          // only forward, no backward, bypass
+        } else if (tot_valueptr_list[i] == nullptr) {
+          if (filter_freq != 0) {
+            if (save_unfiltered_features) {
+              freq_filter_list_parts[partid].push_back(tot_freq_list[i]);
+            }
+          } else {
+            freq_list_parts[partid].push_back(tot_freq_list[i]);
           }
         } else {
           freq_list_parts[partid].push_back(tot_freq_list[i]);
