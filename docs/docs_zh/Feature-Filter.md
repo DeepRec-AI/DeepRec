@@ -92,3 +92,14 @@ for name, shape in checkpoint_utils.list_variables("xxxxx.ckpt"):
 **是否保存未准入特征的相关信息**
 
 用户有时在保存ckpt时不需要保存未准入特征的信息（例如未准入特征的信息在推理时是不需要的，因此可以不保存）。用户可以通过配置`TF_EV_SAVE_FILTERED_FEATURES`环境变量为`False`来设置不保存未准入特征的相关信息，从而减少checkpoint的大小。
+
+**去掉checkpoint中未准入特征的相关信息**
+
+对于即将上线服务的模型，checkpoint中未准入特征的信息是无用的，因此DeepRec提供了工具可以去除checkpoint中未准入特征的信息。在编译安装完DeepRec后，用户可以通过如下命令使用工具：
+```bash
+python Deeprec/tensorflow/python/tools/shrink_ckpt_with_filtered_features.py --input_checkpoint /root/code/model.ckpt --output_checkpoint /root/shrink.ckpt
+```
+该工具具有如下参数：
+
+- `input_checkpoint`:输入checkpoint的完整路径，必填
+- `output_checkpoint`:生成checkpoint的完整路径，必填

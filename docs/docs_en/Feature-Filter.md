@@ -93,3 +93,14 @@ Users can collect information about filtered features by reading data with `_fil
 **Whether to save information of filtered features**
 
 Users sometimes don‘t need to save the information of filtered features when saving the ckpt (for example, the information of filtered features is not needed during serving). Users can set the environment variable `TF_EV_SAVE_FILTERED_FEATURES` to `False` to not save the information of the filtered features, thus reducing the size of the checkpoint.
+
+**Remove the information of filtered features in checkpoint**
+
+For the model that is about to serve online, the information of the filtered features in the checkpoint is useless, therefore DeepRec provides tools that can remove the information of filtered features in the checkpoint. After compiling and installing DeepRec, users can use the tool with the following command:
+```bash
+python Deeprec/tensorflow/python/tools/shrink_ckpt_with_filtered_features.py --input_checkpoint /root/code/model.ckpt --output_checkpoint /root/shrink.ckpt
+```
+The tool has the following parameters：
+
+- `input_checkpoint`: The full path of the input checkpoint, required
+- `output_checkpoint`: The full path of the output checkpoint, required
