@@ -36,33 +36,33 @@ bazel_toolchains_repositories()
 
 # Apple and Swift rules.
 http_archive(
-    name = "build_bazel_rules_apple",
+    name = "build_bazel_rules_apple",                       # Apache License 2.0
     sha256 = "6efdde60c91724a2be7f89b0c0a64f01138a45e63ba5add2dca2645d981d23a1",
     urls = ["https://github.com/bazelbuild/rules_apple/releases/download/0.17.2/rules_apple.0.17.2.tar.gz"],
 )  # https://github.com/bazelbuild/rules_apple/releases
 http_archive(
-    name = "build_bazel_rules_swift",
+    name = "build_bazel_rules_swift",                        # Apache License 2.0
     sha256 = "96a86afcbdab215f8363e65a10cf023b752e90b23abf02272c4fc668fcb70311",
     urls = ["https://github.com/bazelbuild/rules_swift/releases/download/0.11.1/rules_swift.0.11.1.tar.gz"],
 )  # https://github.com/bazelbuild/rules_swift/releases
 http_archive(
-    name = "build_bazel_apple_support",
+    name = "build_bazel_apple_support",                      # Apache License 2.0
     sha256 = "7356dbd44dea71570a929d1d4731e870622151a5f27164d966dda97305f33471",
     urls = ["https://github.com/bazelbuild/apple_support/releases/download/0.6.0/apple_support.0.6.0.tar.gz"],
 )  # https://github.com/bazelbuild/apple_support/releases
 http_archive(
-    name = "bazel_skylib",
+    name = "bazel_skylib",                                    # Apache License 2.0
     sha256 = "1c531376ac7e5a180e0237938a2536de0c54d93f5c278634818e0efc952dd56c",
     urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.0.3/bazel-skylib-1.0.3.tar.gz"],
 )  # https://github.com/bazelbuild/bazel-skylib/releases
 http_archive(
-    name = "com_github_apple_swift_swift_protobuf",
+    name = "com_github_apple_swift_swift_protobuf",           # Apache License 2.0
     type = "zip",
     strip_prefix = "swift-protobuf-1.5.0/",
     urls = ["https://github.com/apple/swift-protobuf/archive/1.5.0.zip"],
 )  # https://github.com/apple/swift-protobuf/releases
 http_file(
-    name = "xctestrunner",
+    name = "xctestrunner",                                    # Apache License 2.0
     executable = 1,
     urls = ["https://github.com/google/xctestrunner/releases/download/0.2.7/ios_test_runner.par"],
 )  # https://github.com/google/xctestrunner/releases
@@ -133,7 +133,7 @@ http_archive(
 )
 
 http_archive(
-    name = "com_github_nelhage_rules_boost",
+    name = "com_github_nelhage_rules_boost",                  # Apache License 2.0
     sha256 = "4031539fe0af832c6b6ed6974d820d350299a291ba7337d6c599d4854e47ed88",
     strip_prefix = "rules_boost-4ee400beca08f524e7ea3be3ca41cce34454272f",
     urls = [
@@ -146,7 +146,7 @@ load("@com_github_nelhage_rules_boost//:boost/boost.bzl", "boost_deps")
 boost_deps()
 
 http_archive(
-    name = "colm",
+    name = "colm",                                            # MIT License
     build_file = "//third_party:colm.BUILD",
     sha256 = "4644956dd82bedf3795bb1a6fdf9ee8bdd33bd1e7769ef81ffdaa3da70c5a349",
     strip_prefix = "colm-0.13.0.6",
@@ -154,7 +154,7 @@ http_archive(
 )
 
 http_archive(
-    name = "ragel",
+    name = "ragel",                                           # MIT License
     build_file = "//third_party:ragel.BUILD",
     sha256 = "08bac6ff8ea9ee7bdd703373fe4d39274c87fecf7ae594774dfdc4f4dd4a5340",
     strip_prefix = "ragel-7.0.0.11",
@@ -162,7 +162,7 @@ http_archive(
 )
 
 http_archive(
-    name = "sctp",
+    name = "sctp",                                            #  GPL-2.0 license
     build_file = "//third_party:sctp.BUILD",
     sha256 = "3e9ab5b3844a8b65fc8152633aafe85f406e6da463e53921583dfc4a443ff03a",
     strip_prefix = "lksctp-tools-1.0.18",
@@ -170,7 +170,7 @@ http_archive(
 )
 
 http_archive(
-    name = "uuid",
+    name = "uuid",                                            #  GPL-2.0 license
     build_file = "//third_party:uuid.BUILD",
     sha256 = "37ac05d82c6410d89bc05d43cee101fefc8fe6cf6090b3ce7a1409a6f35db606",
     strip_prefix = "util-linux-2.35.1",
@@ -179,14 +179,14 @@ http_archive(
 
 http_archive(
     name = "xfs",
-    build_file = "//third_party:xfs.BUILD",
+    build_file = "//third_party:xfs.BUILD",               # GPL license
     sha256 = "cfbb0b136799c48cb79435facd0969c5a60a587a458e2d16f9752771027efbec",
     strip_prefix = "xfsprogs-5.5.0",
     urls = ["https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/xfsprogs/xfsprogs-5.5.0.tar.xz"],
 )
 
 http_archive(
-    name = "aliyun_oss_c_sdk",
+    name = "aliyun_oss_c_sdk",                                # Apache License 2.0
     build_file = "//serving/third_party:oss_c_sdk.BUILD",
     sha256 = "6450d3970578c794b23e9e1645440c6f42f63be3f82383097660db5cf2fba685",
     strip_prefix = "aliyun-oss-c-sdk-3.7.0",
@@ -196,7 +196,7 @@ http_archive(
 )
 
 http_archive(
-    name = "concurrent_queue",
+    name = "concurrent_queue",                            # BSD License/Boost Software License/zlib License
     build_file = "//serving/third_party:concurrent_queue.BUILD",
     sha256 = "c3aeb97c97169f743a53ca33812ea2ab61dd06dfd28319ca3f0a0771372fc7fc",
     strip_prefix = "concurrentqueue-1.0.2",
@@ -205,9 +205,8 @@ http_archive(
     ],
 )
 
-
 http_archive(
-    name = "libevent",
+    name = "libevent",                                    # BSD License
     build_file = "//serving/third_party:libevent.BUILD",
     sha256 = "7180a979aaa7000e1264da484f712d403fcf7679b1e9212c4e3d09f5c93efc24",
     patches = [
@@ -220,7 +219,7 @@ http_archive(
 )
 
 http_archive(
-    name = "hiredis",
+    name = "hiredis",                                     # BSD-3-Clause license
     build_file = "//serving/third_party:hiredis.BUILD",
     sha256 = "e0ab696e2f07deb4252dda45b703d09854e53b9703c7d52182ce5a22616c3819",
     strip_prefix = "hiredis-1.0.2",
@@ -230,7 +229,7 @@ http_archive(
 )
 
 http_archive(
-    name = "libexpat",
+    name = "libexpat",                                    # MIT license
     build_file = "//serving/third_party:libexpat.BUILD",
     sha256 = "574499cba22a599393e28d99ecfa1e7fc85be7d6651d543045244d5b561cb7ff",
     strip_prefix = "libexpat-R_2_2_6/expat",
@@ -240,7 +239,7 @@ http_archive(
 )
 
 http_archive(
-    name = "libapr1",
+    name = "libapr1",                                    # Apache License 2.0
     build_file = "//serving/third_party:libapr1.BUILD",
     sha256 = "1a0909a1146a214a6ab9de28902045461901baab4e0ee43797539ec05b6dbae0",
     strip_prefix = "apr-1.6.5",
@@ -253,7 +252,7 @@ http_archive(
 )
 
 http_archive(
-    name = "libaprutil1",
+    name = "libaprutil1",                                # Apache License 2.0
     build_file = "//serving/third_party:libaprutil1.BUILD",
     sha256 = "4c9ae319cedc16890fc2776920e7d529672dda9c3a9a9abd53bd80c2071b39af",
     strip_prefix = "apr-util-1.6.1",
@@ -266,7 +265,7 @@ http_archive(
 )
 
 http_archive(
-    name = "mxml",
+    name = "mxml",                                        # Apache License 2.0
     build_file = "//serving/third_party:mxml.BUILD",
     sha256 = "4d850d15cdd4fdb9e82817eb069050d7575059a9a2729c82b23440e4445da199",
     strip_prefix = "mxml-2.12",
@@ -279,7 +278,7 @@ http_archive(
 )
 
 http_archive(
-    name = "hugectr",
+    name = "hugectr",                                     # Apache License 2.0
     build_file = "//third_party:hugectr.BUILD",
     strip_prefix = "HugeCTR-4.3",
     patch_args = ["-p1"],

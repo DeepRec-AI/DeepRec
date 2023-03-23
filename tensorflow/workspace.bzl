@@ -93,7 +93,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     mkl_repository(
-        name = "mkl_linux",
+        name = "mkl_linux",                       # Apache License 2.0
         build_file = clean_dep("//third_party/mkl:mkl.BUILD"),
         sha256 = "a936d6b277a33d2a027a024ea8e65df62bd2e162c7ca52c48486ed9d5dc27160",
         strip_prefix = "mklml_lnx_2019.0.5.20190502",
@@ -103,7 +103,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         ],
     )
     mkl_repository(
-        name = "mkl_windows",
+        name = "mkl_windows",                     # Apache License 2.0
         build_file = clean_dep("//third_party/mkl:mkl.BUILD"),
         sha256 = "33cc27652df3b71d7cb84b26718b5a2e8965e2c864a502347db02746d0430d57",
         strip_prefix = "mklml_win_2020.0.20190813",
@@ -113,7 +113,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         ],
     )
     mkl_repository(
-        name = "mkl_darwin",
+        name = "mkl_darwin",                       # Apache License 2.0
         build_file = clean_dep("//third_party/mkl:mkl.BUILD"),
         sha256 = "2fbb71a0365d42a39ea7906568d69b1db3bfc9914fee75eedb06c5f32bf5fa68",
         strip_prefix = "mklml_mac_2019.0.5.20190502",
@@ -128,7 +128,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
               "and will be removed in the future.")
 
     tf_http_archive(
-        name = "cudnn_frontend_archive",
+        name = "cudnn_frontend_archive",           # MIT License
         build_file = clean_dep("//third_party:cudnn_frontend.BUILD"),
         patch_file = [clean_dep("//third_party:cudnn_frontend_header_fix.patch")],
         sha256 = "314569f65d5c7d05fb7e90157a838549db3e2cfb464c80a6a399b39a004690fa",
@@ -145,7 +145,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     # upgraded then update the version numbers on all three versions above
     # (Linux, Mac, Windows).
     tf_http_archive(
-        name = "mkl_dnn",
+        name = "mkl_dnn",                           # Apache License 2.0
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn.BUILD"),
         sha256 = "a0211aeb5e7dad50b97fa5dffc1a2fe2fe732572d4164e1ee8750a2ede43fbec",
         strip_prefix = "oneDNN-0.21.3",
@@ -156,7 +156,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "mkl_dnn_v1",
+        name = "mkl_dnn_v1",                        # Apache License 2.0
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn_v1.BUILD"),
         patch_file = [clean_dep("//third_party/mkl_dnn:oneDNN-v2.7.1-export-bf16-fp16-verbose-3.patch")],
         sha256 = "dc2b9bc851cd8d5a6c4622f7dc215bdb6b32349962875f8bf55cceed45a4c449",
@@ -168,7 +168,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "mkl_dnn_acl_compatible",
+        name = "mkl_dnn_acl_compatible",            # Apache License 2.0
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn_acl.BUILD"),
         patch_file = [
             "//third_party/mkl_dnn:onednn_acl_threadcap.patch", 
@@ -184,7 +184,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "compute_library",
+        name = "compute_library",                    # MIT License
         sha256 = "e20a060d3c4f803889d96c2f0b865004ba3ef4e228299a44339ea1c1ba827c85",
         strip_prefix = "ComputeLibrary-22.11",
         build_file = clean_dep("//third_party/compute_library:BUILD"),
@@ -200,9 +200,11 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "sparsehash_c11",
-        patch_file = [clean_dep("//third_party:sparsehash_c11.patch")],
+        name = "sparsehash_c11",                    # BSD-3-Clause License
         build_file = clean_dep("//third_party:sparsehash_c11.BUILD"),
+        patch_file = [
+            clean_dep("//third_party:sparsehash_c11.patch"),
+        ],
         sha256 = "d4a43cad1e27646ff0ef3a8ce3e18540dbcb1fdec6cc1d1cb9b5095a9ca2a755",
         strip_prefix = "sparsehash-c11-2.11.1",
         urls = [
@@ -212,7 +214,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "cuCollections",
+        name = "cuCollections",                     # Apache License 2.0
         patch_file = [clean_dep("//third_party:0001-cuco-modification-for-deeprec.patch")],
         build_file = clean_dep("//third_party:cuco.BUILD"),
         sha256 = "c5c77a1f96b439b67280e86483ce8d5994aa4d14b7627b1d3bd7880be6be23fa",
@@ -224,7 +226,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_google_absl",
+        name = "com_google_absl",            # Apache License 2.0
         patch_file = [clean_dep("//third_party:0001-abseil.patch")],
         build_file = clean_dep("//third_party:com_google_absl.BUILD"),
         sha256 = "acd93f6baaedc4414ebd08b33bebca7c7a46888916101d8c0b8083573526d070",  # SHARED_ABSL_SHA
@@ -236,7 +238,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "eigen_archive",
+        name = "eigen_archive",              # Mozilla Public License 2.0
         build_file = clean_dep("//third_party:eigen.BUILD"),
         patch_file = [clean_dep("//third_party/eigen3:eigen.patch")],
         sha256 = "2f046557f4093becf51b44c6339873c18e2f1ea55c4b3f3a08b7d15a1d9c6e5b",  # SHARED_EIGEN_SHA
@@ -259,7 +261,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "libxsmm_archive",
+        name = "libxsmm_archive",                        # BSD-3-Clause License
         build_file = clean_dep("//third_party:libxsmm.BUILD"),
         sha256 = "5fc1972471cd8e2b8b64ea017590193739fc88d9818e3d086621e5c08e86ea35",
         strip_prefix = "libxsmm-1.11",
@@ -270,7 +272,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_googlesource_code_re2",
+        name = "com_googlesource_code_re2",              # BSD-3-Clause License
         sha256 = "d070e2ffc5476c496a6a872a6f246bfddce8e7797d6ba605a7c8d72866743bf9",
         strip_prefix = "re2-506cfa4bffd060c06ec338ce50ea3468daa6c814",
         system_build_file = clean_dep("//third_party/systemlibs:re2.BUILD"),
@@ -281,7 +283,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_github_googlecloudplatform_google_cloud_cpp",
+        name = "com_github_googlecloudplatform_google_cloud_cpp",   # Apache License 2.0
         sha256 = "fd0c3e3b50f32af332b53857f8cd1bfa009e33d1eeecabc5c79a4825d906a90c",
         strip_prefix = "google-cloud-cpp-0.10.0",
         system_build_file = clean_dep("//third_party/systemlibs:google_cloud_cpp.BUILD"),
@@ -295,7 +297,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_github_googleapis_googleapis",
+        name = "com_github_googleapis_googleapis",                 # Apache License 2.0
         build_file = clean_dep("//third_party:googleapis.BUILD"),
         sha256 = "824870d87a176f26bcef663e92051f532fac756d1a06b404055dc078425f4378",
         strip_prefix = "googleapis-f81082ea1e2f85c43649bee26e0d9871d4b41cdb",
@@ -307,7 +309,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "gemmlowp",
+        name = "gemmlowp",                                        # Apache License 2.0
         sha256 = "6678b484d929f2d0d3229d8ac4e3b815a950c86bb9f17851471d143f6d4f7834",  # SHARED_GEMMLOWP_SHA
         strip_prefix = "gemmlowp-12fed0cd7cfcd9e169bf1925bc3a7a58725fdcc3",
         urls = [
@@ -317,7 +319,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "farmhash_archive",
+        name = "farmhash_archive",                                # MIT License
         build_file = clean_dep("//third_party:farmhash.BUILD"),
         sha256 = "6560547c63e4af82b0f202cb710ceabb3f21347a4b996db565a411da5b17aba0",  # SHARED_FARMHASH_SHA
         strip_prefix = "farmhash-816a4ae622e964763ca0862d9dbd19324a1eaf45",
@@ -328,7 +330,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "png_archive",
+        name = "png_archive",                                    # PNG Reference Library License
         build_file = clean_dep("//third_party:png.BUILD"),
         patch_file = [clean_dep("//third_party:png_fix_rpi.patch")],
         sha256 = "ca74a0dace179a8422187671aee97dd3892b53e168627145271cad5b5ac81307",
@@ -341,7 +343,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "org_sqlite",
+        name = "org_sqlite",                                     # Public Domain
         build_file = clean_dep("//third_party:sqlite.BUILD"),
         sha256 = "8ff0b79fd9118af7a760f1f6a98cac3e69daed325c8f9f0a581ecb62f797fd64",
         strip_prefix = "sqlite-amalgamation-3340000",
@@ -353,7 +355,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "gif_archive",
+        name = "gif_archive",                                    # PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
         build_file = clean_dep("//third_party:gif.BUILD"),
         patch_file = [clean_dep("//third_party:gif_fix_strtok_r.patch")],
         sha256 = "31da5562f44c5f15d63340a09a4fd62b48c45620cd302f77a6d9acf0077879bd",
@@ -366,7 +368,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "six_archive",
+        name = "six_archive",                                   # MIT license
         build_file = clean_dep("//third_party:six.BUILD"),
         sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
         strip_prefix = "six-1.10.0",
@@ -378,7 +380,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "astor_archive",
+        name = "astor_archive",                                 # BSD-3-Clause License
         build_file = clean_dep("//third_party:astor.BUILD"),
         sha256 = "95c30d87a6c2cf89aa628b87398466840f0ad8652f88eb173125a6df8533fb8d",
         strip_prefix = "astor-0.7.1",
@@ -390,7 +392,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "astunparse_archive",
+        name = "astunparse_archive",                           # PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
         build_file = clean_dep("//third_party:astunparse.BUILD"),
         sha256 = "5ad93a8456f0d084c3456d059fd9a92cce667963232cbf763eac3bc5b7940872",
         strip_prefix = "astunparse-1.6.3/lib",
@@ -413,7 +415,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "functools32_archive",
+        name = "functools32_archive",                             # PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
         build_file = clean_dep("//third_party:functools32.BUILD"),
         sha256 = "f6253dfbe0538ad2e387bd8fdfd9293c925d63553f5813c4e587745416501e6d",
         strip_prefix = "functools32-3.2.3-2",
@@ -424,7 +426,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "gast_archive",
+        name = "gast_archive",                                  # MIT license
         build_file = clean_dep("//third_party:gast.BUILD"),
         sha256 = "b881ef288a49aa81440d2c5eb8aeefd4c2bb8993d5f50edae7413a85bfdb3b57",
         strip_prefix = "gast-0.3.3",
@@ -436,7 +438,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "termcolor_archive",
+        name = "termcolor_archive",                            # PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
         build_file = clean_dep("//third_party:termcolor.BUILD"),
         sha256 = "1d6d69ce66211143803fbc56652b41d73b4a400a2891d7bf7a1cdf4c02de613b",
         strip_prefix = "termcolor-1.1.0",
@@ -448,7 +450,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "opt_einsum_archive",
+        name = "opt_einsum_archive",                          # MIT License
         build_file = clean_dep("//third_party:opt_einsum.BUILD"),
         sha256 = "d3d464b4da7ef09e444c30e4003a27def37f85ff10ff2671e5f7d7813adac35b",
         strip_prefix = "opt_einsum-2.3.2",
@@ -460,7 +462,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "absl_py",
+        name = "absl_py",                                     # Apache License 2.0
         sha256 = "603febc9b95a8f2979a7bdb77d2f5e4d9b30d4e0d59579f88eba67d4e4cc5462",
         strip_prefix = "abseil-py-pypi-v0.9.0",
         system_build_file = clean_dep("//third_party/systemlibs:absl_py.BUILD"),
@@ -476,7 +478,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "enum34_archive",
+        name = "enum34_archive",                             # PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
         urls = [
             "https://storage.googleapis.com/mirror.tensorflow.org/pypi.python.org/packages/bf/3e/31d502c25302814a7c2f1d3959d2a3b3f78e509002ba91aea64993936876/enum34-1.1.6.tar.gz",
             "https://pypi.python.org/packages/bf/3e/31d502c25302814a7c2f1d3959d2a3b3f78e509002ba91aea64993936876/enum34-1.1.6.tar.gz",
@@ -488,7 +490,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "org_python_pypi_backports_weakref",
+        name = "org_python_pypi_backports_weakref",         # PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
         build_file = clean_dep("//third_party:backports_weakref.BUILD"),
         sha256 = "8813bf712a66b3d8b85dc289e1104ed220f1878cf981e2fe756dfaabe9a82892",
         strip_prefix = "backports.weakref-1.0rc1/src",
@@ -522,7 +524,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     PROTOBUF_PATCH = "//third_party/protobuf:protobuf.patch"
 
     tf_http_archive(
-        name = "com_google_protobuf",
+        name = "com_google_protobuf",                        # MIT license
         patch_file = [clean_dep(PROTOBUF_PATCH)],
         sha256 = PROTOBUF_SHA256,
         strip_prefix = PROTOBUF_STRIP_PREFIX,
@@ -534,7 +536,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "nsync",
+        name = "nsync",                                     # Apache License 2.0
         sha256 = "caf32e6b3d478b78cff6c2ba009c3400f8251f646804bcb65465666a9cea93c4",
         strip_prefix = "nsync-1.22.0",
         system_build_file = clean_dep("//third_party/systemlibs:nsync.BUILD"),
@@ -545,7 +547,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_google_googletest",
+        name = "com_google_googletest",                     # BSD-3-Clause License
         sha256 = "ff7a82736e158c077e76188232eac77913a15dac0b22508c390ab3f88e6d6d86",
         strip_prefix = "googletest-b6cd405286ed8635ece71c72f118e659f4ade3fb",
         urls = [
@@ -555,7 +557,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_github_gflags_gflags",
+        name = "com_github_gflags_gflags",                 # BSD-3-Clause License
         sha256 = "ae27cdbcd6a2f935baa78e4f21f675649271634c092b1be01469440495609d0e",
         strip_prefix = "gflags-2.2.1",
         urls = [
@@ -565,7 +567,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "pcre",
+        name = "pcre",                                     # MIT License
         build_file = clean_dep("//third_party:pcre.BUILD"),
         sha256 = "aecafd4af3bd0f3935721af77b889d9024b2e01d96b58471bd91a3063fb47728",
         strip_prefix = "pcre-8.44",
@@ -577,7 +579,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "swig",
+        name = "swig",                                    # GPLv3 License
         build_file = clean_dep("//third_party:swig.BUILD"),
         sha256 = "58a475dbbd4a4d7075e5fe86d4e54c9edde39847cdb96a3053d87cb64a23a453",
         strip_prefix = "swig-3.0.8",
@@ -590,7 +592,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "curl",
+        name = "curl",                                    # MIT License
         build_file = clean_dep("//third_party:curl.BUILD"),
 	sha256 = "ed936c0b02c06d42cf84b39dd12bb14b62d77c7c4e875ade022280df5dcc81d7",
         strip_prefix = "curl-7.78.0",
@@ -603,7 +605,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     # WARNING: make sure ncteisen@ and vpai@ are cc-ed on any CL to change the below rule
     tf_http_archive(
-        name = "grpc",
+        name = "grpc",                                   # Apache License 2.0
         patch_file = [clean_dep("//third_party:grpc_gettid.patch")],
         sha256 = "67a6c26db56f345f7cee846e681db2c23f919eba46dd639b09462d1b6203d28c",
         strip_prefix = "grpc-4566c2a29ebec0835643b972eb99f4306c4234a3",
@@ -615,7 +617,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_github_nanopb_nanopb",
+        name = "com_github_nanopb_nanopb",              # Zlib License
         sha256 = "8bbbb1e78d4ddb0a1919276924ab10d11b631df48b657d960e0c795a25515735",
         build_file = "@grpc//third_party:nanopb.BUILD",
         strip_prefix = "nanopb-f8ac463766281625ad710900479130c7fcb4d63b",
@@ -626,7 +628,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "linenoise",
+        name = "linenoise",                             # BSD-2-Clause License
         build_file = clean_dep("//third_party:linenoise.BUILD"),
         sha256 = "7f51f45887a3d31b4ce4fa5965210a5e64637ceac12720cfce7954d6a2e812f7",
         strip_prefix = "linenoise-c894b9e59f02203dbe4e2be657572cf88c4230c3",
@@ -644,7 +646,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         "https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT),
     ]
     tf_http_archive(
-        name = "llvm-project",
+        name = "llvm-project",                          # Apache License 2.0
         sha256 = LLVM_SHA256,
         strip_prefix = "llvm-project-" + LLVM_COMMIT,
         urls = LLVM_URLS,
@@ -656,7 +658,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "lmdb",
+        name = "lmdb",                                 # OpenLDAP Public License
         build_file = clean_dep("//third_party:lmdb.BUILD"),
         sha256 = "f3927859882eb608868c8c31586bb7eb84562a40a6bf5cc3e13b6b564641ea28",
         strip_prefix = "lmdb-LMDB_0.9.22/libraries/liblmdb",
@@ -668,7 +670,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "jsoncpp_git",
+        name = "jsoncpp_git",                         # Public Domain/MIT License
         build_file = clean_dep("//third_party:jsoncpp.BUILD"),
         sha256 = "c49deac9e0933bcb7044f08516861a2d560988540b23de2ac1ad443b219afdb6",
         strip_prefix = "jsoncpp-1.8.4",
@@ -680,7 +682,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "boringssl",
+        name = "boringssl",                           # OpenSSL License/SSLeay License, BSD style License
         patch_file = [clean_dep("//third_party:0001-boringssl.patch")],
         sha256 = "1188e29000013ed6517168600fc35a010d58c5d321846d6a6dfee74e4c788b45",
         strip_prefix = "boringssl-7f634429a04abc48e2eb041c81c5235816c96514",
@@ -692,7 +694,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "zlib_archive",
+        name = "zlib_archive",                        # zlib License
         build_file = clean_dep("//third_party:zlib.BUILD"),
         sha256 = "b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30",
         strip_prefix = "zlib-1.2.13",
@@ -715,7 +717,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     # Note: snappy is placed earlier as tensorflow's snappy does not include snappy-c
     http_archive(
-        name = "snappy",
+        name = "snappy",                             # BSD 2-Clause License
         build_file = clean_dep("//third_party:snappy.BUILD"),
         sha256 = "16b677f07832a612b0836178db7f374e414f94657c138e6993cbfc5dcc58651f",
         strip_prefix = "snappy-1.1.8",
@@ -726,7 +728,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "nccl_archive",
+        name = "nccl_archive",                      # BSD License
         build_file = clean_dep("//third_party:nccl/archive.BUILD"),
         patch_file = [clean_dep("//third_party/nccl:archive.patch")],
         sha256 = "9a7633e224982e2b60fa6b397d895d20d6b7498e3e02f46f98a5a4e187c5a44c",
@@ -807,7 +809,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_google_pprof",
+        name = "com_google_pprof",                  # Apache License 2.0
         build_file = clean_dep("//third_party:pprof.BUILD"),
         sha256 = "e0928ca4aa10ea1e0551e2d7ce4d1d7ea2d84b2abbdef082b0da84268791d0c4",
         strip_prefix = "pprof-c0fb62ec88c411cc91194465e54db2632845b650",
@@ -818,7 +820,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "cub_archive",
+        name = "cub_archive",                      # BSD-3-Clause License
         build_file = clean_dep("//third_party:cub.BUILD"),
         sha256 = "6bfa06ab52a650ae7ee6963143a0bbc667d6504822cbd9670369b598f18c58c3",
         strip_prefix = "cub-1.8.0",
@@ -829,7 +831,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "nvtx_archive",
+        name = "nvtx_archive",                    # Apache License 2.0
         build_file = clean_dep("//third_party:nvtx.BUILD"),
         sha256 = "bb8d1536aad708ec807bc675e12e5838c2f84481dec4005cd7a9bbd49e326ba1",
         strip_prefix = "NVTX-3.0.1/c/include",
@@ -840,7 +842,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "rocprim_archive",
+        name = "rocprim_archive",                 # MIT License
         build_file = clean_dep("//third_party:rocprim.BUILD"),
         sha256 = "3c178461ead70ce6adb60c836a35a52564968af31dfa81f4157ab72b5f14d31f",
         strip_prefix = "rocPRIM-4a33d328f8352df1654271939da66914f2334424",
@@ -851,7 +853,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "cython",
+        name = "cython",                         # Apache License 2.0
         build_file = clean_dep("//third_party:cython.BUILD"),
         delete = ["BUILD.bazel"],
         sha256 = "bccc9aa050ea02595b2440188813b936eaf345e85fb9692790cecfe095cf91aa",
@@ -875,7 +877,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "double_conversion",
+        name = "double_conversion",                # BSD-3-Clause License
         build_file = clean_dep("//third_party:double_conversion.BUILD"),
         sha256 = "2f7fbffac0d98d201ad0586f686034371a6d152ca67508ab611adc2386ad30de",
         strip_prefix = "double-conversion-3992066a95b823efc8ccc1baf82a1cfc73f6e9b8",
@@ -969,7 +971,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "build_bazel_rules_android",
+        name = "build_bazel_rules_android",                 # Apache License 2.0
         sha256 = "cd06d15dd8bb59926e4d65f9003bfc20f9da4b2519985c27e190cddc8b7a7806",
         strip_prefix = "rules_android-0.1.1",
         urls = [
@@ -979,7 +981,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "tbb",
+        name = "tbb",                                       # Apache License 2.0
         build_file = clean_dep("//third_party/ngraph:tbb.BUILD"),
         sha256 = "c3245012296f09f1418b78a8c2f17df5188b3bd0db620f7fd5fabe363320805a",
         strip_prefix = "tbb-2019_U1",
@@ -990,7 +992,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "ngraph",
+        name = "ngraph",                                   # Apache License 2.0
         build_file = clean_dep("//third_party/ngraph:ngraph.BUILD"),
         sha256 = "a1780f24a1381fc25e323b4b2d08b6ef5129f42e011305b2a34dcf43a48030d5",
         strip_prefix = "ngraph-0.11.0",
@@ -1001,7 +1003,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "nlohmann_json_lib",
+        name = "nlohmann_json_lib",                        # MIT License
         build_file = clean_dep("//third_party/ngraph:nlohmann_json.BUILD"),
         sha256 = "c377963a95989270c943d522bfefe7b889ef5ed0e1e15d535fd6f6f16ed70732",
         strip_prefix = "json-3.4.0",
@@ -1012,7 +1014,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "ngraph_tf",
+        name = "ngraph_tf",                               # Apache License 2.0
         build_file = clean_dep("//third_party/ngraph:ngraph_tf.BUILD"),
         sha256 = "742a642d2c6622277df4c902b6830d616d0539cc8cd843d6cdb899bb99e66e36",
         strip_prefix = "ngraph-tf-0.9.0",
@@ -1023,7 +1025,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "pybind11",
+        name = "pybind11",                                # BSD-style License
         urls = [
             "https://mirror.bazel.build/github.com/pybind/pybind11/archive/v2.3.0.tar.gz",
             "https://github.com/pybind/pybind11/archive/v2.3.0.tar.gz",
@@ -1034,7 +1036,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "wrapt",
+        name = "wrapt",                                # BSD-2-Clause License
         build_file = clean_dep("//third_party:wrapt.BUILD"),
         sha256 = "8a6fb40e8f8b6a66b4ba81a4044c68e6a7b1782f21cfabc06fb765332b4c3e51",
         strip_prefix = "wrapt-1.11.1/src/wrapt",
@@ -1044,8 +1046,9 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
             "https://github.com/GrahamDumpleton/wrapt/archive/1.11.1.tar.gz",
         ],
     )
+
     tf_http_archive(
-        name = "cares",
+        name = "cares",                                # MIT License
         build_file = "//third_party/cares:cares.BUILD",
         sha256 = "45d3c1fd29263ceec2afc8ff9cd06d5f8f889636eb4e80ce3cc7f0eaf7aadc6e",
         strip_prefix = "c-ares-1.14.0",
@@ -1053,9 +1056,8 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
                 "https://c-ares.haxx.se/download/c-ares-1.14.0.tar.gz"],
     )
 
-
     tf_http_archive(
-        name = "libcuckoo",
+        name = "libcuckoo",                            # Apache License 2.0
         urls = [
             "https://github.com/efficient/libcuckoo/archive/8785773896d74f72b6224e59d37f5f8c3c1e022a.tar.gz",
             "https://github.com/efficient/libcuckoo/archive/8785773896d74f72b6224e59d37f5f8c3c1e022a.tar.gz",
@@ -1066,7 +1068,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "com_github_google_leveldb",
+        name = "com_github_google_leveldb",            # BSD-3-Clause License
         sha256 = "f99dc5dcb6f23e500b197db02e993ee0d3bafd1ac84b85ab50de9009b36fbf03",
         strip_prefix = "leveldb-5d94ad4d95c09d3ac203ddaf9922e55e730706a8",
         build_file = clean_dep("//third_party:leveldb.BUILD"),
@@ -1077,7 +1079,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "seastar_repo",
+        name = "seastar_repo",                        # Apache License 2.0
         patch_file = [clean_dep("//third_party:0001-seastar.patch")],
         sha256 = "c57f9b50c91200b74e60907c6595d31da20ccc9dfe9935d23cd2f11a996d410b",
         strip_prefix = "seastar-2f0de60d31d75f9048cec0901a961f3fc7ed04ec",
@@ -1089,15 +1091,15 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "lz4",
-        build_file = str(Label("//third_party:lz4.BUILD")),
+        name = "lz4",                                  # BSD 2-Clause license/GPLv2 license
+        build_file = clean_dep("//third_party:lz4.BUILD"),
         sha256 = "658ba6191fa44c92280d4aa2c271b0f4fbc0e34d249578dd05e50e76d0e5efcc",
         strip_prefix = "lz4-1.9.2/lib",
         urls = ["https://github.com/lz4/lz4/archive/v1.9.2.tar.gz"],
     )
 
     http_archive(
-        name = "kafka",
+        name = "kafka",             # Apache License 2.0
         build_file = str(Label("//third_party:kafka.BUILD")),
         patch_cmds = [
             "rm -f src/win32_config.h",
@@ -1113,7 +1115,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "libaio",
+        name = "libaio",                             # GPLv2 License
         build_file = clean_dep("//third_party:libaio.BUILD"),
         sha256 = "b7cf93b29bbfb354213a0e8c0e82dfcf4e776157940d894750528714a0af2272",
         strip_prefix = "libaio-libaio-0.3.112",
@@ -1124,7 +1126,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "arrow",
+        name = "arrow",                              # Apache License 2.0
         build_file = clean_dep("//third_party:arrow.BUILD"),
         patch_file = [clean_dep("//third_party:arrow.patch")],
         sha256 = "ec3bdae6ccc08de5b5adcf9cbe7cbc085cab0ba06c8e6d3abfc3ed1cd4c1c9a2",
@@ -1136,7 +1138,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "brotli",
+        name = "brotli",                             # MIT license
         build_file = clean_dep("//third_party:brotli.BUILD"),
         sha256 = "4c61bfb0faca87219ea587326c467b95acb25555b53d1a421ffa3c8a9296ee2c",
         strip_prefix = "brotli-1.0.7",
@@ -1147,7 +1149,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "bzip2",
+        name = "bzip2",                              # Modified zlib License
         build_file = clean_dep("//third_party:bzip2.BUILD"),
         sha256 = "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269",
         strip_prefix = "bzip2-1.0.8",
@@ -1158,7 +1160,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "thrift",
+        name = "thrift",                             # Apache License 2.0
         build_file = clean_dep("//third_party:thrift.BUILD"),
         sha256 = "5da60088e60984f4f0801deeea628d193c33cec621e78c8a43a5d8c4055f7ad9",
         strip_prefix = "thrift-0.13.0",
@@ -1169,7 +1171,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "xsimd",
+        name = "xsimd",                              # BSD-3-Clause License
         build_file = clean_dep("//third_party:xsimd.BUILD"),
         sha256 = "45337317c7f238fe0d64bb5d5418d264a427efc53400ddf8e6a964b6bcb31ce9",
         strip_prefix = "xsimd-7.5.0",
@@ -1179,7 +1181,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "zstd",
+        name = "zstd",                               # BSD License
         build_file = clean_dep("//third_party:zstd.BUILD"),
         sha256 = "a364f5162c7d1a455cc915e8e3cf5f4bd8b75d09bc0f53965b0c9ca1383c52c8",
         strip_prefix = "zstd-1.4.4",
@@ -1190,7 +1192,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     http_archive(
-        name = "rapidjson",
+        name = "rapidjson",                         # MIT License
         build_file = clean_dep("//third_party:rapidjson.BUILD"),
         sha256 = "30bd2c428216e50400d493b38ca33a25efb1dd65f79dfc614ab0c957a3ac2c28",
         strip_prefix = "rapidjson-418331e99f859f00bdc8306f69eba67e8693c55e",
