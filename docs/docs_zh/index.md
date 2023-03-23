@@ -93,6 +93,7 @@ Operator-Optimization
 NVIDIA-TF32
 PMEM
 Embedding-on-PMEM
+Arm-Compute-Library
 ```
 
 ```{toctree}
