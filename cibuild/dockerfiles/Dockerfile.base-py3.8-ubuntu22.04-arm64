@@ -37,7 +37,9 @@ RUN wget https://www.python.org/ftp/python/3.8.10/Python-3.8.10.tgz \
     && make -j96 \
     && make install 
 RUN rm -f /usr/bin/python \
+    && rm -f /usr/bin/python3 \
     && rm -f /usr/bin/pip \
+    && ln -s /usr/local/python3/bin/python3.8 /usr/bin/python3 \
     && ln -s /usr/local/python3/bin/python3.8 /usr/bin/python \
     && ln -s /usr/local/python3/bin/pip3 /usr/bin/pip \
     && rm -rf /home/workdir
