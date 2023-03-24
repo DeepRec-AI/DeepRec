@@ -90,6 +90,7 @@ AdamW-Optimizer
 oneDNN
 Operator-Optimization
 NVIDIA-TF32
+Arm-Compute-Library
 ```
 
 ```{toctree}

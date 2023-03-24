@@ -87,6 +87,12 @@ bazel build  -c opt --config=opt  --config=mkl_threadpool --define build_with_mk
 bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt --config=opt --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true //tensorflow/tools/pip_package:build_pip_package
 ```
 
+**编译开启 Arm Compute Library (ACL) 版本（ARM CPU）**
+
+```bash
+bazel build -c opt --config=opt --config=mkl_aarch64 //tensorflow/tools/pip_package:build_pip_package
+```
+
 ## 生成Whl包
 
 ```bash
@@ -103,8 +109,14 @@ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux_x
 
 **CPU镜像**
 
+x86_64:
 ```
 alideeprec/deeprec-release:deeprec2302-cpu-py38-ubuntu20.04
+```
+
+arm64:
+```
+alideeprec/deeprec-release:deeprec2302-cpu-py38-ubuntu22.04-arm64
 ```
 
 **GPU CUDA11.6镜像**
