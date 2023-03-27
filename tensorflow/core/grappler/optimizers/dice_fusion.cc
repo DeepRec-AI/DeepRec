@@ -59,7 +59,7 @@ bool IsNodeViewMatch(const utils::MutableGraphView& graph_view, int node_index,
   const auto* node_def = node_view->node();
   if (node_def == nullptr) return false;
   if (!func(*node_def)) return false;
-  if (!NodeIsOnCpu(node_def)) return false;
+  if (NodeIsOnGpu(node_def)) return false;
 
   if (num_outputs >= 0) {
     if (node_view->NumRegularFanouts() != num_outputs) return false;
