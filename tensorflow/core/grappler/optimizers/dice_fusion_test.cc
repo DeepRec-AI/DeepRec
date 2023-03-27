@@ -55,19 +55,24 @@ TEST_F(DiceFusionTest, DiceFusionOp) {
            {{"T", DT_FLOAT}, {"_output_shapes", scalar}}),
   });
 
+  // Place all nodes on CPU.
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
   GraphDef output;
   TF_EXPECT_OK(optimizer.Optimize(/*cluster=*/nullptr, item, &output));
 
   GraphDef expected = test::function::GDef({
-      NDef("input", "Const", {}, {{"T", DT_FLOAT}, {"value", input}}),
-      NDef("sub_1_in", "Const", {}, {{"T", DT_FLOAT}, {"value", sub_1_in}}),
-      NDef("mul_1_in", "Const", {}, {{"T", DT_FLOAT}, {"value", mul_1_in}}),
-      NDef("mul_3_in", "Const", {}, {{"T", DT_FLOAT}, {"value", mul_3_in}}),
+      NDef("input", "Const", {}, {{"T", DT_FLOAT}, {"value", input}}, "/device:CPU:0"),
+      NDef("sub_1_in", "Const", {}, {{"T", DT_FLOAT}, {"value", sub_1_in}}, "/device:CPU:0"),
+      NDef("mul_1_in", "Const", {}, {{"T", DT_FLOAT}, {"value", mul_1_in}}, "/device:CPU:0"),
+      NDef("mul_3_in", "Const", {}, {{"T", DT_FLOAT}, {"value", mul_3_in}}, "/device:CPU:0"),
 
       // fusing node.
       NDef("add", "Dice",
            {"input", "sub_1_in", "mul_1_in", "mul_3_in"},
-           {{"T", DT_FLOAT}}),
+           {{"T", DT_FLOAT}}, "/device:CPU:0"),
   });
 
   CompareGraphs(expected, output);
