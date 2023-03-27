@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <deque>
 #include <vector>
+#include "absl/container/flat_hash_map.h"
 #include "tensorflow/core/framework/log_memory.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_reference.h"
@@ -86,7 +87,7 @@ class EventMgr {
     {
       mutex_lock l(mu_);
       QueueBuffer(stream, bufrec);
-      PollEvents(false, &to_free);
+      PollEvents(false, &to_free, stream);
     }
     FreeMemory(to_free);
   }
@@ -99,7 +100,7 @@ class EventMgr {
     {
       mutex_lock l(mu_);
       QueueFunc(stream, std::move(func));
-      PollEvents(false, &to_free);
+      PollEvents(false, &to_free, stream);
     }
     FreeMemory(to_free);
   }
@@ -174,7 +175,9 @@ class EventMgr {
   // and then retire them.  It appends InUse elements that need cleanup
   // to "*to_free".  The caller should call FreeMemory(to_free)
   // when this returns.
-  void PollEvents(bool is_dedicated_poller, ToFreeVector* to_free)
+  void PollEvents(bool is_dedicated_poller,
+                  ToFreeVector* to_free,
+                  se::Stream* stream = nullptr)
       EXCLUSIVE_LOCKS_REQUIRED(mu_);
 
   // An internal polling loop that runs at a low frequency to clear
@@ -195,7 +198,7 @@ class EventMgr {
   int64 accumulated_tensor_bytes_ GUARDED_BY(mu_);
 
   // A FIFO queue of InUse events and associated tensors.
-  std::deque<InUse> used_events_ GUARDED_BY(mu_);
+  absl::flat_hash_map<se::Stream*, std::deque<InUse>> used_events_ GUARDED_BY(mu_);
 
   bool stop_polling_ GUARDED_BY(mu_);
   std::unique_ptr<Notification> polling_stopped_;
