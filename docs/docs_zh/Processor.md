@@ -425,6 +425,32 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 "ev_storage_size": [1024, 1024]
 }
 ```
+
+#### 导出模型
+如果用户在training过程中使启用了增量模型功能，那么Processor在serving中就可以使用增量模型进行服务更新，从而保证服务模型的实时性。
+
+在导出模型过程中，用户可以使用几种不同的API，包括直接使用底层API SavedModelBuilder，或者使用estimator这种高层API。对于使用了增量模型的任务，在导出模型的时候需要开启save_incr_model开关，这样在saved model中才能找到对应的增量更新子图。
+
+##### SavedModelBuilder
+如果用户通过拼接底层API导出模型，那么需要保证在构建SavedModelBuilder的时候设置save_incr_model参数为true(默认是false)。
+```python
+class SavedModelBuilder(_SavedModelBuilder):
+  def __init__(self, export_dir, save_incr_model=False):
+    super(SavedModelBuilder, self).__init__(export_dir=export_dir, save_incr_model=save_incr_model)
+
+  ...
+```
+
+##### Estimator
+如果用户使用estiamtor，需要在调用estimator.export_saved_model的时候设置参数save_incr_model=True，
+```python
+estimator.export_saved_model(
+    export_dir_base,
+    serving_input_receiver_fn,
+    ...
+    save_incr_model=True)
+```
+
 #### 模型路径配置
 在Processor中，用户需要提供checkpoint以及saved_model，processor从saved_model中读取meta graph 信息，包括signature，input，output等信息。模型参数需要从checkpoint中读取，原因是现在的增量更新依赖checkpoint，而不是saved model。在serving过程中，当checkpoint更新了，processor在指定的模型目录下发现有新的版本的模型，会自动加载最新的模型。saved model一般不会更新，除非graph变化，当真的变化了，需要重启新的processor instance。
 

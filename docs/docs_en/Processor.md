@@ -432,6 +432,32 @@ The second argument "**model_config**" of the initialize function is a content i
 "ev_storage_size": [1024, 1024]
 }
 ```
+
+#### Export saved_model
+If the user enables the incremental_ckpt function in training, then Processor can use the incremental_ckpt to update the service during serving, thus ensuring the real-time performance of the service model.
+
+About exporting the saved_model, users can use several different APIs, including directly using the low-level API SavedModelBuilder, or using the high-level API such as estimator. For tasks that use incremental_ckpt function, the save_incr_model switch needs to be turned on when exporting the model, so that the corresponding incremental restore subgraph can be found in the saved model.
+
+##### SavedModelBuilder
+If the user exports the saved_model by splicing the low-level APIs, it is necessary to ensure that the save_incr_model parameter is set to true (the default is false) when building the SavedModelBuilder.
+```python
+class SavedModelBuilder(_SavedModelBuilder):
+  def __init__(self, export_dir, save_incr_model=False):
+    super(SavedModelBuilder, self).__init__(export_dir=export_dir, save_incr_model=save_incr_model)
+
+  ...
+```
+
+##### Estimator
+If the user uses estimtor, the parameter save_incr_model needs to be set to True when calling estimator.export_saved_model,
+```python
+estimator.export_saved_model(
+    export_dir_base,
+    serving_input_receiver_fn,
+    ...
+    save_incr_model=True)
+```
+
 #### Model path configuration
 In Processor, users need to provide checkpoint and saved_model paths, and processor reads meta graph information from saved_model, including signature, input, output and other information. The model parameters need to be read from the checkpoint, because the current incremental update depends on the checkpoint instead of the saved model. During the serving process, when the checkpoint is updated and the processor finds a new version of the model in the specified model directory, it will automatically load the latest model. The saved model is generally not updated unless the graph changes. If it does change, a new processor instance needs to be restarted.
 
