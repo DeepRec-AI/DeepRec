@@ -269,9 +269,9 @@ string get_node_by_tensor(string tensor_name) {
 
 Status DiceFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
                             GraphDef* output) {
+  *output = item.graph;
 #if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   Status status;
-  *output = item.graph;
   utils::MutableGraphView graph_view(output, &status);
   TF_RETURN_IF_ERROR(status);
   TF_RETURN_IF_ERROR(graph_view.SortTopologically(/*ignore_cycles=*/false, {}));
