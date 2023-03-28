@@ -245,10 +245,6 @@ MetaOptimizer::MetaOptimizer(DeviceBase* cpu_device, const ConfigProto& cfg)
 
 Status MetaOptimizer::InitializeOptimizers(
     std::vector<std::unique_ptr<GraphOptimizer>>* optimizers) const {
-  if (DiceFusionEnabled()) {
-    optimizers->push_back(MakeUnique<DiceFusion>());
-  }
-
   if (cfg_.disable_meta_optimizer()) {
     return Status::OK();
   }
@@ -325,9 +321,9 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(MakeUnique<ScopedAllocatorOptimizer>(
         cfg_.scoped_allocator_optimization(), cfg_.scoped_allocator_opts()));
   }
-
-  // optimizers->push_back(MakeUnique<DiceFusion>());
-
+  if (DiceFusionEnabled()) {
+    optimizers->push_back(MakeUnique<DiceFusion>());
+  }
   optimizers->push_back(MakeUnique<ConcatCastFusing>());
   return InitializeCustomGraphOptimizers(std::set<string>(), optimizers);
 }
