@@ -76,10 +76,6 @@ class BaseGPUDevice : public LocalDevice {
   // completes.
   bool RequiresRecordingAccessedTensors() const override;
 
-  void ConsumeListOfAccessedTensors(
-      DeviceContext* device_context,
-      const TensorReferenceVector& tensor_refs) override;
-
   void Compute(OpKernel* op_kernel, OpKernelContext* context) override;
 
   Status Sync() override;
