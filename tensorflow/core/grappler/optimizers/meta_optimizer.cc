@@ -182,9 +182,10 @@ bool MemoryOptimizerEnabled(
 // A helper function to decide whether to enable the dice fusion optimizer.
 bool DiceFusionEnabled() {
   bool is_enabled = true;
-  TF_CHECK_OK(ReadBoolFromEnvVar("TF_DICE_FUSION",
-                                 /*default_val=*/true, &is_enabled));
-  return is_enabled;
+  bool is_inference = false;
+  TF_CHECK_OK(ReadBoolFromEnvVar("TF_DICE_FUSION", true, &is_enabled));
+  TF_CHECK_OK(ReadBoolFromEnvVar("INFERENCE_MODE", false, &is_inference));
+  return is_enabled && is_inference;
 }
 
 }  // namespace
