@@ -138,11 +138,6 @@ class RenamedDevice : public Device {
     underlying_device_->ComputeAsync(op_kernel, context, std::move(done));
   }
 
-  void ConsumeListOfAccessedTensors(
-      DeviceContext* context, const TensorReferenceVector& tensors) override {
-    underlying_device_->ConsumeListOfAccessedTensors(context, tensors);
-  }
-
   Status Sync() override { return underlying_device_->Sync(); }
 
   Status MaybeRewriteGraph(std::unique_ptr<Graph>* graph) override {
