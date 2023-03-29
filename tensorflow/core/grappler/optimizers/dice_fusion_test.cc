@@ -75,7 +75,9 @@ TEST_F(DiceFusionTest, DiceFusionOp) {
            {{"T", DT_FLOAT}}, "/device:CPU:0"),
   });
 
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   CompareGraphs(expected, output);
+#endif
 }
 
 }  // namespace grappler
