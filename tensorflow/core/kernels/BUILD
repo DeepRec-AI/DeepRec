@@ -3464,6 +3464,22 @@ tf_cuda_cc_test(
     ],
 )
 
+tf_cuda_cc_test(
+    name = "segment_reduction_ops_benchmark_test",
+    srcs = ["segment_reduction_ops_benchmark_test.cc"],
+    deps = [
+        ":segment_reduction_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 cc_library(
     name = "io",
     deps = [
