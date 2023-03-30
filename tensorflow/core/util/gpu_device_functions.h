@@ -534,6 +534,19 @@ __device__ T GpuAtomicCasHelper(T* ptr, F accumulate) {
 }
 CREATE_CUDA_DEVICE_FUNCTION_ALIAS(GpuAtomicCasHelper, CudaAtomicCasHelper);
 
+// Overload for int64
+template <typename F>
+__device__ tensorflow::int64 GpuAtomicCasHelper(tensorflow::int64* ptr,
+                                                F accumulate) {
+  uint64_t ret = GpuAtomicCasHelper(
+      reinterpret_cast<tensorflow::uint64*>(ptr), [accumulate](uint64_t a) {
+        tensorflow::int64 tmp =
+            accumulate(*(reinterpret_cast<tensorflow::int64*>(&a)));
+	return *(reinterpret_cast<uint64_t*>(&tmp));
+      });
+  return *(reinterpret_cast<int64*>(&ret));
+}
+
 // Overload for floating point (using integer comparison to handle NaN
 // correctly).
 template <typename F>
@@ -650,6 +663,12 @@ __device__ CudaSupportedType<T>* ToCudaSupportedPtr(T* ptr) {
 template <typename T, typename U>
 __device__ detail::ToTypeIfConvertible<U, T> GpuAtomicAdd(T* ptr, U value) {
   return atomicAdd(ptr, value);
+}
+
+__device__ inline tensorflow::int64 GpuAtomicAdd(tensorflow::int64* ptr,
+						 tensorflow::int64 value) {
+    return detail::GpuAtomicCasHelper(
+        ptr, [value](tensorflow::int64 a) { return a + value; });
 }
 
 __device__ inline Eigen::half GpuAtomicAdd(Eigen::half* ptr,
