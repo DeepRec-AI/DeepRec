@@ -145,61 +145,40 @@ pylint --rcfile=/tmp/pylintrc myfile.py
 * [Google Shell Style Guide](https://google.github.io/styleguide/shell.xml)
 * [Google Objective-C Style Guide](https://google.github.io/styleguide/objcguide.html)
 
-#### Running sanity check
+#### Git Commit Guidelines
 
-If you have Docker installed on your system, you can perform a sanity check on
-your changes by running the command:
+Use meaningful commit message that described what you did. Format should be: [Component] <Subject> <Description>
 
-```bash
-tensorflow/tools/ci_build/ci_build.sh CPU tensorflow/tools/ci_build/ci_sanity.sh
+Component: after using the Component mark, there needs to be a space with the following subject.
+
+Subject: a brief description of the purpose of commit, must be in English, no more than 50 characters. The first letter needs to be capitalized and the ending is `.`
+
+Description: Description is a further detailed description of the commit, such as bugfix, which is the scene caused by the bug. If it is performance optimization, it is performance data. Use the description as a supplement to the subject.
+
+Example:
+
 ```
+[Runtime] Add blacklist and whitelist to JitCugraph. (#578)
 
-This will catch most license, Python coding style and BUILD file issues that
-may exist in your changes.
+1. Refine the auto-clustering policy by adding blacklist and whitelist environment setup.
+2. Add documents of using JitCugraph.
+```
 
 #### Running unit tests
 
-There are two ways to run DeepRec unit tests.
+Using Docker and DeepRec's CI scripts.
 
-1.  Using tools and libraries installed directly on your system.
+```bash
+# Install Docker first, then this will build and run cpu tests
+cibuild/cpu-ut/cpu-core-ut.sh
+```
+Also you can directly use bazel to run the tests, like:
 
-    Refer to the
-    [CPU-only developer Dockerfile](https://github.com/alibaba/DeepRec/blob/main/tensorflow/tools/dockerfiles/dockerfiles/devel-cpu.Dockerfile)
-    and
-    [GPU developer Dockerfile](https://github.com/alibaba/DeepRec/blob/main/tensorflow/tools/dockerfiles/dockerfiles/devel-gpu.Dockerfile)
-    for the required packages. Alternatively, use the said
-    Docker images e.g.,
-    [devel](registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-py36-ubuntu18.04) and [devel-gpu](registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04) for
-    development to avoid installing the packages directly on your system (in
-    which case remember to change directory from `/root` to `/DeepRec` once
-    you get into the running container so `bazel` can find the `DeepRec`
-    workspace).
+```bash
+./configure
+bazel test //tensorflow/python/...
+```
 
-    Once you have the packages installed, you can run a specific unit test in
-    bazel by doing as follows:
-
-    If the tests are to be run on GPU, add CUDA paths to LD_LIBRARY_PATH and add
-    the `cuda` option flag
-
-    ```bash
-    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH"
-
-    export flags="--config=opt --config=cuda -k"
-    ```
-
-    For example, to run all tests under tensorflow/python, do:
-
-    ```bash
-    bazel test ${flags} //tensorflow/python/...
-    ```
-
-2.  Using Docker and DeepRec's CI scripts.
-
-    ```bash
-    # Install Docker first, then this will build and run cpu tests
-    tensorflow/tools/ci_build/ci_build.sh CPU bazel test //tensorflow/...
-    ```
-
-    See
-    [DeepRec Builds](https://github.com/alibaba/DeepRec/tree/main/cibuild)
-    for details.
+See
+[DeepRec Builds](https://github.com/alibaba/DeepRec/tree/main/cibuild)
+for details.
