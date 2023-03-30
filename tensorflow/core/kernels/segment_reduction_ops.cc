@@ -16,9 +16,11 @@ limitations under the License.
 // See docs in ../ops/math_ops.cc.
 
 #define EIGEN_USE_THREADS
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#define EIGEN_USE_GPU
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #include "tensorflow/core/kernels/segment_reduction_ops.h"
-#include "tensorflow/core/kernels/segment_reduction_ops_util.h"
 
 #include <cstdint>
 #include <vector>
@@ -26,6 +28,7 @@ limitations under the License.
 #include "third_party/eigen3/Eigen/Core"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
+#include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/numeric_op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -38,9 +41,45 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/util.h"
 
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
+#if GOOGLE_CUDA
+#include "tensorflow/core/kernels/cuda_solvers.h"
+#include "tensorflow/core/platform/cuda.h"
+
+using stream_executor::cuda::ScopedActivateExecutorContext;
+#elif TENSORFLOW_USE_ROCM
+#include "tensorflow/core/kernels/cuda_solvers.h"
+#include "tensorflow/core/platform/rocm.h"
+using stream_executor::rocm::ScopedActivateExecutorContext;
+#endif  // GOOGLE_CUDA
+
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
+typedef Eigen::GpuDevice GPUDevice;
+
+// Static routines not in the templated class to reduce code size
+static void SegmentReductionValidationHelper(OpKernelContext* context,
+                                             const Tensor& input,
+                                             const Tensor& segment_ids) {
+  OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
+              errors::InvalidArgument("segment_ids should be a vector."));
+  const int64 num_indices = segment_ids.NumElements();
+  OP_REQUIRES(context, num_indices == input.dim_size(0),
+              errors::InvalidArgument(
+                  "segment_ids should be the same size as dimension 0 of"
+                  " input."));
+}
+
+static bool SegmentReductionDoValidation(OpKernelContext* c,
+                                         const Tensor& input,
+                                         const Tensor& segment_ids) {
+  SegmentReductionValidationHelper(c, input, segment_ids);
+  return c->status().ok();
+}
 
 // This operator handles reducing segments along the first dimension.
 // See core/ops/math_ops.cc for more details.
@@ -168,6 +207,109 @@ class SegmentReductionOp : public OpKernel {
   }
 };
 
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
+//  SegmentSumGPUOp is a segment sum operator implemented for GPU only.
+//  TODO: This implementation of SegmentSumGPUOp is sometimes slower than
+//  its unsorted counterpart (mostly when problem size is small).
+//  This is due to the following two main reasons and a cost-effective way
+//  to resolve these problems is desirable.
+//  1. Sorted segment sum requires a memory transfer from device to host in
+//     order to know the size of the output dimension whereas unsorted segment
+//     sum receives the size of the output dimension as an input parameter.
+//  2. Sorted segment sum is essentially a tiled version of unsorted segment
+//     sum and therefore such optimization comes at an inherent cost. However
+//     such cost may not be justified when the problem size is small. When to
+//     use the tiled version or the untiled version depends on many factors
+//     including data alignments, ratio of calculation to memory traffic and
+//     obviously, the problem sizes.
+template <class T, class Index>
+class SegmentSumGPUOp : public AsyncOpKernel {
+ public:
+  explicit SegmentSumGPUOp(OpKernelConstruction* context)
+      : AsyncOpKernel(context) {}
+
+  void ComputeAsync(OpKernelContext* context, DoneCallback done) override {
+    const Tensor& input = context->input(0);
+    const Tensor& segment_ids = context->input(1);
+
+    OP_REQUIRES_ASYNC(
+        context, TensorShapeUtils::IsVector(segment_ids.shape()),
+        errors::InvalidArgument("segment_ids should be a vector."), done);
+
+    const int64 num_indices = segment_ids.NumElements();
+    OP_REQUIRES_ASYNC(
+        context, num_indices == input.dim_size(0),
+        errors::InvalidArgument(
+            "segment_ids should be the same size as dimension 0 of"
+            " input."),
+        done);
+
+    if (num_indices == 0) {
+      TensorShape output_shape = input.shape();
+      output_shape.set_dim(0, 0);
+
+      Tensor* output = nullptr;
+      OP_REQUIRES_OK_ASYNC(
+          context, context->allocate_output(0, output_shape, &output), done);
+      done();
+      return;
+    }
+
+    se::DeviceMemoryBase output_rows_device(
+        const_cast<Tensor&>(segment_ids).template flat<Index>().data() +
+        (num_indices - 1));
+    ScratchSpace<Index> output_rows_host(context, 1, /* on_host */ true);
+
+    auto stream = context->op_device_context()->stream();
+    OP_REQUIRES_ASYNC(
+        context,
+        stream
+            ->ThenMemcpy(output_rows_host.mutable_data(), output_rows_device,
+                         sizeof(Index))
+            .ok(),
+        errors::Internal(
+            "SegmentSumGPUOp: failed to copy output_rows from device"),
+        done);
+
+    functor::SegmentSumFunctor<T, Index> functor_;
+    auto create_and_check_output = [this, context, output_rows_host, &input,
+                                    &segment_ids, &functor_, done]() {
+      nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
+
+      // Ensure that within the callback, the proper GPU settings are
+      // configured.
+      auto stream = context->op_device_context()->stream();
+      ScopedActivateExecutorContext scoped_activation{stream->parent()};
+
+      Index output_rows = *output_rows_host.data();
+      output_rows++;
+      OP_REQUIRES_ASYNC(context, output_rows > 0,
+                        errors::InvalidArgument("segment ids must be >= 0"),
+                        done);
+
+      TensorShape output_shape = input.shape();
+      OP_REQUIRES_OK_ASYNC(context, output_shape.SetDimWithStatus(0, output_rows), done);
+
+      Tensor* output = nullptr;
+      OP_REQUIRES_OK_ASYNC(
+          context, context->allocate_output(0, output_shape, &output), done);
+
+      auto output_flat = output->flat_outer_dims<T>();
+      auto data_ptr = input.template flat<T>().data();
+      auto segment_flat = segment_ids.flat<Index>();
+      functor_(context, context->eigen_device<GPUDevice>(), output_rows,
+               segment_ids.shape(), segment_flat, input.NumElements(), data_ptr,
+               output_flat);
+
+      done();
+    };
+
+    context->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
+        stream, create_and_check_output);
+  }
+};
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
 #define REGISTER_CPU_KERNEL_SEGMENT(name, functor, type, index_type, \
                                     default_value)                   \
   REGISTER_KERNEL_BUILDER(                                           \
@@ -213,6 +355,23 @@ REGISTER_COMPLEX_CPU_KERNELS_ALL(complex128);
 #undef REGISTER_COMPLEX_CPU_KERNELS
 #undef REGISTER_REAL_CPU_KERNELS_ALL
 #undef REGISTER_COMPLEX_CPU_KERNELS_ALL
+
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
+#define REGISTER_GPU_SORTED_KERNELS(type, index_type)                  \
+  REGISTER_KERNEL_BUILDER(Name("SegmentSum")                           \
+                              .Device(DEVICE_GPU)                      \
+                              .TypeConstraint<type>("T")               \
+                              .TypeConstraint<index_type>("Tindices"), \
+                          SegmentSumGPUOp<type, index_type>)
+
+#define REGISTER_GPU_SORTED_KERNELS_ALL(type) \
+  REGISTER_GPU_SORTED_KERNELS(type, int32);   \
+  REGISTER_GPU_SORTED_KERNELS(type, int64);
+
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_SORTED_KERNELS_ALL);
+#undef REGISTER_GPU_SORTED_KERNELS
+#undef REGISTER_GPU_SORTED_KERNELS_ALL
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // ____________________________________________________________________________
 // Unsorted segment reduction ops.
@@ -360,6 +519,75 @@ struct ProdOp {
 };
 }  // namespace functor
 
+// Static check routines not in the templated class to reduce code size
+static void UnsortedSegmentReductionValidation(OpKernel* op_kernel,
+                                               OpKernelContext* context,
+                                               const Tensor& data,
+                                               const Tensor& segment_ids,
+                                               const Tensor& num_segments) {
+  OP_REQUIRES(
+      context, op_kernel->IsLegacyScalar(num_segments.shape()),
+      errors::InvalidArgument("num_segments should be a scalar, not shape ",
+                              num_segments.shape().DebugString()));
+  OP_REQUIRES(
+      context, TensorShapeUtils::StartsWith(data.shape(), segment_ids.shape()),
+      errors::InvalidArgument("data.shape = ", data.shape().DebugString(),
+                              " does not start with segment_ids.shape = ",
+                              segment_ids.shape().DebugString()));
+}
+
+static bool UnsortedSegmentReductionDoValidation(OpKernel* op_kernel,
+                                                 OpKernelContext* context,
+                                                 const Tensor& data,
+                                                 const Tensor& segment_ids,
+                                                 const Tensor& num_segments) {
+  UnsortedSegmentReductionValidation(op_kernel, context, data, segment_ids,
+                                     num_segments);
+  return context->status().ok();
+}
+
+// The UnsortedSegmentReduction OpKernel. The DeviceReductionFunctor
+// is the device specific implementation of the reduction. These device
+// specific implementations are templated themselves with the corresponding
+// initial value functors and reduction functors.
+template <typename T, typename Index, typename DeviceReductionFunctor>
+class UnsortedSegmentReductionOp : public OpKernel {
+ public:
+  explicit UnsortedSegmentReductionOp(OpKernelConstruction* context)
+      : OpKernel(context), reduction_functor_(DeviceReductionFunctor()) {}
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& data = context->input(0);
+    const Tensor& segment_ids = context->input(1);
+    const Tensor& num_segments = context->input(2);
+    if (!UnsortedSegmentReductionDoValidation(this, context, data, segment_ids,
+                                              num_segments)) {
+      return;
+    }
+    const auto segment_flat = segment_ids.flat<Index>();
+    const int64 output_rows = internal::SubtleMustCopy(static_cast<int64>(
+        num_segments.dtype() == DT_INT32 ? num_segments.scalar<int32>()()
+                                         : num_segments.scalar<int64>()()));
+    OP_REQUIRES(context, output_rows >= 0,
+                errors::InvalidArgument("Input num_segments == ", output_rows,
+                                        " must not be negative."));
+    TensorShape output_shape;
+    output_shape.AddDim(output_rows);
+    for (int i = segment_ids.dims(); i < data.dims(); i++) {
+      output_shape.AddDim(data.dim_size(i));
+    }
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+    auto output_flat = output->flat_outer_dims<T>();
+    auto data_flat = data.flat_inner_outer_dims<T, 2>(segment_ids.dims() - 1);
+    reduction_functor_(context, segment_ids.shape(), segment_flat, data_flat,
+                       output_flat);
+  }
+
+ protected:
+  DeviceReductionFunctor reduction_functor_;
+};
+
 #define REGISTER_CPU_KERNEL_UNSORTEDSEGMENT(                           \
     name, type, index_type, initial_value_functor, reduction_functor)  \
   REGISTER_KERNEL_BUILDER(                                             \
@@ -412,6 +640,64 @@ REGISTER_COMPLEX_CPU_UNSORTED_KERNELS_ALL(complex128);
 #undef REGISTER_COMPLEX_CPU_UNSORTED_KERNELS
 #undef REGISTER_COMPLEX_CPU_UNSORTED_KERNELS_ALL
 #undef REGISTER_REAL_CPU_UNSORTED_KERNELS_ALL
+
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
+#define REGISTER_GPU_KERNEL_UNSORTEDSEGMENT(                                 \
+    name, type, index_type, initial_value_functor, reduction_kernel_functor) \
+  REGISTER_KERNEL_BUILDER(                                                   \
+      Name(name)                                                             \
+          .Device(DEVICE_GPU)                                                \
+          .HostMemory("num_segments")                                        \
+          .TypeConstraint<type>("T")                                         \
+          .TypeConstraint<index_type>("Tindices"),                           \
+      UnsortedSegmentReductionOp<                                            \
+          type, index_type,                                                  \
+          functor::UnsortedSegmentFunctor<GPUDevice, type, index_type,       \
+                                          initial_value_functor,             \
+                                          reduction_kernel_functor> >)
+
+// sum is the only op that supports all input types currently
+#define REGISTER_REAL_GPU_UNSORTED_KERNELS(type, index_type)                   \
+  REGISTER_GPU_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMax", type, index_type,  \
+                                      functor::Lowest<type>,                   \
+                                      functor::MaxOpGpu<type>);                \
+  REGISTER_GPU_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMin", type, index_type,  \
+                                      functor::Highest<type>,                  \
+                                      functor::MinOpGpu<type>);                \
+  REGISTER_GPU_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentProd", type, index_type, \
+                                      functor::One<type>,                      \
+                                      functor::ProdOpGpu<type>);
+
+#define REGISTER_SUM_GPU_UNSORTED_KERNELS(type, index_type)                   \
+  REGISTER_GPU_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentSum", type, index_type, \
+                                      functor::Zero<type>,                    \
+                                      functor::SumOpGpu<type>);
+
+#define REGISTER_REAL_GPU_UNSORTED_KERNELS_ALL(type) \
+  REGISTER_REAL_GPU_UNSORTED_KERNELS(type, int32);   \
+  REGISTER_REAL_GPU_UNSORTED_KERNELS(type, int64);
+
+#define REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL(type) \
+  REGISTER_SUM_GPU_UNSORTED_KERNELS(type, int32);   \
+  REGISTER_SUM_GPU_UNSORTED_KERNELS(type, int64);
+
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_REAL_GPU_UNSORTED_KERNELS_ALL);
+TF_CALL_int32(REGISTER_REAL_GPU_UNSORTED_KERNELS_ALL);
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
+TF_CALL_int32(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
+// TODO(rocm): support atomicAdd for complex numbers on ROCm
+#if GOOGLE_CUDA
+TF_CALL_complex64(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
+TF_CALL_complex128(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
+#endif
+
+#undef REGISTER_GPU_KERNEL_UNSORTEDSEGMENT
+#undef REGISTER_REAL_GPU_UNSORTED_KERNELS
+#undef REGISTER_SUM_GPU_UNSORTED_KERNELS
+#undef REGISTER_REAL_GPU_UNSORTED_KERNELS_ALL
+#undef REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL
+
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // ____________________________________________________________________________
 // Sparse segment reduction ops.
@@ -707,6 +993,97 @@ class SparseSegmentReductionOpBase : public OpKernel {
   const T default_value_;
 };
 
+#if GOOGLE_CUDA
+template <class T, typename Index>
+class SparseSegmentReductionGpuOpBase : public OpKernel {
+ public:
+  explicit SparseSegmentReductionGpuOpBase(OpKernelConstruction* context,
+                                           bool is_mean, bool is_sqrtn,
+                                           bool has_num_segments,
+                                           T default_value)
+      : OpKernel(context),
+        is_mean_(is_mean),
+        is_sqrtn_(is_sqrtn),
+        has_num_segments_(has_num_segments),
+        default_value_(default_value) {}
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& input = context->input(0);
+    const Tensor& indices = context->input(1);
+    const Tensor& segment_ids = context->input(2);
+
+    int32 output_rows = -1;
+    if (has_num_segments_) {
+      const Tensor& num_segments = context->input(3);
+      OP_REQUIRES(
+          context, num_segments.shape().dims() == 0,
+          errors::InvalidArgument("num_segments should be a scalar, not shape ",
+                                  num_segments.shape().DebugString()));
+      output_rows = internal::SubtleMustCopy(num_segments.scalar<int32>()());
+      OP_REQUIRES(context, output_rows >= 0,
+                  errors::InvalidArgument("segment ids must be >= 0"));
+    }
+
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(indices.shape()),
+                errors::InvalidArgument("indices should be a vector."));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
+                errors::InvalidArgument("segment_ids should be a vector."));
+
+    const int64 num_indices = indices.NumElements();
+    OP_REQUIRES(context, num_indices == segment_ids.NumElements(),
+                errors::InvalidArgument(
+                    "segment_ids and indices should have same size."));
+
+    if (segment_ids.NumElements() == 0) {
+      TensorShape output_shape = input.shape();
+      functor::SetValueDefault<T> setval_functor_;
+      output_shape.set_dim(0, output_rows < 0 ? 0: output_rows);
+      Tensor* output = nullptr;
+      OP_REQUIRES_OK(context, context->allocate_output(
+        0, output_shape, &output));
+      if (output_rows > 0) {
+        setval_functor_(context, output, default_value_);
+      }
+      return;
+    }
+
+    typedef int32 OutputRow;
+    const auto segment_vec = segment_ids.vec<OutputRow>();
+    int32 max_id = 0;
+    functor::FindMaxSegId<OutputRow> find_max_seg_functor_;
+    find_max_seg_functor_(context, &segment_ids, max_id);
+
+    const OutputRow last_segment_id_plus_one = max_id + 1;
+
+    if (has_num_segments_) {
+      OP_REQUIRES(
+          context, output_rows >= last_segment_id_plus_one,
+          errors::InvalidArgument("segment ids must be < num_segments"));
+    } else {
+      output_rows = last_segment_id_plus_one;
+    }
+    OP_REQUIRES(context, output_rows >= 0,
+                errors::InvalidArgument("segment ids must be >= 0"));
+
+    TensorShape output_shape = input.shape();
+    output_shape.set_dim(0, output_rows);
+
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+    // set default value to output
+    functor::SparseSegmentReduceFunctor<T, Index> reduction_functor_;
+    reduction_functor_(context, &input, &indices,
+                       &segment_ids, output, is_mean_, is_sqrtn_);
+  }
+
+ private:
+  const bool is_mean_;
+  const bool is_sqrtn_;
+  const bool has_num_segments_;
+  const T default_value_;
+};
+#endif
+
 template <typename Device, class T>
 class SparseSegmentReductionMeanOp
     : public SparseSegmentReductionOpBase<Device, T> {
@@ -759,6 +1136,71 @@ class SparseSegmentReductionSumOp
             false /* has_num_segments */, T(0) /* default_value */) {}
 };
 
+#if GOOGLE_CUDA
+template <class T, typename Index>
+class SparseSegmentReductionSumGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSumGpuOp(OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, false /*is_sqrtn*/,
+            false /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionSumWithNumSegmentsGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSumWithNumSegmentsGpuOp(
+    OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, false /*is_sqrtn*/,
+            true /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionMeanGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionMeanGpuOp(OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, true /*is_mean*/, false /*is_sqrtn*/,
+            false /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionMeanWithNumSegmentsGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionMeanWithNumSegmentsGpuOp(
+    OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, true /*is_mean*/, false /*is_sqrtn*/,
+            true /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionSqrtNGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSqrtNGpuOp(OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, true /*is_sqrtn*/,
+            false /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionSqrtNWithNumSegmentsGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSqrtNWithNumSegmentsGpuOp(
+    OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, true /*is_sqrtn*/,
+            true /* has_num_segments */, T(0) /* default_value */) {}
+};
+#endif
+
 template <typename Device, class T>
 class SparseSegmentReductionSumWithNumSegmentsOp
     : public SparseSegmentReductionOpBase<Device, T> {
@@ -769,6 +1211,49 @@ class SparseSegmentReductionSumWithNumSegmentsOp
             context, false /*is_mean*/, false /*is_sqrtn*/,
             true /* has_num_segments */, T(0) /* default_value */) {}
 };
+
+#if GOOGLE_CUDA
+#define REGISTER_GPU_SPARSE_KERNELS(type, index_type)                    \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSum")                       \
+                              .Device(DEVICE_GPU)                        \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentReductionSumGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSumWithNumSegments")        \
+        .Device(DEVICE_GPU)                                              \
+        .HostMemory("num_segments")                                      \
+        .TypeConstraint<type>("T")                                       \
+        .TypeConstraint<index_type>("Tidx"),                             \
+    SparseSegmentReductionSumWithNumSegmentsGpuOp<type, index_type>);    \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentMean")                      \
+                              .Device(DEVICE_GPU)                        \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentReductionMeanGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentMeanWithNumSegments")        \
+        .Device(DEVICE_GPU)                                              \
+        .HostMemory("num_segments")                                      \
+        .TypeConstraint<type>("T")                                       \
+        .TypeConstraint<index_type>("Tidx"),                             \
+    SparseSegmentReductionMeanWithNumSegmentsGpuOp<type, index_type>);   \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtN")                     \
+                              .Device(DEVICE_GPU)                        \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentReductionSqrtNGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtNWithNumSegments")      \
+        .Device(DEVICE_GPU)                                              \
+        .HostMemory("num_segments")                                      \
+        .TypeConstraint<type>("T")                                       \
+        .TypeConstraint<index_type>("Tidx"),                             \
+    SparseSegmentReductionSqrtNWithNumSegmentsGpuOp<type, index_type>);
+
+REGISTER_GPU_SPARSE_KERNELS(float, int64)
+REGISTER_GPU_SPARSE_KERNELS(float, int32)
+REGISTER_GPU_SPARSE_KERNELS(double, int32)
+REGISTER_GPU_SPARSE_KERNELS(double, int64)
+#undef REGISTER_GPU_SPARSE_KERNELS
+#endif
 
 /* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_CPU_SPARSE_KERNELS(type)                                \
@@ -938,6 +1423,85 @@ class SparseSegmentSqrtNGradOp : public SparseSegmentGradOpBase<T> {
   explicit SparseSegmentSqrtNGradOp(OpKernelConstruction* context)
       : SparseSegmentGradOpBase<T>(context, true /*is_sqrtn*/) {}
 };
+
+#if GOOGLE_CUDA
+template <class T, typename Index>
+class SparseSegmentGradGpuOpBase : public OpKernel {
+ public:
+  explicit SparseSegmentGradGpuOpBase(OpKernelConstruction* context,
+                                      bool is_sqrtn)
+      : OpKernel(context), is_sqrtn_(is_sqrtn) {}
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& input = context->input(0);
+    const Tensor& indices = context->input(1);
+    const Tensor& segment_ids = context->input(2);
+    const Tensor& output_dim0 = context->input(3);
+
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(indices.shape()),
+                errors::InvalidArgument("indices should be a vector."));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
+                errors::InvalidArgument("segment_ids should be a vector."));
+    OP_REQUIRES(context, IsLegacyScalar(output_dim0.shape()),
+                errors::InvalidArgument("output_dim0 should be a scalar."));
+
+    const int64 N = indices.NumElements();
+    OP_REQUIRES(context, N == segment_ids.NumElements(),
+                errors::InvalidArgument(
+                    "segment_ids and indices should have same size."));
+    typedef int32 SegmentId;
+    SegmentId M = internal::SubtleMustCopy(output_dim0.scalar<SegmentId>()());
+    // allocate output tensor
+    Tensor* output = nullptr;
+    TensorShape output_shape = input.shape();
+    output_shape.set_dim(0, M);
+    OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+    if (M == 0 || N == 0) return;
+    // invoke gpu functors
+    functor::SparseSegmentReduceGradFunctor<T, Index> reduction_grad_functor_;
+    reduction_grad_functor_(context, &input, &indices,
+                            &segment_ids, output, is_sqrtn_);
+  }
+
+ private:
+  const bool is_sqrtn_;
+};
+
+template <class T, typename Index>
+class SparseSegmentMeanGradGpuOp : 
+  public SparseSegmentGradGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentMeanGradGpuOp(OpKernelConstruction* context)
+      : SparseSegmentGradGpuOpBase<T, Index>(context, false /*is_sqrtn*/) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentSqrtNGradGpuOp : 
+  public SparseSegmentGradGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentSqrtNGradGpuOp(OpKernelConstruction* context)
+      : SparseSegmentGradGpuOpBase<T, Index>(context, true /*is_sqrtn*/) {}
+};
+
+#define REGISTER_GPU_SPARSE_KERNELS(type, index_type)                    \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentMeanGrad")                  \
+                              .Device(DEVICE_GPU)                        \
+                              .HostMemory("output_dim0")                 \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentMeanGradGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtNGrad")                 \
+                              .Device(DEVICE_GPU)                        \
+                              .HostMemory("output_dim0")                 \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentSqrtNGradGpuOp<type, index_type>);
+REGISTER_GPU_SPARSE_KERNELS(float, int32)
+REGISTER_GPU_SPARSE_KERNELS(float, int64)
+REGISTER_GPU_SPARSE_KERNELS(double, int32)
+REGISTER_GPU_SPARSE_KERNELS(double, int64)
+#undef REGISTER_GPU_SPARSE_KERNELS
+#endif
 
 /* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_CPU_SPARSE_KERNELS(type)                     \

@@ -24,17 +24,71 @@ limitations under the License.
 // template code and GpuAtomicMax is used in template context.
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
-#include "tensorflow/core/framework/bounds_check.h"
-#include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_types.h"
 
-#include "tensorflow/core/kernels/segment_reduction_ops_util.h"
-
 namespace tensorflow {
 
+class OpKernelContext;
+
 namespace functor {
+
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
+typedef Eigen::GpuDevice GPUDevice;
+// Functor for SegmentSumGPUOp.
+// output_rows: the number of output segments (unique segment ids in
+//                'segment_ids').
+// segment_ids_shape: shape of 'segment_ids' tensor.
+// segment_ids: unsorted map from input to output segment ids at which to
+//                perform segment sum operation.
+// data_size: size of input data tensor.
+// data: input data tensor.
+// output: output reshaped to {output_rows, output.size/output_rows}
+template <typename T, typename Index>
+struct SegmentSumFunctor {
+  void operator()(OpKernelContext* ctx, const GPUDevice& d,
+                  const Index output_rows, const TensorShape& segment_ids_shape,
+                  typename TTypes<Index>::ConstFlat segment_ids,
+                  const Index data_size, const T* data,
+                  typename TTypes<T, 2>::Tensor output);
+};
+
+template <typename T, typename Index>
+struct SparseSegmentReduceFunctor {
+  void operator()(OpKernelContext* ctx,
+                  const Tensor* input,
+                  const Tensor* indices,
+                  const Tensor* seg_ids,
+                  Tensor* output,
+                  const bool is_mean,
+                  const bool is_sqrtn);
+};
+
+template <typename T, typename Index>
+struct SparseSegmentReduceGradFunctor {
+  void operator()(OpKernelContext* ctx,
+                  const Tensor* input,
+                  const Tensor* indices,
+                  const Tensor* seg_ids,
+                  Tensor* output,
+                  const bool is_sqrtn);
+};
+
+template <typename Index>
+struct FindMaxSegId {
+  void operator()(OpKernelContext* ctx,
+                  const Tensor* seg_ids,
+                  Index& max_id);
+};
+
+template <typename T>
+struct SetValueDefault {
+  void operator()(OpKernelContext* ctx,
+                  Tensor* target,
+                  T default_value);
+};
+#endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM 
 
 template <typename Device, typename T, typename Index, typename InitialValueF,
           typename ReductionF>
@@ -44,6 +98,42 @@ struct UnsortedSegmentFunctor {
                   typename TTypes<T, 2>::ConstTensor data,
                   typename TTypes<T, 2>::Tensor output);
 };
+
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
+// reduction functors for the gpu
+template <typename T>
+struct SumOpGpu {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
+                                                        const T& value) {
+    GpuAtomicAdd(dest, value);
+  }
+};
+
+template <typename T>
+struct ProdOpGpu {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
+                                                        const T& value) {
+    GpuAtomicMul(dest, value);
+  }
+};
+
+template <typename T>
+struct MaxOpGpu {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
+                                                        const T& value) {
+    GpuAtomicMax(dest, value);
+  }
+};
+
+template <typename T>
+struct MinOpGpu {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
+                                                        const T& value) {
+    GpuAtomicMin(dest, value);
+  }
+};
+
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // initial value functors
 template <typename T>
@@ -71,49 +161,6 @@ struct Highest {
 };
 
 }  // namespace functor
-
-// The UnsortedSegmentReduction OpKernel. The DeviceReductionFunctor
-// is the device specific implementation of the reduction. These device
-// specific implementations are templated themselves with the corresponding
-// initial value functors and reduction functors.
-template <typename T, typename Index, typename DeviceReductionFunctor>
-class UnsortedSegmentReductionOp : public OpKernel {
- public:
-  explicit UnsortedSegmentReductionOp(OpKernelConstruction* context)
-      : OpKernel(context), reduction_functor_(DeviceReductionFunctor()) {}
-
-  void Compute(OpKernelContext* context) override {
-    const Tensor& data = context->input(0);
-    const Tensor& segment_ids = context->input(1);
-    const Tensor& num_segments = context->input(2);
-    if (!UnsortedSegmentReductionDoValidation(this, context, data, segment_ids,
-                                              num_segments)) {
-      return;
-    }
-    const auto segment_flat = segment_ids.flat<Index>();
-    const int64 output_rows = internal::SubtleMustCopy(static_cast<int64>(
-        num_segments.dtype() == DT_INT32 ? num_segments.scalar<int32>()()
-                                         : num_segments.scalar<int64>()()));
-    OP_REQUIRES(context, output_rows >= 0,
-                errors::InvalidArgument("Input num_segments == ", output_rows,
-                                        " must not be negative."));
-    TensorShape output_shape;
-    output_shape.AddDim(output_rows);
-    for (int i = segment_ids.dims(); i < data.dims(); i++) {
-      output_shape.AddDim(data.dim_size(i));
-    }
-    Tensor* output = nullptr;
-    OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
-    auto output_flat = output->flat_outer_dims<T>();
-    auto data_flat = data.flat_inner_outer_dims<T, 2>(segment_ids.dims() - 1);
-    reduction_functor_(context, segment_ids.shape(), segment_flat, data_flat,
-                       output_flat);
-  }
-
- protected:
-  DeviceReductionFunctor reduction_functor_;
-};
-
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_OPS_H_
