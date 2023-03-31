@@ -44,25 +44,20 @@ from tensorflow.python.util.tf_export import tf_export
 
 def _clip(params, ids, max_norm):
   """Helper function for _embedding_lookup_and_transform.
-
   This function optionally clips embeddings to an l2-norm of max_norm.
-
   Args:
     params: A `Tensor` of embeddings retrieved by `gather`.
     ids: The `ids` argument that was passed to `gather`.
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value.
-
   Returns:
     A `Tensor` with the same type as `params`.
   """
 
   def _rank(x):
     """Helper function to retrieve the rank of a tensor.
-
     Args:
       x: Something convertible to `Tensor`.
-
     Returns:
       Either a pair `(rank, True)` where `rank` is an integer or a pair
       `(rank, False)` where `rank` is an integer `Tensor`. In either case,
@@ -104,7 +99,6 @@ def _embedding_lookup_and_transform(params,
                                     blocknums=None,
                                     counts=None):
   """Helper function for embedding_lookup and _compute_sampled_logits.
-
   This function is a generalization of embedding_lookup that optionally
   applies a caller-specified transformation to each embedding. This is
   done through the `transform_fn` argument. If provided, the function is
@@ -114,7 +108,6 @@ def _embedding_lookup_and_transform(params,
   `Tensor`. The shape of the argument will be the same as `params` except
   for the size of the first dimension. The first dimension of the result's
   shape must be the same size as the argument's.
-
   Args:
     params: See embedding_lookup.
     ids: See embedding_lookup.
@@ -124,7 +117,6 @@ def _embedding_lookup_and_transform(params,
     transform_fn: An optional function to apply to each retrieved embedding. If
       max_norm is provided, transform_fn is applied to the norm-limited
       embeddings.
-
   Returns:
     See embedding_lookup for details.
   Raises:
@@ -370,7 +362,6 @@ def embedding_lookup(
     blocknums=None,
     counts=None):
   """Looks up `ids` in a list of embedding tensors.
-
   This function is used to perform parallel lookups on the list of
   tensors in `params`.  It is a generalization of
   `tf.gather`, where `params` is
@@ -378,25 +369,20 @@ def embedding_lookup(
   a `PartitionedVariable` as returned by using `tf.compat.v1.get_variable()`
   with a
   partitioner.
-
   If `len(params) > 1`, each element `id` of `ids` is partitioned between
   the elements of `params` according to the `partition_strategy`.
   In all strategies, if the id space does not evenly divide the number of
   partitions, each of the first `(max_id + 1) % len(params)` partitions will
   be assigned one more id.
-
   If `partition_strategy` is `"mod"`, we assign each id to partition
   `p = id % len(params)`. For instance,
   13 ids are split across 5 partitions as:
   `[[0, 5, 10], [1, 6, 11], [2, 7, 12], [3, 8], [4, 9]]`
-
   If `partition_strategy` is `"div"`, we assign ids to partitions in a
   contiguous manner. In this case, 13 ids are split across 5 partitions as:
   `[[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10], [11, 12]]`
-
   The results of the lookup are concatenated into a dense
   tensor. The returned tensor has shape `shape(ids) + shape(params)[1:]`.
-
   Args:
     params: A single tensor representing the complete embedding tensor, or a
       list of P tensors all of same shape except for the first dimension,
@@ -415,10 +401,8 @@ def embedding_lookup(
       include raising an error.
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value.
-
   Returns:
     A `Tensor` with the same type as the tensors in `params`.
-
   Raises:
     ValueError: If `params` is empty.
   """
@@ -437,7 +421,6 @@ def embedding_lookup(
 @tf_export("nn.embedding_lookup", v1=[])
 def embedding_lookup_v2(params, ids, max_norm=None, name=None):
   """Looks up `ids` in a list of embedding tensors.
-
   This function is used to perform parallel lookups on the list of
   tensors in `params`.  It is a generalization of
   `tf.gather`, where `params` is
@@ -445,21 +428,17 @@ def embedding_lookup_v2(params, ids, max_norm=None, name=None):
   a `PartitionedVariable` as returned by using `tf.compat.v1.get_variable()`
   with a
   partitioner.
-
   If `len(params) > 1`, each element `id` of `ids` is partitioned between
   the elements of `params` according to the `partition_strategy`.
   In all strategies, if the id space does not evenly divide the number of
   partitions, each of the first `(max_id + 1) % len(params)` partitions will
   be assigned one more id.
-
   The `partition_strategy` is always `"div"` currently. This means that we
   assign ids to partitions in a contiguous manner. For instance, 13 ids are
   split across 5 partitions as:
   `[[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10], [11, 12]]`
-
   The results of the lookup are concatenated into a dense
   tensor. The returned tensor has shape `shape(ids) + shape(params)[1:]`.
-
   Args:
     params: A single tensor representing the complete embedding tensor, or a
       list of P tensors all of same shape except for the first dimension,
@@ -471,10 +450,8 @@ def embedding_lookup_v2(params, ids, max_norm=None, name=None):
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value.
     name: A name for the operation (optional).
-
   Returns:
     A `Tensor` with the same type as the tensors in `params`.
-
   Raises:
     ValueError: If `params` is empty.
   """
@@ -502,14 +479,11 @@ def embedding_lookup_sparse(params,
                             max_norm=None,
                             blocknums=None):
   """Computes embeddings for the given ids and weights.
-
   This op assumes that there is at least one id for each row in the dense tensor
   represented by sp_ids (i.e. there are no rows with empty features), and that
   all the indices of sp_ids are in canonical row-major order.
-
   It also assumes that all id values lie in the range [0, p0), where p0
   is the sum of the size of params along dimension 0.
-
   Args:
     params: A single tensor representing the complete embedding tensor, or a
       list of P tensors all of same shape except for the first dimension,
@@ -532,42 +506,30 @@ def embedding_lookup_sparse(params,
       sum of the squares of the weights.
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value, before combining.
-
   Returns:
     A dense tensor representing the combined embeddings for the
     sparse ids. For each row in the dense tensor represented by `sp_ids`, the op
     looks up the embeddings for all ids in that row, multiplies them by the
     corresponding weight, and combines these embeddings as specified.
-
     In other words, if
-
       `shape(combined params) = [p0, p1, ..., pm]`
-
     and
-
       `shape(sp_ids) = shape(sp_weights) = [d0, d1, ..., dn]`
-
     then
-
       `shape(output) = [d0, d1, ..., dn-1, p1, ..., pm]`.
-
     For instance, if params is a 10x20 matrix, and sp_ids / sp_weights are
-
       ```python
       [0, 0]: id 1, weight 2.0
       [0, 1]: id 3, weight 0.5
       [1, 0]: id 0, weight 1.0
       [2, 3]: id 1, weight 3.0
       ```
-
     with `combiner`="mean", then the output will be a 3x20 matrix where
-
       ```python
       output[0, :] = (params[1, :] * 2.0 + params[3, :] * 0.5) / (2.0 + 0.5)
       output[1, :] = (params[0, :] * 1.0) / 1.0
       output[2, :] = (params[1, :] * 3.0) / 3.0
       ```
-
   Raises:
     TypeError: If `sp_ids` is not a `SparseTensor`, or if `sp_weights` is
       neither `None` nor `SparseTensor`.
@@ -869,14 +831,11 @@ def embedding_lookup_sparse_v2(params,
                                max_norm=None,
                                name=None):
   """Computes embeddings for the given ids and weights.
-
   This op assumes that there is at least one id for each row in the dense tensor
   represented by sp_ids (i.e. there are no rows with empty features), and that
   all the indices of sp_ids are in canonical row-major order.
-
   It also assumes that all id values lie in the range [0, p0), where p0
   is the sum of the size of params along dimension 0.
-
   Args:
     params: A single tensor representing the complete embedding tensor, or a
       list of P tensors all of same shape except for the first dimension,
@@ -896,42 +855,30 @@ def embedding_lookup_sparse_v2(params,
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value, before combining.
     name: Optional name for the op.
-
   Returns:
     A dense tensor representing the combined embeddings for the
     sparse ids. For each row in the dense tensor represented by `sp_ids`, the op
     looks up the embeddings for all ids in that row, multiplies them by the
     corresponding weight, and combines these embeddings as specified.
-
     In other words, if
-
       `shape(combined params) = [p0, p1, ..., pm]`
-
     and
-
       `shape(sp_ids) = shape(sp_weights) = [d0, d1, ..., dn]`
-
     then
-
       `shape(output) = [d0, d1, ..., dn-1, p1, ..., pm]`.
-
     For instance, if params is a 10x20 matrix, and sp_ids / sp_weights are
-
       ```python
       [0, 0]: id 1, weight 2.0
       [0, 1]: id 3, weight 0.5
       [1, 0]: id 0, weight 1.0
       [2, 3]: id 1, weight 3.0
       ```
-
     with `combiner`="mean", then the output will be a 3x20 matrix where
-
       ```python
       output[0, :] = (params[1, :] * 2.0 + params[3, :] * 0.5) / (2.0 + 0.5)
       output[1, :] = (params[0, :] * 1.0) / 1.0
       output[2, :] = (params[1, :] * 3.0) / 3.0
       ```
-
   Raises:
     TypeError: If `sp_ids` is not a `SparseTensor`, or if `sp_weights` is
       neither `None` nor `SparseTensor`.
@@ -952,7 +899,6 @@ def embedding_lookup_sparse_multi_dim(params,
                                       weight_axis=-1):
   """Computes embeddings for the given ids and weights like
      embedding_lookup_sparse.
-
   Args:
     params: A single tensor representing the complete embedding tensor, or a
       list of P tensors all of same shape except for the first dimension,
@@ -973,13 +919,11 @@ def embedding_lookup_sparse_multi_dim(params,
       than this value, before combining.
     name: Optional name for the op.
     weight_axis: Specify axis to use weight.
-
   Returns:
     A dense tensor representing the combined embeddings for the
     sparse ids. For each row in the dense tensor represented by `sp_ids`, the op
     looks up the embeddings for all ids in that row, multiplies them by the
     corresponding weight, and combines these embeddings as specified.
-
   Raises:
     TypeError: If `sp_ids` is not a `SparseTensor`, or if `sp_weights` is
       neither `None` nor `SparseTensor`.
@@ -1167,25 +1111,20 @@ def safe_embedding_lookup_sparse_v2(embedding_weights,
                                     max_norm=None,
                                     name=None):
   """Lookup embedding results, accounting for invalid IDs and empty features.
-
   The partitioned embedding in `embedding_weights` must all be the same shape
   except for the first dimension. The first dimension is allowed to vary as the
   vocabulary size is not necessarily a multiple of `P`.  `embedding_weights`
   may be a `PartitionedVariable` as returned by using
   `tf.compat.v1.get_variable()` with a
   partitioner.
-
   Invalid IDs (< 0) are pruned from input IDs and weights, as well as any IDs
   with non-positive weight. For an entry with no features, the embedding vector
   for `default_id` is returned, or the 0-vector if `default_id` is not supplied.
-
   The ids and weights may be multi-dimensional. Embeddings are always aggregated
   along the last dimension.
-
   Note: when doing embedding lookup on `embedding_weights`, "div" partition
   strategy will be used. Support for other partition strategy will be added
   later.
-
   Args:
     embedding_weights:  A list of `P` float `Tensor`s or values representing
       partitioned embedding `Tensor`s.  Alternatively, a `PartitionedVariable`
@@ -1204,10 +1143,8 @@ def safe_embedding_lookup_sparse_v2(embedding_weights,
     max_norm: If not `None`, all embeddings are l2-normalized to max_norm before
       combining.
     name: A name for this operation (optional).
-
   Returns:
     Dense `Tensor` of shape `[d_0, d_1, ..., d_{n-1}, e_1, ..., e_m]`.
-
   Raises:
     ValueError: if `embedding_weights` is empty.
   """
@@ -1233,21 +1170,17 @@ def safe_embedding_lookup_sparse(embedding_weights,
                                  max_norm=None,
                                  prune=True):
   """Lookup embedding results, accounting for invalid IDs and empty features.
-
   The partitioned embedding in `embedding_weights` must all be the same shape
   except for the first dimension. The first dimension is allowed to vary as the
   vocabulary size is not necessarily a multiple of `P`.  `embedding_weights`
   may be a `PartitionedVariable` as returned by using
   `tf.compat.v1.get_variable()` with a
   partitioner.
-
   Invalid IDs (< 0) are pruned from input IDs and weights, as well as any IDs
   with non-positive weight. For an entry with no features, the embedding vector
   for `default_id` is returned, or the 0-vector if `default_id` is not supplied.
-
   The ids and weights may be multi-dimensional. Embeddings are always aggregated
   along the last dimension.
-
   Args:
     embedding_weights:  A list of `P` float `Tensor`s or values representing
       partitioned embedding `Tensor`s.  Alternatively, a `PartitionedVariable`
@@ -1268,10 +1201,8 @@ def safe_embedding_lookup_sparse(embedding_weights,
       `"div"` and `"mod"` are supported. Default is `"div"`.
     max_norm: If not `None`, all embeddings are l2-normalized to max_norm before
       combining.
-
   Returns:
     Dense `Tensor` of shape `[d_0, d_1, ..., d_{n-1}, e_1, ..., e_m]`.
-
   Raises:
     ValueError: if `embedding_weights` is empty.
   """
@@ -1584,7 +1515,6 @@ def safe_adaptive_embedding_lookup_sparse(hash_embedding_weights,
   '''
   if not isinstance(embedding_weights[0],
       (kv_variable_ops.EmbeddingVariable, kv_variable_ops.DynamicEmbeddingVariable)):
-
   '''
   with ops.name_scope(name, "embedding_lookup",
                       hash_embedding_weights + [sparse_ids,
@@ -1653,6 +1583,7 @@ def safe_adaptive_embedding_lookup_sparse(hash_embedding_weights,
 def group_embedding_lookup_sparse(params,
                                   sp_ids,
                                   combiners,
+                                  sp_weights=None,
                                   partition_strategy="mod",
                                   name=None):
   """
@@ -1672,7 +1603,6 @@ def group_embedding_lookup_sparse(params,
     emb_vec: list
             a list of tf.Tensor(the results of lookup).
   """
-  ##TODO(jqh): support calculate sp_weights in this API
   if combiners is None:
     logging.warn("The default value of combiner will change from \"mean\" "
                  "to \"sqrtn\" after 2016/11/01.")
@@ -1687,11 +1617,16 @@ def group_embedding_lookup_sparse(params,
     raise ValueError("params must be specified")
   if not isinstance(params, list):
     params = [params]
-  
+
+  ignore_weights = sp_weights is None
+
   if len(combiners) != len(sp_ids):
     raise ValueError("len of combiners must be equal to len of sp_ids")
   if len(combiners) != len(params):
     raise ValueError("len of combiners must be equal to len of params")
+  if not ignore_weights:
+    if len(combiners) != len(sp_weights):
+      raise ValueError("len of combiners must be equal to len of sp_weights")
 
   ## Currently not doing unique
   strategy = group_embedding_ops_utils.get_group_lookup_strategy()
@@ -1721,6 +1656,7 @@ def group_embedding_lookup_sparse(params,
     tf_group_id = 0
     is_ev_list = [False for _ in range(len(params))]
     params_idx_map = {}
+    batch_size = -1
 
     for index, param in enumerate(params):
       params_idx_map[param] = index
@@ -1730,7 +1666,19 @@ def group_embedding_lookup_sparse(params,
           sp_id = sp_id.to_sparse()
         except:  
           raise ValueError("sp_id is neither SparseTensor nor RaggedTensor!")
+      batch_size = math_ops.cast(sp_id.dense_shape[0], dtype=dtypes.int32)
 
+      if not ignore_weights:
+        sp_weight = sp_weights[index]
+        if sp_weight is not None:
+          if not isinstance(sp_weight, sparse_tensor.SparseTensor):
+            raise TypeError("sp_weights must be either None or SparseTensor")
+          sp_id.values.get_shape().assert_is_compatible_with(
+            sp_weight.values.get_shape())
+          sp_id.indices.get_shape().assert_is_compatible_with(
+              sp_weight.indices.get_shape())
+          sp_id.dense_shape.get_shape().assert_is_compatible_with(
+              sp_weight.dense_shape.get_shape())
 
       if isinstance(param, kv_variable_ops.EmbeddingVariable):
         is_ev_list[index] = True
@@ -1747,7 +1695,7 @@ def group_embedding_lookup_sparse(params,
     if ev_group_id > 0:
       ev_sp_values = [[] for _ in range(ev_group_id)]
       ev_sp_indices = [[] for _ in range(ev_group_id)]
-      ev_sp_dense_shape = [[] for _ in range(ev_group_id)]
+      ev_sp_weights = [[] for _ in range(ev_group_id)]
       ev_handlers = [[] for _ in range(ev_group_id)]
       ev_dimensions = [0 for _ in range(ev_group_id)]
       ev_combiners = ["mean" for _ in range(ev_group_id)]
@@ -1762,15 +1710,18 @@ def group_embedding_lookup_sparse(params,
         sp_id = sp_ids[index]
         batch_size = math_ops.cast(sp_id.dense_shape[0], dtype=dtypes.int32)
         combiner = combiners[index]
-
+        
         ev_combiners[group_id] = combiner
         ev_dimensions[group_id] = dim
         ev_handlers[group_id].append(param.handle)
         ev_sp_values[group_id].append(sp_id.values)
-        ev_sp_indices[group_id].append(sp_id.indices)
-        ev_sp_dense_shape[group_id].append(sp_id.dense_shape)
+        ev_sp_indices[group_id].append(sp_id.indices[:, 0])
         output_index_list[group_id].append(params_idx_map[param])
-      
+
+        if not ignore_weights:
+          sp_weight = sp_weights[index]
+          ev_sp_weights[group_id].append(sp_weight.values)
+
       for group_id in range(ev_group_id):
         dim = ev_dimensions[group_id]
         output_index = output_index_list[group_id]
@@ -1779,16 +1730,18 @@ def group_embedding_lookup_sparse(params,
           outputs = group_embedding_lookup_ops.group_embedding_var_lookup(ev_handlers[group_id],
                                                                           ev_sp_values[group_id],
                                                                           ev_sp_indices[group_id],
-                                                                          ev_sp_dense_shape[group_id],
+                                                                          ev_sp_weights[group_id],
                                                                           ev_combiners[group_id],
-                                                                          dim)[0]
+                                                                          batch_size,
+                                                                          dim,
+                                                                          ignore_weights)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
     
     if tf_group_id > 0:
       tf_sp_values = [[] for _ in range(tf_group_id)]
       tf_sp_indices = [[] for _ in range(tf_group_id)]
-      tf_sp_dense_shape = [[] for _ in range(tf_group_id)]
+      tf_sp_weights = [[] for _ in range(tf_group_id)]
       tf_handlers = [[] for _ in range(tf_group_id)]
       tf_dimensions = [0 for _ in range(tf_group_id)]
       tf_combiners = ["mean" for _ in range(tf_group_id)]
@@ -1807,10 +1760,13 @@ def group_embedding_lookup_sparse(params,
         tf_dimensions[group_id] = dim
         tf_handlers[group_id].append(param)
         tf_sp_values[group_id].append(sp_id.values)
-        tf_sp_indices[group_id].append(sp_id.indices)
-        tf_sp_dense_shape[group_id].append(sp_id.dense_shape)
+        tf_sp_indices[group_id].append(sp_id.indices[:, 0])
         output_index_list[group_id].append(params_idx_map[param])
-      
+
+        if not ignore_weights:
+          sp_weight = sp_weights[index]
+          tf_sp_weights[group_id].append(sp_weight.values)
+
       for group_id in range(tf_group_id):
         dim = tf_dimensions[group_id]
         output_index = output_index_list[group_id]
@@ -1819,9 +1775,11 @@ def group_embedding_lookup_sparse(params,
           outputs = group_embedding_lookup_ops.group_variable_lookup(tf_handlers[group_id],
                                                                       tf_sp_values[group_id],
                                                                       tf_sp_indices[group_id],
-                                                                      tf_sp_dense_shape[group_id],
+                                                                      tf_sp_weights[group_id],
                                                                       tf_combiners[group_id],
-                                                                      dim)[0]
+                                                                      batch_size,
+                                                                      dim,
+                                                                      ignore_weights)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
                                                                 
