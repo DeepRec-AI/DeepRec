@@ -1754,6 +1754,7 @@ def group_embedding_lookup_sparse(params,
         dim = param.shape[1].value
         group_id = tf_group_id_map[dim]
         sp_id = sp_ids[index]
+        batch_size = math_ops.cast(sp_id.dense_shape[0], dtype=dtypes.int32)
         combiner = combiners[index]
 
         tf_combiners[group_id] = combiner

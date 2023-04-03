@@ -105,13 +105,13 @@ __global__ void WeightedEmbeddingVarComputeFn(
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
 
-      TValue out = 0.0;
+      float out = 0.0f;
 
       // #pragma unroll
       for (int j = 0; j < feature_num; ++j) {
         int64_t feature_offset = (value_offset + j) * dimension;
         TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
-        TValue sp_weights = args[ev_id].sp_weights_[bid * dimension + tid];
+        TValue sp_weights = args[ev_id].sp_weights_[feature_offset + tid];
         if (max_norm >= 0.0) {
           if (tid == 0) {
             l2_sum = 0.0;
@@ -126,8 +126,8 @@ __global__ void WeightedEmbeddingVarComputeFn(
         }
         out += sum * sp_weights;
       }
-
       out = Combine<combiner>(out, feature_num);
+      printf("tid is %d, bid is %d ev_id is %d  feature_num is %d indices is %d emb_element is %f\n", tid, bid, ev_id, feature_num, value_offset, out);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -212,7 +212,7 @@ __global__ void EmbeddingVarComputeFn(
       } else {
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
-      TValue out = 0.0;
+      float out = 0.0f;
 
       // #pragma unroll
       for (int j = 0; j < feature_num; ++j) {
@@ -232,8 +232,8 @@ __global__ void EmbeddingVarComputeFn(
         }
         out += sum;
       }
-
       out = Combine<combiner>(out, feature_num);
+      printf("tid is %d, bid is %d ev_id is %d feature_num is %d indices is %d emb_element is %f\n", tid, bid, ev_id, feature_num, value_offset, out);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -544,7 +544,7 @@ class GroupEmbeddingLookupForWard {
 
     {
       // TODO: double check why mapped 2D grid slower
-      const int block_size = (batch_size - 1) / 64 * tile_size + 1;
+      const int block_size = batch_size / 64 * tile_size + 1;
       compute_fn<<<block_size, 64, 0, stream>>>(batch_size, dimension_,
                                                 max_norm_, ev_nums_, d_args_);
     }
