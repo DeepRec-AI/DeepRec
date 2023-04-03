@@ -107,9 +107,10 @@ EventMgr::~EventMgr() {
     delete e;
   }
 
-  for (auto& [stream, stream_callbacks] : callbacks_) {
-    for (auto& [event, callback] : stream_callbacks) {
-      threadpool_.Schedule(std::move(callback));
+  for (auto& stream_cb_pairs : callbacks_) {
+    auto& stream_callbacks = stream_cb_pairs.second;
+    for (auto& ev_cb_pairs : stream_callbacks) {
+      threadpool_.Schedule(std::move(ev_cb_pairs.second));
     }
   }
 }
@@ -219,7 +220,8 @@ void EventMgr::PollEvents(se::Stream* stream /*=nullptr*/) {
 
       auto it = stream_callbacks.begin();
       while (it != stream_callbacks.end()) {
-        auto& [event, callback] = *it;
+        auto& event = it->first;
+        auto& callback = it->second;
         se::Event::Status s = event->PollForStatus();
         bool quit = false;
         switch (s) {
