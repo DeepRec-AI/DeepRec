@@ -1676,7 +1676,7 @@ void SingleCommit(KVInterface<int64, float>* hashmap,
   uint64 result_cost = end - start;
 }
 
-TEST(KVInterfaceTest, TestSSDKVCompaction) {
+void TestCompaction() {
   std::string temp_dir = testing::TmpDir();
   auto hashmap = new SSDHashKV<int64, float>(
       temp_dir, cpu_allocator());
@@ -1728,6 +1728,58 @@ TEST(KVInterfaceTest, TestSSDKVCompaction) {
       ASSERT_EQ(v[4+j], i + 2);
     }
   }
+  delete hashmap;
+}
+
+TEST(KVInterfaceTest, TestSSDKVAsyncCompaction) {
+  setenv("TF_SSDHASH_ASYNC_COMPACTION", "true", 1);
+  TestCompaction();
+}
+
+TEST(KVInterfaceTest, TestSSDKVSyncCompaction) {
+  setenv("TF_SSDHASH_ASYNC_COMPACTION", "false", 1);
+  TestCompaction();
+}
+
+void TestReadEmbFile() {
+  std::string temp_dir = testing::TmpDir();
+  auto hashmap = new SSDHashKV<int64, float>(
+      temp_dir, cpu_allocator());
+  hashmap->SetTotalDims(124);
+  ASSERT_EQ(hashmap->Size(), 0);
+  std::vector<int64> ids;
+  for (int i = 0; i < 262145; i++) {
+    ids.emplace_back(i);
+  }
+  SingleCommit(hashmap, ids, 3);
+  sleep(1);
+  ids.clear();
+  ValuePtr<float>* val = nullptr;
+  for (int i = 0; i < 262144; i++) {
+    hashmap->Lookup(i, &val);
+    float* v = (float*)val->GetPtr();
+    for (int j = 0; j < 124; j++){
+      ASSERT_EQ(v[4+j], i+3);
+    }
+  }
+  delete hashmap;
+}
+
+TEST(KVInterfaceTest, TestMmapMadviseFile) {
+  setenv("TF_SSDHASH_IO_SCHEME", "mmap_and_madvise", 1);
+  TestReadEmbFile();
+}
+
+TEST(KVInterfaceTest, TestMmapFile) {
+  std::string temp_dir = testing::TmpDir();
+  setenv("TF_SSDHASH_IO_SCHEME", "mmap", 1);
+  TestReadEmbFile();
+}
+
+TEST(KVInterfaceTest, TestDirectIoFile) {
+  std::string temp_dir = testing::TmpDir();
+  setenv("TF_SSDHASH_IO_SCHEME", "directio", 1);
+  TestReadEmbFile();
 }
 
 } // namespace
