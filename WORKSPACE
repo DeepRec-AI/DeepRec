@@ -209,6 +209,8 @@ http_archive(
     name = "libevent",                                    # BSD License
     build_file = "//serving/third_party:libevent.BUILD",
     sha256 = "7180a979aaa7000e1264da484f712d403fcf7679b1e9212c4e3d09f5c93efc24",
+    strip_prefix = "libevent-release-2.1.12-stable",
+    patch_args = ["-p1"],
     patches = [
         "//serving/third_party:libevent1.patch",
         "//serving/third_party:libevent.patch",
@@ -243,6 +245,7 @@ http_archive(
     build_file = "//serving/third_party:libapr1.BUILD",
     sha256 = "1a0909a1146a214a6ab9de28902045461901baab4e0ee43797539ec05b6dbae0",
     strip_prefix = "apr-1.6.5",
+    patch_args = ["-p1"],
     patches = [
         "//serving/third_party:libapr1.patch",
     ],
@@ -256,6 +259,7 @@ http_archive(
     build_file = "//serving/third_party:libaprutil1.BUILD",
     sha256 = "4c9ae319cedc16890fc2776920e7d529672dda9c3a9a9abd53bd80c2071b39af",
     strip_prefix = "apr-util-1.6.1",
+    patch_args = ["-p1"],
     patches = [
         "//serving/third_party:libaprutil1.patch",
     ],
@@ -269,6 +273,7 @@ http_archive(
     build_file = "//serving/third_party:mxml.BUILD",
     sha256 = "4d850d15cdd4fdb9e82817eb069050d7575059a9a2729c82b23440e4445da199",
     strip_prefix = "mxml-2.12",
+    patch_args = ["-p1"],
     patches = [
         "//serving/third_party:mxml.patch",
     ],
