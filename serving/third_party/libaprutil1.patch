@@ -1,6 +1,26 @@
-diff -urN include/apr_ldap.h libaprutil/include/apr_ldap.h
---- include/apr_ldap.h	1970-01-01 00:00:00.000000000 +0000
-+++ libaprutil/include/apr_ldap.h	2019-02-09 23:57:54.000000000 +0000
+From de88c7ca24788449ede2afafbdc70ae9bfd59fe4 Mon Sep 17 00:00:00 2001
+From: Tao Peng <jiankeng.pt@alibaba-inc.com>
+Date: Tue, 4 Apr 2023 19:47:16 +0800
+Subject: [PATCH] DeepRec diff
+
+---
+ include/apr_ldap.h               | 197 +++++++++++++++++++++++++++++++
+ include/apu.h                    | 128 ++++++++++++++++++++
+ include/apu_want.h               |  51 ++++++++
+ include/private/apu_config.h     | 184 +++++++++++++++++++++++++++++
+ include/private/apu_select_dbm.h |  28 +++++
+ 5 files changed, 588 insertions(+)
+ create mode 100644 include/apr_ldap.h
+ create mode 100644 include/apu.h
+ create mode 100644 include/apu_want.h
+ create mode 100644 include/private/apu_config.h
+ create mode 100644 include/private/apu_select_dbm.h
+
+diff --git a/include/apr_ldap.h b/include/apr_ldap.h
+new file mode 100644
+index 00000000..bd328537
+--- /dev/null
++++ b/include/apr_ldap.h
 @@ -0,0 +1,197 @@
 +/* Licensed to the Apache Software Foundation (ASF) under one or more
 + * contributor license agreements.  See the NOTICE file distributed with
@@ -199,9 +219,11 @@ diff -urN include/apr_ldap.h libaprutil/include/apr_ldap.h
 +#endif /* APR_HAS_LDAP */
 +/** @} */
 +#endif /* APU_LDAP_H */
-diff -urN include/apu.h libaprutil/include/apu.h
---- include/apu.h	1970-01-01 00:00:00.000000000 +0000
-+++ libaprutil/include/apu.h	2019-02-09 23:58:29.000000000 +0000
+diff --git a/include/apu.h b/include/apu.h
+new file mode 100644
+index 00000000..4c14d9a7
+--- /dev/null
++++ b/include/apu.h
 @@ -0,0 +1,128 @@
 +/* Licensed to the Apache Software Foundation (ASF) under one or more
 + * contributor license agreements.  See the NOTICE file distributed with
@@ -331,9 +353,11 @@ diff -urN include/apu.h libaprutil/include/apu.h
 +
 +#endif /* APU_H */
 +/** @} */
-diff -urN include/apu_want.h libaprutil/include/apu_want.h
---- include/apu_want.h	1970-01-01 00:00:00.000000000 +0000
-+++ libaprutil/include/apu_want.h	2019-02-09 23:58:54.000000000 +0000
+diff --git a/include/apu_want.h b/include/apu_want.h
+new file mode 100644
+index 00000000..25f1100d
+--- /dev/null
++++ b/include/apu_want.h
 @@ -0,0 +1,51 @@
 +/* Licensed to the Apache Software Foundation (ASF) under one or more
 + * contributor license agreements.  See the NOTICE file distributed with
@@ -386,9 +410,11 @@ diff -urN include/apu_want.h libaprutil/include/apu_want.h
 +#endif
 +
 +/* --------------------------------------------------------------------- */
-diff -urN include/private/apu_config.h libaprutil/include/private/apu_config.h
---- include/private/apu_config.h	1970-01-01 00:00:00.000000000 +0000
-+++ libaprutil/include/private/apu_config.h	2019-02-09 23:59:45.000000000 +0000
+diff --git a/include/private/apu_config.h b/include/private/apu_config.h
+new file mode 100644
+index 00000000..7a826d54
+--- /dev/null
++++ b/include/private/apu_config.h
 @@ -0,0 +1,184 @@
 +/* include/private/apu_config.h.  Generated from apu_config.h.in by configure.  */
 +/* include/private/apu_config.h.in.  Generated from configure.in by autoheader.  */
@@ -574,9 +600,11 @@ diff -urN include/private/apu_config.h libaprutil/include/private/apu_config.h
 +
 +/* Define to 1 if you have the ANSI C header files. */
 +#define STDC_HEADERS 1
-diff -urN include/private/apu_select_dbm.h libaprutil/include/private/apu_select_dbm.h
---- include/private/apu_select_dbm.h	1970-01-01 00:00:00.000000000 +0000
-+++ libaprutil/include/private/apu_select_dbm.h	2019-02-09 23:56:50.000000000 +0000
+diff --git a/include/private/apu_select_dbm.h b/include/private/apu_select_dbm.h
+new file mode 100644
+index 00000000..1ac89d58
+--- /dev/null
++++ b/include/private/apu_select_dbm.h
 @@ -0,0 +1,28 @@
 +/* Licensed to the Apache Software Foundation (ASF) under one or more
 + * contributor license agreements.  See the NOTICE file distributed with
@@ -606,3 +634,6 @@ diff -urN include/private/apu_select_dbm.h libaprutil/include/private/apu_select
 +#define APU_USE_DB      0
 +
 +#endif	/* !APU_SELECT_DBM_H */
+-- 
+2.31.1
+

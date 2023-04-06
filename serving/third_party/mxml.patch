@@ -1,6 +1,18 @@
-diff -urN config.h .org/config.h
---- config.h	1970-01-01 00:00:00.000000000 +0000
-+++ .org/config.h	2019-02-10 22:55:59.000000000 +0000
+From 078142e37e1442be21d7a7e7cfe87d7edb7f2dc2 Mon Sep 17 00:00:00 2001
+From: Tao Peng <jiankeng.pt@alibaba-inc.com>
+Date: Tue, 4 Apr 2023 19:35:06 +0800
+Subject: [PATCH] DeepRec diff.
+
+---
+ config.h | 110 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 110 insertions(+)
+ create mode 100644 config.h
+
+diff --git a/config.h b/config.h
+new file mode 100644
+index 0000000..29de4ed
+--- /dev/null
++++ b/config.h
 @@ -0,0 +1,110 @@
 +/* config.h.  Generated from config.h.in by configure.  */
 +/*
@@ -112,3 +124,6 @@ diff -urN config.h .org/config.h
 +extern int	_mxml_vsnprintf(char *, size_t, const char *, va_list);
 +#    define vsnprintf _mxml_vsnprintf
 +#  endif /* !HAVE_VSNPRINTF */
+-- 
+2.31.1
+

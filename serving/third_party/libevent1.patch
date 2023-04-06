@@ -1,6 +1,22 @@
-diff -uprN libevent-release-2.1.12-stable/config.h libevent-release-2.1.12-stable-fixed/config.h
---- libevent-release-2.1.12-stable/config.h	1970-01-01 08:00:00.000000000 +0800
-+++ libevent-release-2.1.12-stable-fixed/config.h	2022-03-23 14:53:55.576096569 +0800
+From b7b3e6b7f28e9b587025e12eb53f469cb0ddba8e Mon Sep 17 00:00:00 2001
+From: Tao Peng <jiankeng.pt@alibaba-inc.com>
+Date: Tue, 4 Apr 2023 20:05:25 +0800
+Subject: [PATCH] DeepRec diff
+
+---
+ config.h                      | 555 +++++++++++++++++++++++++++++++++
+ evconfig-private.h            |  56 ++++
+ include/event2/event-config.h | 570 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 1181 insertions(+)
+ create mode 100644 config.h
+ create mode 100644 evconfig-private.h
+ create mode 100644 include/event2/event-config.h
+
+diff --git a/config.h b/config.h
+new file mode 100644
+index 00000000..2740f0b2
+--- /dev/null
++++ b/config.h
 @@ -0,0 +1,555 @@
 +/* config.h.  Generated from config.h.in by configure.  */
 +/* config.h.in.  Generated from configure.ac by autoheader.  */
@@ -557,9 +573,11 @@ diff -uprN libevent-release-2.1.12-stable/config.h libevent-release-2.1.12-stabl
 +
 +/* Define to `int' if <sys/types.h> does not define. */
 +/* #undef ssize_t */
-diff -uprN libevent-release-2.1.12-stable/evconfig-private.h libevent-release-2.1.12-stable-fixed/evconfig-private.h
---- libevent-release-2.1.12-stable/evconfig-private.h	1970-01-01 08:00:00.000000000 +0800
-+++ libevent-release-2.1.12-stable-fixed/evconfig-private.h	2022-03-23 14:53:55.576096569 +0800
+diff --git a/evconfig-private.h b/evconfig-private.h
+new file mode 100644
+index 00000000..31e61004
+--- /dev/null
++++ b/evconfig-private.h
 @@ -0,0 +1,56 @@
 +/* evconfig-private.h.  Generated from evconfig-private.h.in by configure.  */
 +/* evconfig-private.h template - see "Configuration Header Templates" */
@@ -617,9 +635,11 @@ diff -uprN libevent-release-2.1.12-stable/evconfig-private.h libevent-release-2.
 +#endif
 +
 +#endif
-diff -uprN libevent-release-2.1.12-stable/include/event2/event-config.h libevent-release-2.1.12-stable-fixed/include/event2/event-config.h
---- libevent-release-2.1.12-stable/include/event2/event-config.h	1970-01-01 08:00:00.000000000 +0800
-+++ libevent-release-2.1.12-stable-fixed/include/event2/event-config.h	2022-03-23 15:48:58.804454680 +0800
+diff --git a/include/event2/event-config.h b/include/event2/event-config.h
+new file mode 100644
+index 00000000..3cc8c1ff
+--- /dev/null
++++ b/include/event2/event-config.h
 @@ -0,0 +1,570 @@
 +/* event2/event-config.h
 + *
@@ -1191,3 +1211,6 @@ diff -uprN libevent-release-2.1.12-stable/include/event2/event-config.h libevent
 +/* #undef ssize_t */
 +
 +#endif /* event2/event-config.h */
+-- 
+2.31.1
+
