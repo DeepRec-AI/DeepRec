@@ -9,7 +9,7 @@ SessionGroup功能提供了可以配置一组Session，并且将Request通过Rou
 
 ## 接口介绍
 
-如果用户使用Tensorflow Serving进行服务，可以使用我们提供的代码: [AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec)，这里已经提供了接入SessionGroup的功能。
+如果用户使用Tensorflow Serving进行服务，可以使用我们提供的代码: [DeepRec-AI/serving](https://github.com/DeepRec-AI/serving/commits/deeprec)，这里已经提供了接入SessionGroup的功能。
 也可以使用我们提供的[Processor](https://github.com/alibaba/DeepRec/tree/main/serving)代码，Processor没有提供RPC服务框架，通常使用[PAI-EAS](https://www.aliyun.com/activity/bigdata/pai/eas)作为RPC框架。如果用户有特殊需求，亦可自行接入自有RPC框架中。
 
 ### 1.Processor + EAS
@@ -37,9 +37,9 @@ SessionGroup功能提供了可以配置一组Session，并且将Request通过Rou
 更多参数详见：[processor配置参数](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
 
 ### 2.Tensorflow serving
-TFServing使用的是SavedModelBundle进行serving的，相关的代码修改参考：[SessionGroup](https://github.com/AlibabaPAI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217)，推荐直接使用我们提供的TFServing代码。
+TFServing使用的是SavedModelBundle进行serving的，相关的代码修改参考：[SessionGroup](https://github.com/DeepRec-AI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217)，推荐直接使用我们提供的TFServing代码。
 
-支持SessionGroup的TFServing代码见：[AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
+支持SessionGroup的TFServing代码见：[DeepRec-AI/serving](https://github.com/DeepRec-AI/serving/commits/deeprec)
 
 编译文档见：[TFServing编译](https://deeprec.readthedocs.io/zh/latest/TFServing-Compile-And-Install.html)
 
@@ -123,7 +123,7 @@ use_multi_stream=true: 开启multi-stream功能。
 ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --gpu_ids_list=0,2  --model_base_path=/xx/xx/pb/
 ```
 上面环境变量详细解释见: [启动参数](https://deeprec.readthedocs.io/zh/latest/SessionGroup.html#id5)
-TF serving用DeepRec提供的代码: [TF serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
+TF serving用DeepRec提供的代码: [TF serving](https://github.com/DeepRec-AI/serving/commits/deeprec)
 
 ##### 4.多卡MPS最佳实践
 用户机器上可能存在多张GPU卡，对于每个serving instance一般只需要使用一个GPU Device，那么用户可能会在物理机器上启动多个不同的serving instance。在这种情况下使用MPS有一些需要注意的问题，具体如下：
@@ -185,7 +185,7 @@ status = session_group_->Run(run_options, req.inputs,
 
 ## 多模型服务
 ### TF Serving
-SessionGroup支持多模型服务，在[TF_serving](https://github.com/AlibabaPAI/serving)上已经支持。对于多模型服务，用户可以对于每个模型服务配置独立的参数，包括不同的模型session group中使用几个session，指定gpu卡，指定线程池等等，从而在框架，资源上进行隔离。
+SessionGroup支持多模型服务，在[TF_serving](https://github.com/DeepRec-AI/serving)上已经支持。对于多模型服务，用户可以对于每个模型服务配置独立的参数，包括不同的模型session group中使用几个session，指定gpu卡，指定线程池等等，从而在框架，资源上进行隔离。
 
 对于GPU任务，目前session group可以指定一张或者多张GPU卡，所以用户在启动多模型任务时，需要注意GPU资源的划分。
 

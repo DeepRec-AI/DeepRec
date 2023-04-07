@@ -42,7 +42,7 @@
 
 DeepRec provide new distributed protocols such as grpc++ and star_server, which is not supported when use native Estimator. We provide Estimator based on DeepRec.
 
-Source Code: [https://github.com/AlibabaPAI/estimator](https://github.com/AlibabaPAI/estimator)
+Source Code: [https://github.com/DeepRec-AI/estimator](https://github.com/DeepRec-AI/estimator)
 
 Develop Branch：master, Latest Release Branch: deeprec2302
 

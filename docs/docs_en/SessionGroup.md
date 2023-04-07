@@ -6,7 +6,7 @@ In the current recommendation inference scenario, the user always used the tenso
 By using SessionGroup, it can solve the problem of large memory usage but low model CPU usage, greatly improve resource utilization, and greatly improve QPS under the premise of ensuring latency. In addition, multiple sessions in SessionGroup can also be executed concurrently in GPU scenarios, which greatly improves the utilization efficiency of GPUs.
 
 ## Usage
-If users use tensorflow_serving for services, they can use the code we provide: [AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec), here has already provided the function of accessing SessionGroup. You can also use the [Processor](https://github.com/alibaba/DeepRec/tree/main/serving) code provided by us. Processor does not provide an RPC service framework, you can use our RPC framework [PAI-EAS](https://www.aliyun.com/activity/bigdata/pai/eas) or yours.
+If users use tensorflow_serving for services, they can use the code we provide: [DeepRec-AI/serving](https://github.com/DeepRec-AI/serving/commits/deeprec), here has already provided the function of accessing SessionGroup. You can also use the [Processor](https://github.com/alibaba/DeepRec/tree/main/serving) code provided by us. Processor does not provide an RPC service framework, you can use our RPC framework [PAI-EAS](https://www.aliyun.com/activity/bigdata/pai/eas) or yours.
 
 ### 1.Processor + EAS
 #### CPU Task
@@ -34,9 +34,9 @@ For GPU tasks, the following configurations are required:
 More parameters see: [processor configuration parameters](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
 
 ### 2.Tensorflow serving
-Our offered tensorflow_serving now do serving via SavedModelBundle. We already support SessionGroup in tensorflow_serving, related code modification reference: [SessionGroup](https://github.com/AlibabaPAI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217), it is recommended to use the tensorflow_serving code provided by us directly.
+Our offered tensorflow_serving now do serving via SavedModelBundle. We already support SessionGroup in tensorflow_serving, related code modification reference: [SessionGroup](https://github.com/DeepRec-AI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217), it is recommended to use the tensorflow_serving code provided by us directly.
 
-tensorflow_serving repo that supports SessionGroup: [AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
+tensorflow_serving repo that supports SessionGroup: [DeepRec-AI/serving](https://github.com/DeepRec-AI/serving/commits/deeprec)
 
 Compilation documentation see: [TFServing compilation](https://deeprec.readthedocs.io/zh/latest/TFServing-Compile-And-Install.html)
 
@@ -157,7 +157,7 @@ docker1 task:
 CUDA_VISIBLE_DEVICES=1 test.py
 ```
 
-The tensorflow_serving code modified by DeepRec is as follows:: [TF serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
+The tensorflow_serving code modified by DeepRec is as follows:: [TF serving](https://github.com/DeepRec-AI/serving/commits/deeprec)
 
 ### 3.Use user-defined framework
 If users want to implement the session group function into their own framework, they can refer to the code implementation in the processor below.
@@ -183,7 +183,7 @@ Reference Code: [Processor](https://github.com/alibaba/DeepRec/blob/main/serving
 
 ## Multi-model service
 ### TF Serving
-SessionGroup supports multi-model services, which have been supported on [TF_serving](https://github.com/AlibabaPAI/serving). For multi-model services, users can configure independent parameters for each model service, including the number of sessions in session groups in different model services, specifying GPUs, thread pools, etc., so as to isolate frameworks and resources.
+SessionGroup supports multi-model services, which have been supported on [TF_serving](https://github.com/DeepRec-AI/serving). For multi-model services, users can configure independent parameters for each model service, including the number of sessions in session groups in different model services, specifying GPUs, thread pools, etc., so as to isolate frameworks and resources.
 
 For GPU tasks, the session group can specify one or more GPUs, so users need to pay attention to the division of GPU resources when starting multi-model tasks.
 

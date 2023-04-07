@@ -41,7 +41,7 @@
 
 我们提供了针对DeepRec版本的TFServing，该版本指向DeepRec Repo.
 
-代码库：[https://github.com/AlibabaPAI/serving](https://github.com/AlibabaPAI/serving)
+代码库：[https://github.com/DeepRec-AI/serving](https://github.com/DeepRec-AI/serving)
 
 开发分支：master，最新Release分支：deeprec2302
 
