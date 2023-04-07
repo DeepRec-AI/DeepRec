@@ -83,7 +83,7 @@ def model_fn(self, features, labels, mode, params):
 
 ## Model Export
 
-By default, incremental checkpoint subgraphs cannot be exported to SavedModel. If users want to support second-level updates through "incremental model update" in Serving, they need to export incremental checkpoint subgraphs to SavedModel. You need to use the [Estimator](https://github.com/AlibabaPAI/estimator) provided by DeepRec to export incremental checkpoint subgraphs.
+By default, incremental checkpoint subgraphs cannot be exported to SavedModel. If users want to support second-level updates through "incremental model update" in Serving, they need to export incremental checkpoint subgraphs to SavedModel. You need to use the [Estimator](https://github.com/DeepRec-AI/estimator) provided by DeepRec to export incremental checkpoint subgraphs.
 
 Example：
 ```python

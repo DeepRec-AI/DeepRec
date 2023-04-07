@@ -41,7 +41,7 @@
 
 We provide optimized TFServing which could highly improve performance in inference, such as SessionGroup, CUDA multi-stream, etc.
 
-Source Code: [https://github.com/AlibabaPAI/serving](https://github.com/AlibabaPAI/serving)
+Source Code: [https://github.com/DeepRec-AI/serving](https://github.com/DeepRec-AI/serving)
 
 Develop Branch: master, Latest Release Branch: deeprec2302
 

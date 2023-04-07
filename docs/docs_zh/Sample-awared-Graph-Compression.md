@@ -63,7 +63,7 @@ def serving_input_receiver_fn():
 estiamtor = ...
 estiamtor.export_savedmodel(output_dir, serving_input_receiver_fn)
 ```
-1. 需要同时使用 DeepRec 提供的[estimator](https://github.com/AlibabaPAI/estimator)
+1. 需要同时使用 DeepRec 提供的[estimator](https://github.com/DeepRec-AI/estimator)
 
 2. 输入数据格式
 一般在inference场景下，输入数据为protobuf，protobuf中包含模型所需各个特征的值以及指示该样本中item数目的tensor, user tensor shape为[Duser], item tensor shape为[N, Ditem]
