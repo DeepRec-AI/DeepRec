@@ -12,6 +12,7 @@ load(
     "tf_cc_tests",
     "tf_copts",
     "tf_cuda_library",
+    "tf_cuda_only_cc_test",
     "cuda_library",
     "tf_kernel_library",
     "tf_mkl_kernel_library",
@@ -519,6 +520,26 @@ cc_library(
     name = "ops_util_hdrs",
     hdrs = ["ops_util.h"],
     deps = ["//third_party/eigen3"],
+)
+
+cc_library(
+    name = "gpu_prim_helpers",
+    hdrs = ["gpu_prim_helpers.h"]
+)
+
+tf_cuda_only_cc_test(
+    name = "gpu_prim_helpers_test",
+    srcs = ["gpu_prim_helpers_test.cu.cc"],
+    tags = tf_cuda_tests_tags() + ["no_cuda_asan"],
+    deps = [
+        ":gpu_prim_helpers",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 cc_library(
@@ -5738,7 +5759,11 @@ tf_kernel_library(
 tf_kernel_library(
     name = "sparse_slice_op",
     prefix = "sparse_slice_op",
-    deps = SPARSE_DEPS,
+    deps = SPARSE_DEPS + if_cuda_or_rocm([
+        ":cuda_solvers",
+        ":gpu_device_array",
+        ":gpu_prim_helpers"
+    ]),
 )
 
 tf_kernel_library(
