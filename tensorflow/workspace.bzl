@@ -1085,8 +1085,8 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         strip_prefix = "seastar-2f0de60d31d75f9048cec0901a961f3fc7ed04ec",
         build_file = str(Label("//third_party:seastar.BUILD")),
         urls = [
-            "https://github.com/AlibabaPAI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
-            "https://github.com/AlibabaPAI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
+            "https://github.com/DeepRec-AI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
+            "https://github.com/DeepRec-AI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
         ],
     )
 
