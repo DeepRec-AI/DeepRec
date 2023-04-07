@@ -1,15 +1,17 @@
-From 142012f744a0f67a79b54cad3a716397c046174c Mon Sep 17 00:00:00 2001
+From 40ec11a5defe65999749f0fbf481def58331628f Mon Sep 17 00:00:00 2001
 From: Mesilenceki <silenceki@hotmail.com>
-Date: Mon, 13 Feb 2023 15:59:30 +0800
-Subject: [PATCH] DeepRec patch
+Date: Fri, 7 Apr 2023 10:20:46 +0800
+Subject: [PATCH] Modify ForwardOp
 
 ---
- HugeCTR/core/core.hpp                           |  1 +
- .../lookup/kernels/embedding_collection.cc      |  2 +-
- .../lookup/kernels/embedding_collection.cc.rej  | 17 +++++++++++++++++
- .../src/optimizer/prepare_functions.cu          |  1 +
- 4 files changed, 20 insertions(+), 1 deletion(-)
- create mode 100644 sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej
+ HugeCTR/core/core.hpp                         |   1 +
+ .../impl/embedding_collection_adapter.cu      |   9 +-
+ .../impl/embedding_collection_adapter.h       |   3 +-
+ .../lookup/kernels/embedding_collection.cc    | 111 ++++++++++++++++--
+ .../lookup/ops/embedding_collection.cc        |   2 +-
+ .../src/optimizer/prepare_functions.cu        |   1 +
+ .../sparse_operation_kit/experiment/lookup.py |   7 +-
+ 7 files changed, 113 insertions(+), 21 deletions(-)
 
 diff --git a/HugeCTR/core/core.hpp b/HugeCTR/core/core.hpp
 index 2cc02640..e389dbdf 100644
@@ -23,11 +25,197 @@ index 2cc02640..e389dbdf 100644
  
  #include "macro.hpp"
  
+diff --git a/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.cu b/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.cu
+index a739fdf2..2a78c535 100644
+--- a/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.cu
++++ b/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.cu
+@@ -64,13 +64,12 @@ TFAdapter<KeyType, DType>::TFAdapter()
+ 
+ template <typename KeyType, typename DType>
+ void TFAdapter<KeyType, DType>::set(
+-    std::vector<tensorflow::core::RefCountPtr<tensorflow::Var>>& vars,
+-    std::vector<tensorflow::tf_shared_lock>& locks, std::vector<int>& dimensions,
++    std::vector<float*>& vars, std::vector<int>& dimensions,
+     std::vector<int>& scale, cudaStream_t stream) {
+   std::vector<float*> data;
+   std::vector<int> id_space;
+   for (int i = 0; i < vars.size(); ++i) {
+-    float* input = vars[i]->tensor()->flat<float>().data();
++    float* input = vars[i];
+     bool is_unique = true;
+     for (int j = 0; j < i; ++j) {
+       if (input == data[j]) {
+@@ -78,10 +77,6 @@ void TFAdapter<KeyType, DType>::set(
+         break;
+       }
+     }
+-    if (is_unique) {
+-      tensorflow::tf_shared_lock lock(*vars[i]->mu());
+-      locks.push_back(std::move(lock));
+-    }
+     data.push_back(input);
+     id_space.push_back(i);
+   }
+diff --git a/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.h b/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.h
+index d1faff9c..d1d90d9f 100644
+--- a/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.h
++++ b/sparse_operation_kit/experiment/lookup/impl/embedding_collection_adapter.h
+@@ -41,8 +41,7 @@ class TFAdapter : public ::embedding::ILookup {
+   TFAdapter();
+   virtual ~TFAdapter();
+ 
+-  void set(std::vector<tensorflow::core::RefCountPtr<tensorflow::Var>>& vars,
+-           std::vector<tensorflow::tf_shared_lock>& locks, std::vector<int>& dimensions,
++  void set(std::vector<float*>& vars, std::vector<int>& dimensions,
+            std::vector<int>& scale, cudaStream_t stream = 0);
+ 
+   void lookup(const ::core::Tensor& keys, size_t num_keys, const ::core::Tensor& id_space_offset,
 diff --git a/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc
-index 1e956ac6..7ffed375 100644
+index 1e956ac6..a01518e6 100644
 --- a/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc
 +++ b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc
-@@ -752,7 +752,7 @@ namespace tensorflow {
+@@ -274,15 +274,113 @@ REGISTER_GPU_KERNELS(int32_t, int32_t, int32_t, int32_t);
+ // -----------------------------------------------------------------------------------------------
+ // LookupForward
+ // -----------------------------------------------------------------------------------------------
+-template <typename KeyType, typename OffsetType, typename DType, typename VarType, typename Adapter>
++template <typename KeyType, typename OffsetType, typename DType>
+ class LookupForwardOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
+  private:
+-  Adapter adapter_;
++  sok::TFAdapter<KeyType, DType> adapter_;
+ 
+  public:
+   explicit LookupForwardOp(OpKernelConstruction* ctx)
+       : EmbeddingCollectionBase<KeyType, OffsetType, DType>(ctx) {}
+ 
++  void Compute(OpKernelContext* ctx) override {
++    std::vector<float*> vars;
++    std::vector<int> scale;
++    for (int i = 0; i < this->num_lookups_; ++i) {
++      auto embedding_weights = ctx->input(i);
++      auto embedding_data = const_cast<float*>(embedding_weights.flat<float>().data());
++      int64 dimension = embedding_weights.shape().dim_size(1);
++      OP_REQUIRES(ctx, this->dimensions_[i] == dimension,
++                  errors::InvalidArgument("Invalid dimension"));
++
++      vars.emplace_back(embedding_data);
++
++      if (this->shard_[i] < 0) {
++        scale.push_back(this->num_gpus_);
++      } else {
++        scale.push_back(1);
++      }
++    }
++
++    // stream
++    auto device_ctx = ctx->op_device_context();
++    OP_REQUIRES(ctx, device_ctx != nullptr, errors::Aborted("No valid device context."));
++    cudaStream_t stream = stream_executor::gpu::AsGpuStreamValue(device_ctx->stream());
++
++    // Prepare inputs (except handles)
++    const Tensor* key_recv_buffer = nullptr;
++    OP_REQUIRES_OK(ctx, ctx->input("key_recv_buffer", &key_recv_buffer));
++    sok::Tensor key_recv_buffer_tensor(sok::convert_tensor<KeyType>(key_recv_buffer));
++
++    const Tensor* row_length_recv_buffer = nullptr;
++    OP_REQUIRES_OK(ctx, ctx->input("row_length_recv_buffer", &row_length_recv_buffer));
++    sok::Tensor row_length_recv_buffer_tensor(
++        sok::convert_tensor<OffsetType>(row_length_recv_buffer));
++
++    int global_batch_size = row_length_recv_buffer->NumElements() / this->num_lookups_;
++
++    const Tensor* hotness = nullptr;
++    OP_REQUIRES_OK(ctx, ctx->input("hotness", &hotness));
++    std::vector<int> hotness_vector;
++    int* t_hotness = (int*)hotness->data();
++    int64_t hotness_num = hotness->NumElements();
++    for (int64_t i =0;i<hotness_num;++i){
++       hotness_vector.push_back(t_hotness[i]);
++    }
++
++    // Instance 3g embedding
++    auto tf_backend = this->make_core_resource(ctx);
++    this->update_meta(tf_backend, global_batch_size,hotness_vector);
++
++    // Prepare ILookup (i.e. embedding table)
++    std::vector<int> ev_size_per_lookup;
++    for (auto& p : this->ebc_param_->lookup_params) {
++      ev_size_per_lookup.push_back(p.ev_size);
++    }
++    adapter_.set(vars, this->dimensions_, scale, stream);
++
++    // Prepare outputs
++    auto buffer_size_list = ::embedding::tf::model_forward::get_model_comm_buffer_size(*this->meta_, tf_backend->get_global_gpu_count(), global_batch_size);
++    std::vector<sok::Tensor> emb_vec_model_buffer;
++    for (size_t i = 0; i < buffer_size_list.size(); ++i) {
++      Tensor* output = nullptr;
++      OP_REQUIRES_OK(ctx,
++                     ctx->allocate_output(i, {static_cast<int64_t>(buffer_size_list[i])}, &output));
++      emb_vec_model_buffer.push_back(sok::convert_tensor<DType>(output));
++    }
++
++    // Do forward
++    int64_t num_model_key, num_model_offsets;
++    sok::Tensor ret_model_key, ret_model_offset;
++    ::embedding::tf::model_forward::sparse_forward_per_gpu(tf_backend, *this->meta_, key_recv_buffer_tensor, row_length_recv_buffer_tensor, &adapter_,
++                                  emb_vec_model_buffer, &num_model_key, &num_model_offsets, &ret_model_key, &ret_model_offset);
++
++    // Prepare model_key & model_offsets
++    // Note the type of model_offsets is always uint32_t
++    Tensor* model_key = nullptr;
++    OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_gpus_, {num_model_key}, &model_key));
++    sok::Tensor model_key_tensor(sok::convert_tensor<KeyType>(model_key));
++    Tensor* model_offsets = nullptr;
++    OP_REQUIRES_OK(ctx,
++                   ctx->allocate_output(this->num_gpus_ + 1, {num_model_offsets}, &model_offsets));
++    sok::Tensor model_offsets_tensor(sok::convert_tensor<uint32_t>(model_offsets));
++
++    // Copy tensors that will be used in backward
++    ::embedding::tf::model_forward::copy_model_keys_and_offsets(tf_backend, ret_model_key, ret_model_offset, model_key_tensor, model_offsets_tensor);
++  }
++};
++
++template <typename KeyType, typename OffsetType, typename DType>
++class LookupForwardDynamicOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
++ using VarType = DummyVar<KeyType, DType>;
++
++ private:
++  sok::DummyVarAdapter<KeyType, DType> adapter_;
++
++ public:
++  explicit LookupForwardDynamicOp(OpKernelConstruction* ctx)
++      : EmbeddingCollectionBase<KeyType, OffsetType, DType>(ctx) {}
++
+   void Compute(OpKernelContext* ctx) override {
+     std::vector<tf_shared_lock> locks;
+     std::vector<core::RefCountPtr<VarType>> vars;
+@@ -379,13 +477,11 @@ class LookupForwardOp : public EmbeddingCollectionBase<KeyType, OffsetType, DTyp
+ #define REGISTER_GPU_KERNELS(key_type_tf, key_type, offset_type_tf, offset_type, dtype_tf, dtype)  \
+   REGISTER_KERNEL_BUILDER(Name("LookupForward")                                                    \
+                               .Device(DEVICE_GPU)                                                  \
+-                              .HostMemory("handles")                                               \
+                               .HostMemory("hotness")                                               \
+                               .TypeConstraint<key_type_tf>("Tindices")                             \
+                               .TypeConstraint<offset_type_tf>("Toffsets")                          \
+                               .TypeConstraint<dtype_tf>("dtype"),                                  \
+-                          LookupForwardOp<key_type, offset_type, dtype, Var,                       \
+-                                          sok::TFAdapter<key_type, dtype>>)                        \
++                          LookupForwardOp<key_type, offset_type, dtype>)                           \
+   REGISTER_KERNEL_BUILDER(Name("LookupForwardDynamic")                                             \
+                               .Device(DEVICE_GPU)                                                  \
+                               .HostMemory("handles")                                               \
+@@ -393,8 +489,7 @@ class LookupForwardOp : public EmbeddingCollectionBase<KeyType, OffsetType, DTyp
+                               .TypeConstraint<key_type_tf>("Tindices")                             \
+                               .TypeConstraint<offset_type_tf>("Toffsets")                          \
+                               .TypeConstraint<dtype_tf>("dtype"),                                  \
+-                          LookupForwardOp<key_type, offset_type, dtype, DummyVar<key_type, dtype>, \
+-                                          sok::DummyVarAdapter<key_type, dtype>>)
++                          LookupForwardDynamicOp<key_type, offset_type, dtype>)
+ // clang-format on
+ 
+ #if TF_VERSION_MAJOR == 1
+@@ -752,7 +847,7 @@ namespace tensorflow {
  template <typename KeyType, typename OffsetType, typename DType>
  class LookupForwardEmbeddingVarGPUOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
   private:
@@ -36,29 +224,19 @@ index 1e956ac6..7ffed375 100644
    EmbeddingVarGPUAdapter<KeyType, float> adapter_;
  
   public:
-diff --git a/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej
-new file mode 100644
-index 00000000..97b2bb3e
---- /dev/null
-+++ b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej
-@@ -0,0 +1,17 @@
-+***************
-+*** 752,758 ****
-+  template <typename KeyType, typename OffsetType, typename DType>
-+  class LookupForwardEmbeddingVarGPUOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
-+   private:
-+-   using VarType = EmbeddingVarGPU<KeyType, float>;
-+    EmbeddingVarGPUAdapter<KeyType, float> adapter_;
-+  
-+   public:
-+--- 752,758 ----
-+  template <typename KeyType, typename OffsetType, typename DType>
-+  class LookupForwardEmbeddingVarGPUOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
-+   private:
-++   using VarType = EmbeddingVar<KeyType, float>;
-+    EmbeddingVarGPUAdapter<KeyType, float> adapter_;
-+  
-+   public:
+diff --git a/sparse_operation_kit/experiment/lookup/ops/embedding_collection.cc b/sparse_operation_kit/experiment/lookup/ops/embedding_collection.cc
+index dbea8811..d3a71730 100644
+--- a/sparse_operation_kit/experiment/lookup/ops/embedding_collection.cc
++++ b/sparse_operation_kit/experiment/lookup/ops/embedding_collection.cc
+@@ -63,7 +63,7 @@ REGISTER_OP("PreprocessingForward")
+ 
+ // There may be duplicates in the `handles`
+ REGISTER_OP("LookupForward")
+-    .Input("handles: num_lookups * resource")
++    .Input("embeddings: num_lookups * dtype")
+     .Input("key_recv_buffer: Tindices")
+     .Input("row_length_recv_buffer: Toffsets")
+     .Input("hotness: int32")
 diff --git a/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu b/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu
 index afe4881b..67f3e1b4 100644
 --- a/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu
@@ -71,5 +249,37 @@ index afe4881b..67f3e1b4 100644
  
  #include "optimizer/prepare_functions.h"
  
+diff --git a/sparse_operation_kit/sparse_operation_kit/experiment/lookup.py b/sparse_operation_kit/sparse_operation_kit/experiment/lookup.py
+index d567c857..b4b0027c 100644
+--- a/sparse_operation_kit/sparse_operation_kit/experiment/lookup.py
++++ b/sparse_operation_kit/sparse_operation_kit/experiment/lookup.py
+@@ -129,15 +129,16 @@ def _lookup_forward(params, *args, **kwargs):
+         for param in params:
+             # For tf.GradientTape
+             variable_accessed(param)
+-        handles = [param.handle for param in params]
+         if isinstance(params[0], DynamicVariable):
++            handles = [param.handle for param in params]
+             return raw_ops.lookup_forward_dynamic(handles, *args, **kwargs)
+         elif importlib.find_loader("tensorflow.python.ops.kv_variable_ops") and isinstance(
+             params[0], kv_variable_ops.EmbeddingVariable
+         ):
++            handles = [param.handle for param in params]
+             return raw_ops.lookup_forward_embedding_var_gpu(handles, *args, **kwargs)
+         else:
+-            return raw_ops.lookup_forward(handles, *args, **kwargs)
++            return raw_ops.lookup_forward(params, *args, **kwargs)
+ 
+ 
+ @tf.RegisterGradient("LookupForward")
+@@ -165,7 +166,7 @@ def _LookupBackward(op, *top_grads):
+     grads = []
+     for i in range(len(indices)):
+         handle = op.inputs[i]
+-        params_shape = variable_shape(handle)
++        params_shape = handle.shape
+         size = array_ops.expand_dims(array_ops.size(indices[i]), 0)
+         values_shape = array_ops.concat([size, params_shape[1:]], 0)
+         values[i] = tf.reshape(values[i], values_shape)
 -- 
 2.37.1 (Apple Git-137.1)
