@@ -11,6 +11,7 @@
 - Langshi CHEN, langshi.cls@alibaba-inc.com, Alibaba
 - Wanchen SUI, wanchen.swc@alibaba-inc.com, Alibaba
 - Lanbo LI, lanbo.llb@alibaba-inc.com, Alibaba
+- Ziji SHI, ziji.shi@alibaba-inc.com, Alibaba
 - Yong LI, jiufeng.ly@alibaba-inc.com, Alibaba
 - Wei LIN, weilin.lw@alibaba-inc.com, Alibaba
 - Ruozhou ZANG, zrzn@foxmail.com, MetaApp
