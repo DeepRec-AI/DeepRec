@@ -151,11 +151,11 @@ English: [https://deeprec.readthedocs.io/en/latest/](https://deeprec.readthedocs
 
 Join the Official Discussion Group on DingTalk
 
-<img src="docs/README/dingtalk.JPG" width="200">
+<img src="https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/img/dingtalk_group.JPG" width="200">
 
 Join the Official Discussion Group on WeChat
 
-<img src="docs/README/wechat.JPG" width="200">
+<img src="https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/img/wechat_group.JPG" width="200">
 
 
 ## **License**
