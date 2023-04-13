@@ -5163,6 +5163,45 @@ tf_cuda_cc_test(
 )
 
 tf_cuda_cc_test(
+    name = "common_runtime_direct_session_group_test",
+    size = "small",
+    srcs = ["common_runtime/direct_session_group_test.cc"],
+    args = [] + if_cuda(["--heap_check=local"]),  # The GPU tracer leaks memory
+    linkstatic = tf_kernel_tests_linkstatic(),
+    deps = [
+        ":core_cpu",
+        ":core_cpu_internal",
+        ":direct_session_internal",
+        ":framework",
+        ":framework_internal",
+        ":lib",
+        ":lib_internal",
+        ":ops",
+        ":protos_all_cc",
+        ":test",
+        ":test_main",
+        ":testlib",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "//third_party/eigen3",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core/kernels:collective_ops",
+        "//tensorflow/core/kernels:control_flow_ops",
+        "//tensorflow/core/kernels:cwise_op",
+        "//tensorflow/core/kernels:dense_update_ops",
+        "//tensorflow/core/kernels:fifo_queue_op",
+        "//tensorflow/core/kernels:function_ops",
+        "//tensorflow/core/kernels:identity_n_op",
+        "//tensorflow/core/kernels:identity_op",
+        "//tensorflow/core/kernels:matmul_op",
+        "//tensorflow/core/kernels:ops_util",
+        "//tensorflow/core/kernels:queue_ops",
+        "//tensorflow/core/kernels:session_ops",
+        "//tensorflow/core/kernels:variable_ops",
+    ] + if_cuda([":cuda"]),
+)
+
+tf_cuda_cc_test(
     name = "common_runtime_gpu_cuda_graph_mode_session_test",
     size = "small",
     srcs = ["common_runtime/gpu/gpu_cuda_graph_mode_session_test.cc"],
