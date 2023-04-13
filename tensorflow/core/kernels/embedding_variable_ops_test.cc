@@ -1782,6 +1782,54 @@ TEST(KVInterfaceTest, TestDirectIoFile) {
   TestReadEmbFile();
 }
 
+
+void InsertKey(EmbeddingVar<int64, float>* variable, int value_size) {
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+  for (int64 i = 0; i < 100000000; i++) {
+    variable->LookupOrCreate(20, val, nullptr);
+  }
+  LOG(INFO)<<"Finish Insert";
+}
+
+void RemoveKey(EmbeddingVar<int64, float>* variable) {
+  for (int64 i = 0; i < 10; i++) {
+    sleep(1);
+    variable->storage_manager()->Remove(20);
+  }
+  LOG(INFO)<<"Remove thread finish";
+}
+
+TEST(EmbeddingVariableTest, TestLookupRemoveConcurrency) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  auto emb_config = EmbeddingConfig(
+      /*emb_index = */0, /*primary_emb_index = */0,
+      /*block_num = */1, /*slot_num = */0,
+      /*name = */"", /*steps_to_live = */0,
+      /*filter_freq = */2, /*max_freq = */999999,
+      /*l2_weight_threshold = */-1.0, /*layout = */"normal",
+      /*max_element_size = */0, /*false_positive_probability = */-1.0,
+      /*counter_type = */DT_UINT64);
+  auto storage_manager = new embedding::StorageManager<int64, float>(
+      "EmbeddingVar", embedding::StorageConfig());
+  auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
+      storage_manager,
+      emb_config,
+      cpu_allocator());
+
+   var->Init(value, 1);
+   int thread_num = 5;
+   std::vector<std::thread> insert_threads(thread_num);
+   for (size_t i = 0 ; i < thread_num - 1; i++) {
+     insert_threads[i] = std::thread(InsertKey, var, value_size);
+   }
+   insert_threads[thread_num - 1] = std::thread(RemoveKey, var);
+   for (auto &t : insert_threads) {
+     t.join();
+   }
+ }
+
 } // namespace
 } // namespace embedding
 } // namespace tensorflow

@@ -1,4 +1,4 @@
-From dcd5910ddff22b2896dc5221eab766a6c6d2307d Mon Sep 17 00:00:00 2001
+From 2d87035732d9ae347515b8497ca7a75d3b36f8cf Mon Sep 17 00:00:00 2001
 From: Tongxuan Liu <tongxuan.ltx@alibaba-inc.com>
 Date: Mon, 13 Mar 2023 08:58:56 +0800
 Subject: [PATCH] Avoid fetching nullptr when use feature filter.
@@ -8,14 +8,14 @@ Subject: [PATCH] Avoid fetching nullptr when use feature filter.
  sparsehash/dense_hash_map_lockless            |  447 ++++
  sparsehash/dense_hash_set_lockless            |  381 +++
  sparsehash/internal/densehashtable.h          |   16 +-
- sparsehash/internal/densehashtable_lockless.h | 2033 +++++++++++++++++
+ sparsehash/internal/densehashtable_lockless.h | 2035 +++++++++++++++++
  sparsehash/internal/hashtable-common.h        |    4 +
  sparsehash/internal/sparsehashtable.h         |   18 +-
  sparsehash/traits                             |   10 +-
  tests/bench_lockless.cc                       | 1466 ++++++++++++
  tests/dense_hash_map_unittests.cc             |  137 +-
  tests/rwlock.h                                |  224 ++
- 11 files changed, 4726 insertions(+), 23 deletions(-)
+ 11 files changed, 4728 insertions(+), 23 deletions(-)
  create mode 100644 sparsehash/dense_hash_map_lockless
  create mode 100644 sparsehash/dense_hash_set_lockless
  create mode 100644 sparsehash/internal/densehashtable_lockless.h
@@ -958,10 +958,10 @@ index e254126..3bc3c16 100644
      for (; dist > 0; --dist, ++f) {
 diff --git a/sparsehash/internal/densehashtable_lockless.h b/sparsehash/internal/densehashtable_lockless.h
 new file mode 100644
-index 0000000..64f677f
+index 0000000..2f8a80b
 --- /dev/null
 +++ b/sparsehash/internal/densehashtable_lockless.h
-@@ -0,0 +1,2033 @@
+@@ -0,0 +1,2035 @@
 +// Copyright (c) 2005, Google Inc.
 +// All rights reserved.
 +//
@@ -2204,9 +2204,11 @@ index 0000000..64f677f
 +      }else if(test_deleted(bucknum, tmp_pointer)) {
 +        if(insert_pos == ILLEGAL_BUCKET) insert_pos = bucknum;
 +      }else if (equals(key, get_key(tmp_pointer->table_[bucknum]))) {
-+        std::pair<K, T> tmp(tmp_pointer->table_[bucknum].first,
-+                            tmp_pointer->table_[bucknum].second);
-+        if(tmp.first == key){
++        //Force to read from volatile memory
++        volatile K* key_ptr = const_cast<K*>(&(tmp_pointer->table_[bucknum].first));
++        volatile T* value_ptr = const_cast<T*>(&(tmp_pointer->table_[bucknum].second));
++        std::pair<K, T> tmp(*key_ptr, *value_ptr);
++        if(*key_ptr == key){
 +          return tmp;
 +        }else{
 +          return std::pair<K,T>(tmp_pointer->key_info_.empty_key, empty_value);
