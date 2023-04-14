@@ -26,7 +26,9 @@ DirectSessionGroup::DirectSessionGroup()
 DirectSessionGroup::DirectSessionGroup(
     ResourceMgr* cpu_mgr, ResourceMgr* gpu_mgr)
     : cpu_shared_resource_mgr_(cpu_mgr) {
-  gpu_shared_resource_mgrs_.emplace_back(gpu_mgr);
+  if (gpu_mgr) {
+    gpu_shared_resource_mgrs_.emplace_back(gpu_mgr);
+  }
   leader_session_ids_.emplace_back(0);
 }
 

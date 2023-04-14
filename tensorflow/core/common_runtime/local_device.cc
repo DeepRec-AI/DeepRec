@@ -159,7 +159,7 @@ void LocalDevice::Init(const SessionOptions& options,
       tp_info = global_tp_info_[numa_node];
     } else {
       if (opt.global_threadpool_num > 1) {
-        for (int i = 0; i < opt.global_threadpool_num; ++i) {
+        while (opt.global_threadpool_num > global_tp_info_.size()) {
           global_tp_info_.push_back(nullptr);
         }
         if (!global_tp_info_[opt.device_threadpool_index]) {
