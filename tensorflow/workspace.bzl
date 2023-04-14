@@ -1205,22 +1205,22 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "colm",                            # MIT License
         build_file = "//third_party:colm.BUILD",
-        sha256 = "4644956dd82bedf3795bb1a6fdf9ee8bdd33bd1e7769ef81ffdaa3da70c5a349",
-        strip_prefix = "colm-0.13.0.6",
+        sha256 = "322cb2489d7e08b69c003453a14c6842a4beb243cd73c9ec2c23089a0f422205",
+        strip_prefix = "colm-colm-0.13.0.6",
         urls = [
-            "http://www.colm.net/files/colm/colm-0.13.0.6.tar.gz",
-            "http://www.colm.net/files/colm/colm-0.13.0.6.tar.gz"
+            "https://github.com/adrian-thurston/colm/archive/colm-0.13.0.6.tar.gz",
+            "https://github.com/adrian-thurston/colm/archive/colm-0.13.0.6.tar.gz",
         ],
     )
 
     tf_http_archive(
         name = "ragel",                          # MIT License
         build_file = "//third_party:ragel.BUILD",
-        sha256 = "08bac6ff8ea9ee7bdd703373fe4d39274c87fecf7ae594774dfdc4f4dd4a5340",
-        strip_prefix = "ragel-7.0.0.11",
+        sha256 = "7c3ded1c57540083acea63dfed99bc097503a3c56f9a3154fe8b0dd5f22f2189",
+        strip_prefix = "ragel-ragel-7.0.0.11",
         urls = [
-            "http://www.colm.net/files/ragel/ragel-7.0.0.11.tar.gz",
-            "http://www.colm.net/files/ragel/ragel-7.0.0.11.tar.gz"
+            "https://github.com/adrian-thurston/ragel/archive/ragel-7.0.0.11.tar.gz",
+            "https://github.com/adrian-thurston/ragel/archive/ragel-7.0.0.11.tar.gz",
         ],
     )
 
@@ -1238,11 +1238,11 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "uuid",                         #  GPL-2.0 license
         build_file = "//third_party:uuid.BUILD",
-        sha256 = "37ac05d82c6410d89bc05d43cee101fefc8fe6cf6090b3ce7a1409a6f35db606",
+        sha256 = "068d6aad9bbcbad47c383bc9cf249deb349de01e6b6aef663e44599a49537bc3",
         strip_prefix = "util-linux-2.35.1",
         urls = [
-            "https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v2.35/util-linux-2.35.1.tar.gz",
-            "https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v2.35/util-linux-2.35.1.tar.gz"
+            "https://github.com/util-linux/util-linux/archive/v2.35.1.tar.gz",
+            "https://github.com/util-linux/util-linux/archive/v2.35.1.tar.gz",
         ],
     )
 
@@ -1263,8 +1263,8 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         sha256 = "6450d3970578c794b23e9e1645440c6f42f63be3f82383097660db5cf2fba685",
         strip_prefix = "aliyun-oss-c-sdk-3.7.0",
         urls = [
-            "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
-            "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
+            "https://github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
+            "https://github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
         ],
     )
     
