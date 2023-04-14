@@ -11,7 +11,8 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.framework import dtypes
 
 __all__ = ["group_embedding_var_lookup", "_GroupGatherGrad",
-           "group_variable_lookup", "_GroupEmbeddingLookup"]
+           "group_variable_lookup", "_GroupEmbeddingLookup",
+           "group_embedding_var_lookup_dense", "_GroupGatherDenseGrad"]
 
 #for GPU EV group_lookup
 def group_embedding_var_lookup(params,
@@ -52,10 +53,12 @@ def _GroupGatherGrad(op, *grads):
   params = op.inputs[:ev_num]
   sp_indices = op.inputs[ev_num*2:ev_num*3]
   unique_values = op.outputs[ev_num:2*ev_num]
+  batch_nums = op.outputs[3*ev_num:4*ev_num]
   nnz_grads = gen_kv_variable_ops.group_embedding_variable_lookup_grad(grads[:ev_num],
                                                                       params,
                                                                       unique_values,
                                                                       sp_indices,
+                                                                      batch_nums,
                                                                       dimension,
                                                                       combiner)                                                            
   for i in range(ev_num):
@@ -114,10 +117,12 @@ def _GroupEmbeddingLookup(op, *grads):
   params = op.inputs[:ev_num]
   unique_values = op.outputs[ev_num:2*ev_num]
   unique_idx = op.outputs[2*ev_num:3*ev_num]
+  batch_nums = op.outputs[3*ev_num:4*ev_num]
   nnz_grads = gen_kv_variable_ops.group_variable_lookup_grad(grads[:ev_num],
                                                             params,
                                                             unique_values,
                                                             unique_idx,
+                                                            batch_nums,
                                                             dimension,
                                                             combiner)
   for i in range(ev_num):
@@ -137,3 +142,40 @@ def _GroupEmbeddingLookup(op, *grads):
   # for _ in range(ev_num*4 + 2):
   #   return_grads.append(None)
   return return_grads
+
+#for GPU EV group_lookup_dense
+def group_embedding_var_lookup_dense(params,
+                                     dense_values,
+                                     dimensions,
+                                     ev_init_value = None):
+  if ev_init_value is not None:
+    default_value = ev_init_value
+    is_use_default_value_tensor = True
+  else:
+    default_value = ops.convert_to_tensor(1.0)
+    is_use_default_value_tensor = False
+  return gen_kv_variable_ops.group_embedding_var_lookup_dense(params,
+                                                              dense_values,
+                                                              default_value,
+                                                              dimensions,
+                                                              is_use_default_value_tensor)
+
+
+@ops.RegisterGradient("GroupEmbeddingVarLookupDense")
+def _GroupGatherGrad(op, *grads):
+  ev_num = op.get_attr("num_lookups")
+  return_grads = []
+  params = op.inputs[:ev_num]
+  unique_values = op.outputs[ev_num:2*ev_num]
+
+  for i in range(ev_num):
+    handle = op.inputs[i]
+    while handle.op.type != "KvVarHandleOp":
+      handle = handle.op.inputs[0]
+    params_shape = ops.convert_to_tensor(
+        tensor_shape.TensorShape(handle.op.get_attr("shape")))
+    indice = unique_values[i]
+    grad = grads[i]
+    return_grads.append(ops.IndexedSlices(grad, indice, params_shape))
+    
+  return return_grads + [None for _ in range(ev_num + 1)]
