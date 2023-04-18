@@ -873,11 +873,11 @@ def get_arg_parser():
                         help='set inter op parallelism threads.',
                         type=int,
                         default=0)
-    parser.add_argument('--input_layer_partitioner', \
+    parser.add_argument('--input_layer_partitioner',
                         help='slice size of input layer partitioner, units MB. Default 8MB',
                         type=int,
                         default=8)
-    parser.add_argument('--dense_layer_partitioner', \
+    parser.add_argument('--dense_layer_partitioner',
                         help='slice size of dense layer partitioner, units KB. Default 16KB',
                         type=int,
                         default=16)
@@ -887,32 +887,32 @@ def get_arg_parser():
     parser.add_argument('--no_eval',
                         help='not evaluate trained model by eval dataset.',
                         action='store_true')
-    parser.add_argument('--tf', \
+    parser.add_argument('--tf',
                         help='Use TF 1.15.5 API and disable DeepRec feature to run a baseline.',
                         action='store_true')
-    parser.add_argument('--smartstaged', \
+    parser.add_argument('--smartstaged',
                         help='Whether to enable smart staged feature of DeepRec, Default to True.',
                         type=boolean_string,
                         default=True)
-    parser.add_argument('--emb_fusion', \
+    parser.add_argument('--emb_fusion',
                         help='Whether to enable embedding fusion, Default to True.',
                         type=boolean_string,
                         default=True)
-    parser.add_argument('--ev', \
+    parser.add_argument('--ev',
                         help='Whether to enable DeepRec EmbeddingVariable. Default False.',
                         type=boolean_string,
                         default=False)
-    parser.add_argument('--ev_elimination', \
+    parser.add_argument('--ev_elimination',
                         help='Feature Elimination of EmbeddingVariable Feature. Default closed.',
                         type=str,
                         choices=[None, 'l2', 'gstep'],
                         default=None)
-    parser.add_argument('--ev_filter', \
+    parser.add_argument('--ev_filter',
                         help='Feature Filter of EmbeddingVariable Feature. Default closed.',
                         type=str,
                         choices=[None, 'counter', 'cbf'],
                         default=None)
-    parser.add_argument('--op_fusion', \
+    parser.add_argument('--op_fusion',
                         help='Whether to enable Auto graph fusion feature. Default to True',
                         type=boolean_string,
                         default=True)
@@ -920,19 +920,19 @@ def get_arg_parser():
                         help='Set num for Auto Mirco Batch. Default close.',
                         type=int,
                         default=0)  #TODO: Defautl to True
-    parser.add_argument('--adaptive_emb', \
+    parser.add_argument('--adaptive_emb',
                         help='Whether to enable Adaptive Embedding. Default to False.',
                         type=boolean_string,
                         default=False)
-    parser.add_argument('--dynamic_ev', \
+    parser.add_argument('--dynamic_ev',
                         help='Whether to enable Dynamic-dimension Embedding Variable. Default to False.',
                         type=boolean_string,
                         default=False) #TODO:enable
-    parser.add_argument('--incremental_ckpt', \
+    parser.add_argument('--incremental_ckpt',
                         help='Set time of save Incremental Checkpoint. Default 0 to close.',
                         type=int,
                         default=0)
-    parser.add_argument('--workqueue', \
+    parser.add_argument('--workqueue',
                         help='Whether to enable Work Queue. Default to False.',
                         type=boolean_string,
                         default=False)
