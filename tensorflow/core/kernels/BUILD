@@ -5386,7 +5386,6 @@ tf_cuda_cc_test(
     name = "group_embedding_ops_test",
     size = "small",
     srcs = ["group_lookup_ops_test.cc"],
-    tags = tf_cuda_tests_tags(),
     extra_copts = ["-fexceptions", "-g"],
     deps = [
         ":group_embedding_ops",

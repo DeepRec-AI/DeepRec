@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/kernels/task_runner.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/kernels/unique_ali_op_util.h"
 #include "tensorflow/core/util/work_sharder.h"
 namespace tensorflow {
 
@@ -70,6 +71,20 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
                                  &is_use_default_value_tensor_));
     OP_REQUIRES_OK(c, c->GetAttr("is_inference", &is_inference_));
     OP_REQUIRES_OK(c, c->GetAttr("ignore_weights", &ignore_weights_));
+
+    OP_REQUIRES_OK(c, ReadInt64FromEnvVar(kUniqueOpPartitionSizeEnv,
+                                             kPartitionSize, &partition_size_));
+    OP_REQUIRES(c, partition_size_ > 0,
+                errors::InvalidArgument("Invaild PARTITION_SIZE=",
+                                        partition_size_));
+    OP_REQUIRES_OK(c, ReadBoolFromEnvVar(kUniqueOpSerialEnv,
+                                                false, &serial_));
+    OP_REQUIRES_OK(c, ReadInt64FromEnvVar(kUniqueOpUniqRatioHint,
+        kDefaultUniqueRatioHint, &unique_ratio_hint_));
+    OP_REQUIRES(c, unique_ratio_hint_ > 0,
+                errors::InvalidArgument("Invaild ", kUniqueOpUniqRatioHint, "=",
+                                        unique_ratio_hint_));
+
     bool is_inference;
     TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
     is_inference_ |= is_inference;
@@ -132,15 +147,6 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
                                   embedding_var->CacheSize(),
                                   " should large than IDs in batch ", nnz));
 
-      TensorShape unique_idx_tensor_shape =
-          TensorShape(std::vector<int64>({static_cast<long long>(nnz)}));
-      Tensor* unique_idx_tensor = nullptr;
-      // allocate output
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(2 * num_lookups_ + i,
-                                               unique_idx_tensor_shape,
-                                               &unique_idx_tensor));
-      auto unique_idx = unique_idx_tensor->flat<int>().data();
-
       TensorShape batch_nums_tensor_shape =
           TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
       Tensor* batch_nums_tensor = nullptr;
@@ -151,41 +157,38 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
       auto batch_nums = batch_nums_tensor->flat<int>().data();
 
       // Stage 1
-      google::dense_hash_map<TKey, int32> unique_map;
-      unique_map.set_empty_key(std::numeric_limits<TKey>::max());
-      unique_map.resize(2 * nnz);
+      Tensor unique_idx_tensor;
+      Tensor unique_tensor;
+      Tensor unique_counter;
+
+      UniqueWithoutAxis<TKey, int32>(ctx, sp_values_tensor,
+        &unique_idx_tensor, &unique_tensor, &unique_counter, 0, partition_size_,
+        serial_, unique_ratio_hint_, map_flag_);
+
+      ctx->set_output(num_lookups_ + i, unique_tensor);
+      ctx->set_output(2 * num_lookups_ + i, unique_idx_tensor);
+
+      auto* unique = unique_tensor.flat<TKey>().data();
+      auto* unique_idx = unique_idx_tensor.flat<int>().data();
+
+      int unique_nnz = unique_tensor.shape().dim_size(0);
+      TensorShape unique_shape{static_cast<int64>(unique_nnz)};
+
       int global_batch_num = 0;
       int batch_id = 0;
 
       for (int64 k = 0, j = 0; k < nnz; ++k) {
         /***********Doing Unique **************/
-        auto id = sp_values[k];
         int new_batch_id = sp_indices[k];
         if (new_batch_id != batch_id) {
           batch_nums[batch_id] = global_batch_num;
           batch_id = new_batch_id;
         }
         global_batch_num++;
-        auto it = unique_map.emplace(id, j);
-        unique_idx[k] = it.first->second;
-
-        if (it.second) {
-          ++j;
-        }
       }
       // process final batch
       batch_nums[batch_id] = global_batch_num;
 
-      int unique_nnz = unique_map.size();
-      Tensor* unique_tensor = nullptr;
-      TensorShape unique_shape{static_cast<int64>(unique_nnz)};
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(num_lookups_ + i, unique_shape,
-                                               &unique_tensor));
-      auto* unique = unique_tensor->flat<TKey>().data();
-
-      for (auto it : unique_map) {
-        unique[it.second] = it.first;
-      }
 
       TValue* default_v = nullptr;
       if (is_use_default_value_tensor_) {
@@ -249,11 +252,42 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
       auto gather_embedding = gather_embedding_tensor->flat<TValue>().data();
 
       slice_bytes = nnz / batch_size * dimension_ * 1000;
+      //todo: clean these redundant code
       if (combiner_ == "mean") {
         auto embedding_var_mean_combiner =
             [this, &gather_embedding, batch_nums, unique_idx, unique,
              unique_embedding_data, sp_weights](int64 start, int64 end) {
               for (int64 i = start; i < end; ++i) {
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
+                int tmp_length = (dimension_ + 15) / 16;
+                __m512 tmp_embedding[tmp_length];
+                for(int i = 0; i < tmp_length; ++i){
+                  tmp_embedding[i] = _mm512_set1_ps(0.0f);
+                }
+                int batch_offset = i == 0 ? 0 : batch_nums[i - 1];
+                int batch_num = batch_nums[i] - batch_offset;
+                for (int j = 0; j < batch_num; ++j) {
+                  int unique_indice = unique_idx[batch_offset + j];
+                  float* u_embedding =
+                      unique_embedding_data + unique_indice * dimension_;
+                  __m512 _weights = _mm512_set1_ps(*(sp_weights + batch_offset + j));
+                  for (int d = 0; d < dimension_; d += 16) {
+                    int index = d / 16;
+                    int remain = dimension_ - d;
+                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                    __m512 _item = _mm512_maskz_loadu_ps(mask, u_embedding + d);
+                    tmp_embedding[index] = _mm512_mask3_fmadd_ps(_item, _weights, tmp_embedding[index], mask);
+                  }
+                }
+                __m512 _bs = _mm512_set1_ps(batch_num);
+                for (int d = 0; d < dimension_; d += 16) {
+                  int index = d / 16;
+                  int remain = dimension_ - d;
+                  __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                  tmp_embedding[index] = _mm512_div_ps(tmp_embedding[index], _bs);
+                  _mm512_mask_storeu_ps(gather_embedding + i * dimension_ + d, mask, tmp_embedding[index]);
+                }
+#else
                 std::vector<TValue> tmp_embedding(dimension_, 0.0f);
                 int batch_offset = i == 0 ? 0 : batch_nums[i - 1];
                 int batch_num = batch_nums[i] - batch_offset;
@@ -271,6 +305,7 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
                   gather_embedding[i * dimension_ + d] =
                       tmp_embedding[d] / batch_num;
                 }
+  #endif
               }
             };
         Shard(worker_threads->num_threads, worker_threads->workers, batch_size,
@@ -281,6 +316,34 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
             [this, &gather_embedding, batch_nums, unique_idx, unique,
              unique_embedding_data, sp_weights](int64 start, int64 end) {
               for (int64 i = start; i < end; ++i) {
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
+                int tmp_length = (dimension_ + 15) / 16;
+                __m512 tmp_embedding[tmp_length];
+                for(int i = 0; i < tmp_length; ++i){
+                  tmp_embedding[i] = _mm512_set1_ps(0.0f);
+                }
+                int batch_offset = i == 0 ? 0 : batch_nums[i - 1];
+                int batch_num = batch_nums[i] - batch_offset;
+                for (int j = 0; j < batch_num; ++j) {
+                  int unique_indice = unique_idx[batch_offset + j];
+                  float* u_embedding =
+                      unique_embedding_data + unique_indice * dimension_;
+                  __m512 _weights = _mm512_set1_ps(*(sp_weights + batch_offset + j));
+                  for (int d = 0; d < dimension_; d += 16) {
+                    int index = d / 16;
+                    int remain = dimension_ - d;
+                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                    __m512 _item = _mm512_maskz_loadu_ps(mask, u_embedding + d);
+                    tmp_embedding[index] = _mm512_mask3_fmadd_ps(_item, _weights, tmp_embedding[index], mask);
+                  }
+                }
+                for (int d = 0; d < dimension_; d += 16) {
+                  int index = d / 16;
+                  int remain = dimension_ - d;
+                  __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                  _mm512_mask_storeu_ps(gather_embedding + i * dimension_ + d, mask, tmp_embedding[index]);
+                }
+#else
                 std::vector<TValue> tmp_embedding(dimension_, 0.0f);
                 int batch_offset = i == 0 ? 0 : batch_nums[i - 1];
                 int batch_num = batch_nums[i] - batch_offset;
@@ -296,6 +359,7 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
                 }
                 memcpy(gather_embedding + i * dimension_, tmp_embedding.data(),
                        sizeof(float) * dimension_);
+#endif
               }
             };
         Shard(worker_threads->num_threads, worker_threads->workers, batch_size,
@@ -306,6 +370,36 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
             [this, &gather_embedding, batch_nums, unique_idx, unique,
              unique_embedding_data, sp_weights](int64 start, int64 end) {
               for (int64 i = start; i < end; ++i) {
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
+                int tmp_length = (dimension_ + 15) / 16;
+                __m512 tmp_embedding[tmp_length];
+                for(int i = 0; i < tmp_length; ++i){
+                  tmp_embedding[i] = _mm512_set1_ps(0.0f);
+                }
+                int batch_offset = i == 0 ? 0 : batch_nums[i - 1];
+                int batch_num = batch_nums[i] - batch_offset;
+                for (int j = 0; j < batch_num; ++j) {
+                  int unique_indice = unique_idx[batch_offset + j];
+                  float* u_embedding =
+                      unique_embedding_data + unique_indice * dimension_;
+                  __m512 _weights = _mm512_set1_ps(*(sp_weights + batch_offset + j));
+                  for (int d = 0; d < dimension_; d += 16) {
+                    int index = d / 16;
+                    int remain = dimension_ - d;
+                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                    __m512 _item = _mm512_maskz_loadu_ps(mask, u_embedding + d);
+                    tmp_embedding[index] = _mm512_mask3_fmadd_ps(_item, _weights, tmp_embedding[index], mask);
+                  }
+                }
+                __m512 _bs = _mm512_set1_ps(sqrtf(batch_num));
+                for (int d = 0; d < dimension_; d += 16) {
+                  int index = d / 16;
+                  int remain = dimension_ - d;
+                  __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                  tmp_embedding[index] = _mm512_div_ps(tmp_embedding[index], _bs);
+                  _mm512_mask_storeu_ps(gather_embedding + i * dimension_ + d, mask, tmp_embedding[index]);
+                }
+#else
                 std::vector<TValue> tmp_embedding(dimension_, 0.0f);
                 int batch_offset = i == 0 ? 0 : batch_nums[i - 1];
                 int batch_num = batch_nums[i] - batch_offset;
@@ -323,6 +417,7 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
                   gather_embedding[i * dimension_ + d] =
                       tmp_embedding[d] / sqrtf(batch_num);
                 }
+#endif
               }
             };
         Shard(worker_threads->num_threads, worker_threads->workers, batch_size,
@@ -353,6 +448,14 @@ class GroupEmbeddingVariableLookupCpuOp : public OpKernel {
   bool is_use_default_value_tensor_;
   bool ignore_weights_;
   bool is_inference_;
+  bool serial_ = false;
+  int64 partition_size_ = 0;
+  int64 unique_ratio_hint_;
+  UniqueMaps map_flag_ = GOOGLE;  // "GOOGLE" dense hash map is default
+  const int64 kDefaultUniqueRatioHint = 4;
+  const char* kUniqueOpSerialEnv = "DEEPREC_UNIQUE_OP_SERIAL";
+  const char* kUniqueOpUniqRatioHint = "DEEPREC_UNIQUE_OP_UNIQ_RATIO_HINT";
+  const char* kUniqueOpPartitionSizeEnv = "DEEPREC_UNIQUE_OP_PARTITION_SIZE";
 };
 
 #define REGISTER_CPU_KERNELS(key_type, value_type) \
