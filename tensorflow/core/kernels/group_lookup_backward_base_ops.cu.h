@@ -59,26 +59,28 @@ __global__ void ComputeEVGradFn(
         feature_num = args[idx].offset_indices_[bid + 1] - value_offset;
       }
 
-      float grad = args[idx].grads_[bid * dimension + tid];
-      grad = CombineGrad<combiner>(grad, feature_num);
+      if (feature_num > 0) {
+        float grad = args[idx].grads_[bid * dimension + tid];
+        grad = CombineGrad<combiner>(grad, feature_num);
 
-      for (int j = 0; j < feature_num; ++j) {
-        float grad_i = grad;
-        int feature_offset = (value_offset + j) * dimension;
-        if (max_norm > 0.0f) {
-          float emb_element = 0.0f;  // TODO: hujunqi get emb_weight
-          if (tid == 0) {
-            l2_sum = 0.0f;
+        for (int j = 0; j < feature_num; ++j) {
+          float grad_i = grad;
+          int feature_offset = (value_offset + j) * dimension;
+          if (max_norm > 0.0f) {
+            float emb_element = 0.0f;  // TODO(junqihu): get emb_weight
+            if (tid == 0) {
+              l2_sum = 0.0f;
+            }
+            tile.shfl(l2_sum, 0);
+            atomicAdd(&l2_sum, emb_element * emb_element);
+            tile.sync();
+            float l2_norm = sqrtf(l2_sum);
+            if (l2_norm > max_norm) {
+              grad_i *= max_norm / l2_norm;
+            }
           }
-          tile.shfl(l2_sum, 0);
-          atomicAdd(&l2_sum, emb_element * emb_element);
-          tile.sync();
-          float l2_norm = sqrtf(l2_sum);
-          if (l2_norm > max_norm) {
-            grad_i *= max_norm / l2_norm;
-          }
+          args[idx].grads_output_[(value_offset + j) * dimension + tid] = grad_i;
         }
-        args[idx].grads_output_[(value_offset + j) * dimension + tid] = grad_i;
       }
     }
   }
@@ -105,31 +107,28 @@ __global__ void ComputeSparseGradFn(
     } else {
       feature_num = args[idx].offset_indices_[bid + 1] - value_offset;
     }
-    float grad = args[idx].grads_[bid * dimension + tid];
-    // printf("feature_num is %d , grad is %lld , bid is %d , tid is %d \n",
-    // feature_num, grad, blockIdx.x, threadIdx.x);
-    grad = CombineGrad<combiner>(grad, feature_num);
-    for (int i = 0; i < feature_num; i++) {
-      float grad_i = grad;
-      if (max_norm > 0.0f) {
-        int64_t indices = int(args[idx].sp_values_[value_offset + i]);
-        float emb_element = args[idx].emb_variable_[indices * dimension + tid];
-        // if (FastBoundsCheck(indices, args[idx].emb_row_size_)) {
-        //   emb_element =
-        //       args[idx].emb_variable_[indices * dimension + tid];
-        // }
-        if (tid == 0) {
-          l2_sum = 0.0f;
+
+    if (feature_num > 0) {
+      float grad = args[idx].grads_[bid * dimension + tid];
+      grad = CombineGrad<combiner>(grad, feature_num);
+      for (int i = 0; i < feature_num; i++) {
+        float grad_i = grad;
+        if (max_norm > 0.0f) {
+          int64_t indices = int(args[idx].sp_values_[value_offset + i]);
+          float emb_element = args[idx].emb_variable_[indices * dimension + tid];
+          if (tid == 0) {
+            l2_sum = 0.0f;
+          }
+          tile.shfl(l2_sum, 0);
+          atomicAdd(&l2_sum, emb_element * emb_element);
+          tile.sync();
+          float l2_norm = sqrtf(l2_sum);
+          if (l2_norm > max_norm) {
+            grad_i *= max_norm / l2_norm;
+          }
         }
-        tile.shfl(l2_sum, 0);
-        atomicAdd(&l2_sum, emb_element * emb_element);
-        tile.sync();
-        float l2_norm = sqrtf(l2_sum);
-        if (l2_norm > max_norm) {
-          grad_i *= max_norm / l2_norm;
-        }
+        args[idx].grads_output_[(value_offset + i) * dimension + tid] = grad_i;
       }
-      args[idx].grads_output_[(value_offset + i) * dimension + tid] = grad_i;
     }
   }
 }
@@ -156,26 +155,28 @@ __global__ void NormalComputeEVGradFn(
         feature_num = args[idx].offset_indices_[bid + 1] - value_offset;
       }
 
-      float grad = args[idx].grads_[bid * dimension + tid];
-      grad = CombineGrad<combiner>(grad, feature_num);
+      if (feature_num > 0) {
+        float grad = args[idx].grads_[bid * dimension + tid];
+        grad = CombineGrad<combiner>(grad, feature_num);
 
-      for (int j = 0; j < feature_num; ++j) {
-        float grad_i = grad;
-        int feature_offset = (value_offset + j) * dimension;
-        if (max_norm > 0.0f) {
-          float emb_element = 0.0f;  // TODO: hujunqi get emb_weight
-          if (tid == 0) {
-            l2_sum[0] = 0.0f;
+        for (int j = 0; j < feature_num; ++j) {
+          float grad_i = grad;
+          int feature_offset = (value_offset + j) * dimension;
+          if (max_norm > 0.0f) {
+            float emb_element = 0.0f;  // TODO(junqihu): get emb_weight
+            if (tid == 0) {
+              l2_sum[0] = 0.0f;
+            }
+            __syncthreads();
+            atomicAdd(l2_sum, emb_element * emb_element);
+            __syncthreads();
+            float l2_norm = sqrtf(l2_sum[0]);
+            if (l2_norm > max_norm) {
+              grad_i *= max_norm / l2_norm;
+            }
           }
-          __syncthreads();
-          atomicAdd(l2_sum, emb_element * emb_element);
-          __syncthreads();
-          float l2_norm = sqrtf(l2_sum[0]);
-          if (l2_norm > max_norm) {
-            grad_i *= max_norm / l2_norm;
-          }
+          args[idx].grads_output_[(value_offset + j) * dimension + tid] = grad_i;
         }
-        args[idx].grads_output_[(value_offset + j) * dimension + tid] = grad_i;
       }
     }
   }
@@ -201,27 +202,28 @@ __global__ void NormalComputeSparseGradFn(
     } else {
       feature_num = args[idx].offset_indices_[bid + 1] - value_offset;
     }
-    float grad = args[idx].grads_[bid * dimension + tid];
-    // printf("feature_num is %d , grad is %lld , bid is %d , tid is %d \n",
-    // feature_num, grad, blockIdx.x, threadIdx.x);
-    grad = CombineGrad<combiner>(grad, feature_num);
-    for (int i = 0; i < feature_num; i++) {
-      float grad_i = grad;
-      if (max_norm > 0.0f) {
-        int64_t indices = int(args[idx].sp_values_[value_offset + i]);
-        float emb_element = args[idx].emb_variable_[indices * dimension + tid];
-        if (tid == 0) {
-          l2_sum[0] = 0.0f;
+
+    if (feature_num > 0) {
+      float grad = args[idx].grads_[bid * dimension + tid];
+      grad = CombineGrad<combiner>(grad, feature_num);
+      for (int i = 0; i < feature_num; i++) {
+        float grad_i = grad;
+        if (max_norm > 0.0f) {
+          int64_t indices = int(args[idx].sp_values_[value_offset + i]);
+          float emb_element = args[idx].emb_variable_[indices * dimension + tid];
+          if (tid == 0) {
+            l2_sum[0] = 0.0f;
+          }
+          __syncthreads();
+          atomicAdd(l2_sum, emb_element * emb_element);
+          __syncthreads();
+          float l2_norm = sqrtf(l2_sum[0]);
+          if (l2_norm > max_norm) {
+            grad_i *= max_norm / l2_norm;
+          }
         }
-        __syncthreads();
-        atomicAdd(l2_sum, emb_element * emb_element);
-        __syncthreads();
-        float l2_norm = sqrtf(l2_sum[0]);
-        if (l2_norm > max_norm) {
-          grad_i *= max_norm / l2_norm;
-        }
+        args[idx].grads_output_[(value_offset + i) * dimension + tid] = grad_i;
       }
-      args[idx].grads_output_[(value_offset + i) * dimension + tid] = grad_i;
     }
   }
 }
@@ -265,10 +267,15 @@ class GroupEmbeddingLookupBackWard {
         cudaMemcpyHostToDevice, stream));
 
     {
-      const int block_size = (batch_size - 1) / 64 * tile_size + 1;
+      if (tile_size <= 32) {
+        const int block_size = batch_size  / 64 * tile_size + 1;
 
-      fn<<<block_size, 64, 0, stream>>>(batch_size, max_norm_, nums_,
-                                        dimension_, d_args_);
+        fn<<<block_size, 64, 0, stream>>>(batch_size, max_norm_, nums_,
+                                          dimension_, d_args_);
+      } else {
+        fn<<<batch_size, tile_size, 0, stream>>>(batch_size, max_norm_, nums_,
+                                          dimension_, d_args_);
+      }
     }
 
     CK_CUDA_THROW_(cudaGetLastError());
@@ -313,7 +320,7 @@ class GroupLookupBackWardBaseOp : public OpKernel {
                            batch_size, 32, stream);
       } else {
         lookuper_.Backward(NormalComputeEVGradFn<TKey, TValue, combiner>,
-                           batch_size, 64, stream);
+                           batch_size, dimension_, stream);
       }
     } else {
       if (dimension_ <= 2) {
@@ -333,7 +340,7 @@ class GroupLookupBackWardBaseOp : public OpKernel {
                            batch_size, 32, stream);
       } else {
         lookuper_.Backward(NormalComputeSparseGradFn<TKey, TValue, combiner>,
-                           batch_size, 64, stream);
+                           batch_size, dimension_, stream);
       }
     }
   }

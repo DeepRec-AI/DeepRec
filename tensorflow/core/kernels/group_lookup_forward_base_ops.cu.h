@@ -108,26 +108,28 @@ __global__ void WeightedEmbeddingVarComputeFn(
       TValue out = 0.0;
 
       // #pragma unroll
-      for (int j = 0; j < feature_num; ++j) {
-        int64_t feature_offset = (value_offset + j) * dimension;
-        TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
-        TValue sp_weights = args[ev_id].sp_weights_[bid * dimension + tid];
-        if (max_norm >= 0.0) {
-          if (tid == 0) {
-            l2_sum = 0.0;
+      if (feature_num > 0) {
+        for (int j = 0; j < feature_num; ++j) {
+          size_t feature_indices = value_offset + j;
+          int64_t embedding_offset = feature_indices * dimension;
+          TValue sum = args[ev_id].emb_variable_[embedding_offset + tid];
+          TValue sp_weights = args[ev_id].sp_weights_[feature_indices];
+          if (max_norm >= 0.0) {
+            if (tid == 0) {
+              l2_sum = 0.0;
+            }
+            tile.shfl(l2_sum, 0);
+            atomicAdd(&l2_sum, sum * sum);
+            tile.sync();
+            TValue l2_norm = sqrtf(l2_sum);
+            if (l2_norm > max_norm) {
+              sum *= max_norm / l2_norm;
+            }
           }
-          tile.shfl(l2_sum, 0);
-          atomicAdd(&l2_sum, sum * sum);
-          tile.sync();
-          TValue l2_norm = sqrtf(l2_sum);
-          if (l2_norm > max_norm) {
-            sum *= max_norm / l2_norm;
-          }
+          out = __fmaf_rn(sum, sp_weights, out);
         }
-        out += sum * sp_weights;
+        out = Combine<combiner>(out, feature_num);
       }
-
-      out = Combine<combiner>(out, feature_num);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -161,29 +163,32 @@ __global__ void WeightedVariableComputeFn(
       const TValue* emb_variable = args[ev_id].emb_variable_;
       const int64_t emb_dim_limit = args[ev_id].emb_row_size_;
       // #pragma unroll
-      for (int i = 0; i < feature_num; i++) {
-        int indices = int(args[ev_id].sp_values_[value_offset + i]);
-        TValue sp_weights = args[ev_id].sp_weights_[bid * emb_vec_size + tid];
-        TValue emb_element = emb_variable[indices * emb_vec_size + tid];
-        if (max_norm >= 0.0f) {
-          // calc l2 norm of this emb row(per block) and compare with
-          // max_norm.
-          // if greater than max_norm, then clip every element with factor
-          // max_norm / l2norm
-          if (tid == 0) {
-            l2_sum = 0.0f;
+      if (feature_num > 0) {
+        for (int i = 0; i < feature_num; i++) {
+          size_t feature_indices = value_offset + i;
+          int embedding_indices = int(args[ev_id].sp_values_[feature_indices]);
+          TValue sp_weights = args[ev_id].sp_weights_[embedding_indices];
+          TValue emb_element = emb_variable[feature_indices];
+          if (max_norm >= 0.0f) {
+            // calc l2 norm of this emb row(per block) and compare with
+            // max_norm.
+            // if greater than max_norm, then clip every element with factor
+            // max_norm / l2norm
+            if (tid == 0) {
+              l2_sum = 0.0f;
+            }
+            tile.shfl(l2_sum, 0);
+            atomicAdd(&l2_sum, emb_element * emb_element);
+            tile.sync();
+            TValue l2_norm = sqrtf(l2_sum);
+            if (l2_norm > max_norm) {
+              emb_element *= max_norm / l2_norm;
+            }
           }
-          tile.shfl(l2_sum, 0);
-          atomicAdd(&l2_sum, emb_element * emb_element);
-          tile.sync();
-          TValue l2_norm = sqrtf(l2_sum);
-          if (l2_norm > max_norm) {
-            emb_element *= max_norm / l2_norm;
-          }
+          out = __fmaf_rn(emb_element, sp_weights, out);
         }
-        out += emb_element * sp_weights;
+        out = Combine<combiner>(out, feature_num);
       }
-      out = Combine<combiner>(out, feature_num);
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
   }
@@ -215,25 +220,26 @@ __global__ void EmbeddingVarComputeFn(
       TValue out = 0.0;
 
       // #pragma unroll
-      for (int j = 0; j < feature_num; ++j) {
-        int64_t feature_offset = (value_offset + j) * dimension;
-        TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
-        if (max_norm >= 0.0) {
-          if (tid == 0) {
-            l2_sum = 0.0;
+      if (feature_num > 0) {
+        for (int j = 0; j < feature_num; ++j) {
+          int64_t feature_offset = (value_offset + j) * dimension;
+          TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
+          if (max_norm >= 0.0) {
+            if (tid == 0) {
+              l2_sum = 0.0;
+            }
+            tile.shfl(l2_sum, 0);
+            atomicAdd(&l2_sum, sum * sum);
+            tile.sync();
+            TValue l2_norm = sqrtf(l2_sum);
+            if (l2_norm > max_norm) {
+              sum *= max_norm / l2_norm;
+            }
           }
-          tile.shfl(l2_sum, 0);
-          atomicAdd(&l2_sum, sum * sum);
-          tile.sync();
-          TValue l2_norm = sqrtf(l2_sum);
-          if (l2_norm > max_norm) {
-            sum *= max_norm / l2_norm;
-          }
+          out += sum;
         }
-        out += sum;
+        out = Combine<combiner>(out, feature_num);
       }
-
-      out = Combine<combiner>(out, feature_num);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -266,31 +272,31 @@ __global__ void VariableComputeFn(
       const TValue* emb_variable = args[ev_id].emb_variable_;
       const int64_t emb_dim_limit = args[ev_id].emb_row_size_;
       // #pragma unroll
-      for (int i = 0; i < feature_num; i++) {
-        int indices = int(args[ev_id].sp_values_[value_offset + i]);
-        TValue emb_element = emb_variable[indices * emb_vec_size + tid];
-        // printf("indices is %d emb_element is %f\n", indices, emb_element);
-        if (max_norm >= 0.0f) {
-          // calc l2 norm of this emb row(per block) and compare with
-          // max_norm.
-          // if greater than max_norm, then clip every element with factor
-          // max_norm / l2norm
-          if (tid == 0) {
-            l2_sum = 0.0f;
+      if (feature_num > 0) {
+        for (int i = 0; i < feature_num; i++) {
+          int indices = int(args[ev_id].sp_values_[value_offset + i]);
+          TValue emb_element = emb_variable[indices * emb_vec_size + tid];
+          // printf("indices is %d emb_element is %f\n", indices, emb_element);
+          if (max_norm >= 0.0f) {
+            // calc l2 norm of this emb row(per block) and compare with
+            // max_norm.
+            // if greater than max_norm, then clip every element with factor
+            // max_norm / l2norm
+            if (tid == 0) {
+              l2_sum = 0.0f;
+            }
+            tile.shfl(l2_sum, 0);
+            atomicAdd(&l2_sum, emb_element * emb_element);
+            tile.sync();
+            TValue l2_norm = sqrtf(l2_sum);
+            if (l2_norm > max_norm) {
+              emb_element *= max_norm / l2_norm;
+            }
           }
-          tile.shfl(l2_sum, 0);
-          atomicAdd(&l2_sum, emb_element * emb_element);
-          tile.sync();
-          TValue l2_norm = sqrtf(l2_sum);
-          if (l2_norm > max_norm) {
-            emb_element *= max_norm / l2_norm;
-          }
+          out += emb_element;
         }
-        out += emb_element;
+        out = Combine<combiner>(out, feature_num);
       }
-      out = Combine<combiner>(out, feature_num);
-      // printf("feature_num is %d value_offset is %d out is %f\n", feature_num,
-      // value_offset, out);
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
   }
@@ -320,25 +326,26 @@ __global__ void NormalEmbeddingVarComputeFn(
       TValue out = 0.0;
 
       // #pragma unroll
-      for (int j = 0; j < feature_num; ++j) {
-        int64_t feature_offset = (value_offset + j) * dimension;
-        TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
-        if (max_norm >= 0.0) {
-          if (tid == 0) {
-            l2_sum[0] = 0.0;
+      if (feature_num > 0) {
+        for (int j = 0; j < feature_num; ++j) {
+          int64_t feature_offset = (value_offset + j) * dimension;
+          TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
+          if (max_norm >= 0.0) {
+            if (tid == 0) {
+              l2_sum[0] = 0.0;
+            }
+            block.sync();
+            atomicAdd(l2_sum, sum * sum);
+            block.sync();
+            TValue l2_norm = sqrtf(l2_sum[0]);
+            if (l2_norm > max_norm) {
+              sum *= max_norm / l2_norm;
+            }
           }
-          block.sync();
-          atomicAdd(l2_sum, sum * sum);
-          block.sync();
-          TValue l2_norm = sqrtf(l2_sum[0]);
-          if (l2_norm > max_norm) {
-            sum *= max_norm / l2_norm;
-          }
+          out += sum;
         }
-        out += sum;
+        out = Combine<combiner>(out, feature_num);
       }
-
-      out = Combine<combiner>(out, feature_num);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -369,31 +376,31 @@ __global__ void NormalVariableComputeFn(
       const TValue* emb_variable = args[ev_id].emb_variable_;
       const int64_t emb_dim_limit = args[ev_id].emb_row_size_;
       // #pragma unroll
-      for (int i = 0; i < feature_num; i++) {
-        int indices = int(args[ev_id].sp_values_[value_offset + i]);
-        TValue emb_element = emb_variable[indices * emb_vec_size + tid];
-        // printf("indices is %d emb_element is %f\n", indices, emb_element);
-        if (max_norm >= 0.0f) {
-          // calc l2 norm of this emb row(per block) and compare with
-          // max_norm.
-          // if greater than max_norm, then clip every element with factor
-          // max_norm / l2norm
-          if (tid == 0) {
-            l2_sum[0] = 0.0f;
+      if (feature_num > 0) {
+        for (int i = 0; i < feature_num; i++) {
+          int indices = int(args[ev_id].sp_values_[value_offset + i]);
+          TValue emb_element = emb_variable[indices * emb_vec_size + tid];
+          // printf("indices is %d emb_element is %f\n", indices, emb_element);
+          if (max_norm >= 0.0f) {
+            // calc l2 norm of this emb row(per block) and compare with
+            // max_norm.
+            // if greater than max_norm, then clip every element with factor
+            // max_norm / l2norm
+            if (tid == 0) {
+              l2_sum[0] = 0.0f;
+            }
+            block.sync();
+            atomicAdd(l2_sum, emb_element * emb_element);
+            block.sync();
+            TValue l2_norm = sqrtf(l2_sum[0]);
+            if (l2_norm > max_norm) {
+              emb_element *= max_norm / l2_norm;
+            }
           }
-          block.sync();
-          atomicAdd(l2_sum, emb_element * emb_element);
-          block.sync();
-          TValue l2_norm = sqrtf(l2_sum[0]);
-          if (l2_norm > max_norm) {
-            emb_element *= max_norm / l2_norm;
-          }
+          out += emb_element;
         }
-        out += emb_element;
+        out = Combine<combiner>(out, feature_num);
       }
-      out = Combine<combiner>(out, feature_num);
-      // printf("feature_num is %d value_offset is %d out is %f\n", feature_num,
-      // value_offset, out);
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
   }
@@ -423,27 +430,29 @@ __global__ void NormalWeightedEmbeddingVarComputeFn(
       TValue out = 0.0;
 
       // #pragma unroll
-      for (int j = 0; j < feature_num; ++j) {
-        int64_t feature_offset = (value_offset + j) * dimension;
-        TValue sum = args[ev_id].emb_variable_[feature_offset + tid];
-        TValue sp_weights =
-            args[ev_id].sp_weights_[feature_offset + tid];
-        if (max_norm >= 0.0) {
-          if (tid == 0) {
-            l2_sum[0] = 0.0;
+      if (feature_num > 0) {
+        for (int j = 0; j < feature_num; ++j) {
+          size_t feature_indices = value_offset + j;
+          int64_t embedding_offset = feature_indices * dimension;
+          TValue sum = args[ev_id].emb_variable_[embedding_offset + tid];
+          TValue sp_weights =
+              args[ev_id].sp_weights_[feature_indices];
+          if (max_norm >= 0.0) {
+            if (tid == 0) {
+              l2_sum[0] = 0.0;
+            }
+            block.sync();
+            atomicAdd(l2_sum, sum * sum);
+            block.sync();
+            TValue l2_norm = sqrtf(l2_sum[0]);
+            if (l2_norm > max_norm) {
+              sum *= max_norm / l2_norm;
+            }
           }
-          block.sync();
-          atomicAdd(l2_sum, sum * sum);
-          block.sync();
-          TValue l2_norm = sqrtf(l2_sum[0]);
-          if (l2_norm > max_norm) {
-            sum *= max_norm / l2_norm;
-          }
+          out = __fmaf_rn(sum, sp_weights, out);
         }
-        out += sum * sp_weights;
+        out = Combine<combiner>(out, feature_num);
       }
-
-      out = Combine<combiner>(out, feature_num);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -473,32 +482,36 @@ __global__ void NormalWeightedVariableComputeFn(
 
       const TValue* emb_variable = args[ev_id].emb_variable_;
       const int64_t emb_dim_limit = args[ev_id].emb_row_size_;
+
       // #pragma unroll
-      for (int i = 0; i < feature_num; i++) {
-        int indices = int(args[ev_id].sp_values_[value_offset + i]);
-        TValue emb_element = emb_variable[indices * emb_vec_size + tid];
-        TValue sp_weights =
-            args[ev_id].sp_weights_[indices * emb_vec_size + tid];
-        // printf("indices is %d emb_element is %f\n", indices, emb_element);
-        if (max_norm >= 0.0f) {
-          // calc l2 norm of this emb row(per block) and compare with
-          // max_norm.
-          // if greater than max_norm, then clip every element with factor
-          // max_norm / l2norm
-          if (tid == 0) {
-            l2_sum[0] = 0.0f;
+      if (feature_num > 0) {
+        for (int i = 0; i < feature_num; i++) {
+          size_t feature_indices = value_offset + i;
+          int embedding_indices = int(args[ev_id].sp_values_[feature_indices]);
+          TValue emb_element = emb_variable[embedding_indices * emb_vec_size + tid];
+          TValue sp_weights =
+              args[ev_id].sp_weights_[feature_indices];
+          // printf("indices is %d emb_element is %f\n", indices, emb_element);
+          if (max_norm >= 0.0f) {
+            // calc l2 norm of this emb row(per block) and compare with
+            // max_norm.
+            // if greater than max_norm, then clip every element with factor
+            // max_norm / l2norm
+            if (tid == 0) {
+              l2_sum[0] = 0.0f;
+            }
+            block.sync();
+            atomicAdd(l2_sum, emb_element * emb_element);
+            block.sync();
+            TValue l2_norm = sqrtf(l2_sum[0]);
+            if (l2_norm > max_norm) {
+              emb_element *= max_norm / l2_norm;
+            }
           }
-          block.sync();
-          atomicAdd(l2_sum, emb_element * emb_element);
-          block.sync();
-          TValue l2_norm = sqrtf(l2_sum[0]);
-          if (l2_norm > max_norm) {
-            emb_element *= max_norm / l2_norm;
-          }
+          out = __fmaf_rn(emb_element, sp_weights, out);
         }
-        out += emb_element * sp_weights;
+        out = Combine<combiner>(out, feature_num);
       }
-      out = Combine<combiner>(out, feature_num);
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
   }
@@ -544,9 +557,14 @@ class GroupEmbeddingLookupForWard {
 
     {
       // TODO: double check why mapped 2D grid slower
-      const int block_size = (batch_size - 1) / 64 * tile_size + 1;
-      compute_fn<<<block_size, 64, 0, stream>>>(batch_size, dimension_,
-                                                max_norm_, ev_nums_, d_args_);
+      if (tile_size <= 32) {
+        const int block_size = batch_size / 64 * tile_size + 1;
+        compute_fn<<<block_size, 64, 0, stream>>>(batch_size, dimension_,
+                                                  max_norm_, ev_nums_, d_args_);
+      } else {
+        compute_fn<<<batch_size, tile_size, 0, stream>>>(batch_size, dimension_,
+                                                  max_norm_, ev_nums_, d_args_);
+      }
     }
 
     CK_CUDA_THROW_(cudaGetLastError());
@@ -595,7 +613,7 @@ class GroupEmbeddingLookupForwardBaseOp : public OpKernel {
                            batch_size, 32, stream);
         } else {
           lookuper_.Lookup(NormalEmbeddingVarComputeFn<TKey, TValue, combiner>,
-                           batch_size, 64, stream);
+                           batch_size, dimension_, stream);
         }
       } else {
         if (dimension_ <= 2) {
@@ -621,7 +639,7 @@ class GroupEmbeddingLookupForwardBaseOp : public OpKernel {
         } else {
           lookuper_.Lookup(
               NormalWeightedEmbeddingVarComputeFn<TKey, TValue, combiner>,
-              batch_size, 64, stream);
+              batch_size, dimension_, stream);
         }
       }
     } else {
@@ -643,7 +661,7 @@ class GroupEmbeddingLookupForwardBaseOp : public OpKernel {
                            batch_size, 32, stream);
         } else {
           lookuper_.Lookup(NormalVariableComputeFn<TKey, TValue, combiner>,
-                           batch_size, 64, stream);
+                           batch_size, dimension_, stream);
         }
       } else {
         if (dimension_ <= 2) {
@@ -666,7 +684,7 @@ class GroupEmbeddingLookupForwardBaseOp : public OpKernel {
         } else {
           lookuper_.Lookup(
               NormalWeightedVariableComputeFn<TKey, TValue, combiner>,
-              batch_size, 64, stream);
+              batch_size, dimension_, stream);
         }
       }
     }

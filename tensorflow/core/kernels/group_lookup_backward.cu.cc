@@ -37,10 +37,10 @@ template <typename TFKey, typename TKey, typename TValue>
 class GroupVariableLookupBackwardOp
     : public GroupLookupBackWardBaseOp<TKey, TValue> {
  public:
-  explicit GroupVariableLookupBackwardOp(OpKernelConstruction *c)
+  explicit GroupVariableLookupBackwardOp(OpKernelConstruction* c)
       : GroupLookupBackWardBaseOp<TKey, TValue>(c) {}
 
-  void Compute(OpKernelContext *ctx) override {
+  void Compute(OpKernelContext* ctx) override {
     auto stream = ctx->eigen_device<GPUDevice>().stream();
     int batch_size = -1;
     for (int i = 0; i < this->num_lookups_; ++i) {
@@ -49,26 +49,28 @@ class GroupVariableLookupBackwardOp
       const Tensor sp_values_tensor = ctx->input(2 * this->num_lookups_ + i);
       const Tensor sp_values_offset_tensor =
           ctx->input(3 * this->num_lookups_ + i);
+      const int64_t nnz = sp_values_tensor.NumElements();
+
+      Tensor* grads_sp_values_tensor;
+      TensorShape grads_sp_values_tensor_shape =
+          TensorShape(std::vector<int64>({nnz, this->dimension_}));
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(i, grads_sp_values_tensor_shape,
+                                               &grads_sp_values_tensor));
+      auto* grads_sp_values = grads_sp_values_tensor->flat<TValue>().data();
+      cudaMemsetAsync(grads_sp_values, 0,
+                      sizeof(TValue) * nnz * this->dimension_, stream);
 
       if (i == 0) {
         batch_size = sp_values_offset_tensor.shape().dim_size(0);
       }
 
-      const int64_t nnz = sp_values_tensor.NumElements();
-
-      Tensor *grads_sp_values_tensor;
-      TensorShape grads_sp_values_tensor_shape =
-          TensorShape(std::vector<int64>({nnz, this->dimension_}));
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(i, grads_sp_values_tensor_shape,
-                                               &grads_sp_values_tensor));
       this->lookuper_.set(
-          i, const_cast<TValue *>(grads_tensor.flat<TValue>().data()),
-          const_cast<TValue *>(grads_sp_values_tensor->flat<TValue>().data()),
-          const_cast<int *>(sp_values_offset_tensor.flat<int>().data()),
-          const_cast<TKey *>(reinterpret_cast<const TKey *>(
+          i, const_cast<TValue*>(grads_tensor.flat<TValue>().data()),
+          const_cast<TValue*>(grads_sp_values),
+          const_cast<int*>(sp_values_offset_tensor.flat<int>().data()),
+          const_cast<TKey*>(reinterpret_cast<const TKey*>(
               sp_values_tensor.flat<TFKey>().data())),
-          const_cast<TValue *>(emb_variables_tensor.flat<TValue>().data()),
-          nnz);
+          const_cast<TValue*>(emb_variables_tensor.flat<TValue>().data()), nnz);
     }
 
     if (this->combiner_ == "mean") {
@@ -97,15 +99,15 @@ template <typename TFKey, typename TKey, typename TValue>
 class GroupEmbeddingVariableLookupBackwardOp
     : public GroupLookupBackWardBaseOp<TKey, TValue> {
  public:
-  explicit GroupEmbeddingVariableLookupBackwardOp(OpKernelConstruction *c)
+  explicit GroupEmbeddingVariableLookupBackwardOp(OpKernelConstruction* c)
       : GroupLookupBackWardBaseOp<TKey, TValue>(c) {}
 
-  void Compute(OpKernelContext *ctx) override {
+  void Compute(OpKernelContext* ctx) override {
     auto stream = ctx->eigen_device<GPUDevice>().stream();
     int batch_size = -1;
     for (int i = 0; i < this->num_lookups_; ++i) {
       const Tensor grads_tensor = ctx->input(i);
-      EmbeddingVar<TFKey, TValue> *ev = nullptr;
+      EmbeddingVar<TFKey, TValue>* ev = nullptr;
       OP_REQUIRES_OK(
           ctx, LookupResource(ctx, HandleFromInput(ctx, this->num_lookups_ + i),
                               &ev));
@@ -113,25 +115,29 @@ class GroupEmbeddingVariableLookupBackwardOp
       const Tensor sp_values_tensor = ctx->input(2 * this->num_lookups_ + i);
       const Tensor sp_values_offset_tensor =
           ctx->input(3 * this->num_lookups_ + i);
-      // int dimension = ev->ValueLen();
-      if (i == 0) {
-        batch_size = sp_values_offset_tensor.shape().dim_size(0);
-      }
 
       const int64_t nnz = sp_values_tensor.NumElements();
 
-      Tensor *grads_sp_values_tensor;
+      Tensor* grads_sp_values_tensor;
       TensorShape grads_sp_values_tensor_shape =
           TensorShape(std::vector<int64>({nnz, this->dimension_}));
       OP_REQUIRES_OK(ctx, ctx->allocate_output(i, grads_sp_values_tensor_shape,
                                                &grads_sp_values_tensor));
+      auto* grads_sp_values = grads_sp_values_tensor->flat<TValue>().data();
+      cudaMemsetAsync(grads_sp_values, 0,
+                      sizeof(TValue) * nnz * this->dimension_, stream);
+
+      if (i == 0) {
+        batch_size = sp_values_offset_tensor.shape().dim_size(0);
+      }
+
       this->lookuper_.set(
-          i, const_cast<TValue *>(grads_tensor.flat<TValue>().data()),
-          const_cast<TValue *>(grads_sp_values_tensor->flat<TValue>().data()),
-          const_cast<int *>(sp_values_offset_tensor.flat<int>().data()),
-          const_cast<TKey *>(reinterpret_cast<const TKey *>(
+          i, const_cast<TValue*>(grads_tensor.flat<TValue>().data()),
+          const_cast<TValue*>(grads_sp_values),
+          const_cast<int*>(sp_values_offset_tensor.flat<int>().data()),
+          const_cast<TKey*>(reinterpret_cast<const TKey*>(
               sp_values_tensor.flat<TFKey>().data())),
-          const_cast<TValue *>(grads_sp_values_tensor->flat<TValue>().data()),
+          const_cast<TValue*>(grads_sp_values_tensor->flat<TValue>().data()),
           nnz);
     }
 
