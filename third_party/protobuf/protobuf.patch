@@ -1,14 +1,25 @@
+From 92fc8b1f8fe8bc095708f200fa59e7808ef55fc0 Mon Sep 17 00:00:00 2001
+From: Tongxuan Liu <tongxuan.ltx@alibaba-inc.com>
+Date: Thu, 20 Apr 2023 19:11:22 +0800
+Subject: [PATCH] Protobuf patch for DeepRec.
+
+---
+ BUILD             | 4 +++-
+ protobuf.bzl      | 2 ++
+ protobuf_deps.bzl | 2 +-
+ 3 files changed, 6 insertions(+), 2 deletions(-)
+
 diff --git a/BUILD b/BUILD
-index dbae719ff..87dc38470 100644
+index dbae719..87dc384 100644
 --- a/BUILD
 +++ b/BUILD
 @@ -23,7 +23,7 @@ config_setting(
  # ZLIB configuration
  ################################################################################
-
+ 
 -ZLIB_DEPS = ["@zlib//:zlib"]
 +ZLIB_DEPS = ["@zlib"]
-
+ 
  ################################################################################
  # Protobuf Runtime Library
 @@ -143,6 +143,7 @@ cc_library(
@@ -18,7 +29,7 @@ index dbae719ff..87dc38470 100644
 +    alwayslink = 1,
      visibility = ["//visibility:public"],
  )
-
+ 
 @@ -213,6 +214,7 @@ cc_library(
      copts = COPTS,
      includes = ["src/"],
@@ -28,16 +39,31 @@ index dbae719ff..87dc38470 100644
      deps = [":protobuf_lite"] + PROTOBUF_DEPS,
  )
 diff --git a/protobuf.bzl b/protobuf.bzl
-index e0653321f..253d9cbb5 100644
+index e065332..92ae3b4 100644
 --- a/protobuf.bzl
 +++ b/protobuf.bzl
-@@ -84,7 +84,9 @@ def _proto_gen_impl(ctx):
-
+@@ -85,6 +85,8 @@ def _proto_gen_impl(ctx):
      for dep in ctx.attr.deps:
          import_flags += dep.proto.import_flags
          deps += dep.proto.deps
 +    import_flags = depset(import_flags).to_list()
 +    deps = depset(deps).to_list()
-
+ 
      if not ctx.attr.gen_cc and not ctx.attr.gen_py and not ctx.executable.plugin:
          return struct(
+diff --git a/protobuf_deps.bzl b/protobuf_deps.bzl
+index 57509ee..00325aa 100644
+--- a/protobuf_deps.bzl
++++ b/protobuf_deps.bzl
+@@ -11,7 +11,7 @@ def protobuf_deps():
+             build_file = "@com_google_protobuf//:third_party/zlib.BUILD",
+             sha256 = "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1",
+             strip_prefix = "zlib-1.2.11",
+-            urls = ["https://zlib.net/zlib-1.2.11.tar.gz"],
++            urls = ["https://mirror.bazel.build/zlib.net/zlib-1.2.11.tar.gz"],
+         )
+ 
+     if not native.existing_rule("six"):
+-- 
+2.37.1
+
