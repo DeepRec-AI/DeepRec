@@ -101,7 +101,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
           cpu_allocator(), size * value_len_, AllocationAttributes());
       key_list->resize(size);
 
-      auto slot_num = emb_config.block_num * (1 + emb_config.slot_num);
+      auto slot_num = config_.block_num * (1 + config_.slot_num);
       functor::KvKeyGetSnapshot<Eigen::GpuDevice, K, V>()(
           keys_gpu, item_idxs, emb_config.emb_index,
           emb_config.primary_emb_index, hash_table_->d_existence_flag_ptrs,
