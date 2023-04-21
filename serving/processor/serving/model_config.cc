@@ -54,6 +54,11 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] Invalid ModelConfig json.");
   }
 
+  // Enable INFERENCE_MODE by default
+  if (setenv("INFERENCE_MODE", "1", 1) != 0) {
+    LOG(WARNING) << "Set env INFERENCE_MODE=1 error.";
+  }
+
   Json::Reader reader;
   Json::Value json_config;
   if (!reader.parse(model_config, json_config)) {
