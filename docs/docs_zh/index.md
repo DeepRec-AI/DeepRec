@@ -100,6 +100,7 @@ Arm-Compute-Library
 :maxdepth: 2
 :caption: 模型量化
 
+AMX
 BFloat16
 ```
 
