@@ -113,6 +113,7 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
           padding_right, ALGORITHM::pooling_avg_exclude_padding,
           pooling_prop_kind,
           static_cast<MEMORY_FORMAT>(this->data_format_dnnl_), input_md);
+      MklDnnThreadPool eigen_tp(context);
       pooling_fwd = MklPoolingFwdPrimitiveFactory<T>::Get(fwdParams);
 
       // Allocate output tensor.
@@ -126,7 +127,6 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
 
       T* dst_data = output_tensor->flat<T>().data();
       std::shared_ptr<stream> fwd_cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, pooling_fwd->GetEngine()));
       // Execute pooling op.
       pooling_fwd->Execute(src_data, dst_data, nullptr, fwd_cpu_stream);
@@ -239,11 +239,11 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
           strides, padding_left, padding_right,
           ALGORITHM::pooling_avg_exclude_padding, prop_kind::forward_training,
           static_cast<MEMORY_FORMAT>(this->data_format_dnnl_), src_md);
+      MklDnnThreadPool eigen_tp(context);
       MklPoolingBwdPrimitive<T>* pooling_bwd =
           MklPoolingBwdPrimitiveFactory<T>::Get(bwdParams);
 
       std::shared_ptr<stream> bwd_cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
       bwd_cpu_stream.reset(CreateStream(&eigen_tp, pooling_bwd->GetEngine()));
       Tensor* output_tensor = nullptr;
       this->AllocateOutputTensor(context, *(pooling_bwd->GetPoolingBwdPd()),

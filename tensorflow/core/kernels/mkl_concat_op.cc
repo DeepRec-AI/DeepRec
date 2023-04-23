@@ -724,6 +724,7 @@ class MklConcatOp : public OpKernel {
         concat_dim = mkl_input_shapes[0].TfDimIdx(concat_dim);
 
       if (!inputs.empty()) {
+        MklDnnThreadPool eigen_tp(context);
         if (are_all_mkl_inputs) {
           auto concat_pd = concat::primitive_desc(
               concat_dim, MEMORY_PD_WITHOUT_DATA(srcs_pd, cpu_engine));
@@ -743,7 +744,6 @@ class MklConcatOp : public OpKernel {
           DCHECK(dst_tensor != nullptr) << "Output tensor pointer is NULL";
 
           std::shared_ptr<stream> fwd_cpu_stream;
-          MklDnnThreadPool eigen_tp(context);
           fwd_cpu_stream.reset(CreateStream(&eigen_tp, cpu_engine));
 
           if (dnn_shape_dst.IsMklTensor())
@@ -781,7 +781,6 @@ class MklConcatOp : public OpKernel {
           dst_md = dnn_shape_dst.IsMklTensor() ? dnn_shape_dst.GetMklLayout()
                                                : dst_md;
           std::shared_ptr<stream> fwd_cpu_stream;
-          MklDnnThreadPool eigen_tp(context);
           fwd_cpu_stream.reset(
               CreateStream(&eigen_tp, concat_fwd->GetEngine()));
           dst.SetUsrMem(dst_md, dst_tensor);

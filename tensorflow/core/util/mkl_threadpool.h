@@ -77,6 +77,7 @@ struct MklDnnThreadPool : public threadpool_iface {
     }
     intra_num_ =
         intra_num > 0 ? std::min(tf_intra_num, intra_num) : tf_intra_num;
+    dnnl_threadpool_interop_set_max_concurrency(intra_num_);
   }
 
   MklDnnThreadPool(OpKernelContext* ctx, int user_intra_num)
@@ -93,6 +94,9 @@ struct MklDnnThreadPool : public threadpool_iface {
     }
     intra_num_ =
         intra_num > 0 ? std::min(user_intra_num, intra_num) : user_intra_num;
+
+    intra_num_ = intra_num_ > 0 ? intra_num_ : eigen_interface_->NumThreads();
+    dnnl_threadpool_interop_set_max_concurrency(intra_num_);
   }
 
   virtual int get_num_threads() const override {

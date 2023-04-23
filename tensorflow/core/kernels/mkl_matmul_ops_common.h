@@ -795,17 +795,17 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
   bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled();
   MklMatMulParams params(a_dims, b_dims, c_dims, a_strides, b_strides,
                          c_strides);
+  auto st = ExecuteSingleThreadedGemm(m, n, k);
+  MklDnnThreadPool eigen_tp(ctx, st ? 1 : -1);
   MklMatMulPrimitive<T>* matmul_prim =
       MklMatMulPrimitiveFactory<T>::Get(params, do_not_cache);
 
   // Execute matmul primitive.
   std::shared_ptr<stream> cpu_stream;
   if (ExecuteSingleThreadedGemm(m, n, k)) {
-    MklDnnThreadPool eigen_tp(ctx, 1);
     cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
     matmul_prim->Execute(a, b, c, cpu_stream);
   } else {
-    MklDnnThreadPool eigen_tp(ctx);
     cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
     matmul_prim->Execute(a, b, c, cpu_stream);
   }
