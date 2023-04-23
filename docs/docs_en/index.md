@@ -97,6 +97,7 @@ Arm-Compute-Library
 :maxdepth: 2
 :caption: Model Quantification
 
+AMX
 BFloat16
 ```
 
