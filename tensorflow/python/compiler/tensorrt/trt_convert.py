@@ -48,6 +48,7 @@ from tensorflow.python.saved_model import loader
 from tensorflow.python.saved_model import save
 from tensorflow.python.saved_model import signature_constants
 from tensorflow.python.saved_model import tag_constants
+from tensorflow.python.saved_model import utils_impl as saved_model_utils
 from tensorflow.python.training import saver
 from tensorflow.python.training.tracking import tracking
 from tensorflow.python.util import nest
@@ -151,6 +152,9 @@ TrtConversionParams = collections.namedtuple(
         # Max size for the input batch.
         # This option is deprecated in TF 2.0.
         "max_batch_size",
+
+        # User model enable EmbeddingVariable or not.
+        "use_ev",
     ])
 
 DEFAULT_TRT_CONVERSION_PARAMS = TrtConversionParams(
@@ -161,7 +165,8 @@ DEFAULT_TRT_CONVERSION_PARAMS = TrtConversionParams(
     is_dynamic_op=True,
     maximum_cached_engines=1,
     use_calibration=True,
-    max_batch_size=1)
+    max_batch_size=1,
+    use_ev=False)
 
 _TRT_ENGINE_OP_NAME = "TRTEngineOp"
 
@@ -337,7 +342,8 @@ class TrtGraphConverter(object):
                minimum_segment_size=3,
                is_dynamic_op=False,
                maximum_cached_engines=1,
-               use_calibration=True):
+               use_calibration=True,
+               use_ev=False):
     """Initialize the converter.
 
     Args:
@@ -376,6 +382,7 @@ class TrtGraphConverter(object):
         will occur. Please note that accuracy may be negatively affected if
         there is a mismatch between which tensors TRT quantizes and which
         tensors were trained with fake quantization.
+      use_ev: User model use EmbeddingVariable or not.
 
     Raises:
       ValueError: if the combination of the parameters is invalid.
@@ -392,6 +399,9 @@ class TrtGraphConverter(object):
                        "input_saved_model_dir")
     _check_trt_version_compatibility()
 
+    self._use_ev = use_ev
+    if self._use_ev:
+      tf_logging.info("TensorRT - model contain EmbeddingVariable.")
     self._input_graph_def = input_graph_def
     self._nodes_blacklist = nodes_blacklist
 
@@ -433,7 +443,8 @@ class TrtGraphConverter(object):
         is_dynamic_op=is_dynamic_op,
         maximum_cached_engines=maximum_cached_engines,
         use_calibration=use_calibration,
-        max_batch_size=max_batch_size)
+        max_batch_size=max_batch_size,
+        use_ev=use_ev)
     _check_conversion_params(self._conversion_params)
 
   def _run_conversion(self):
@@ -503,6 +514,27 @@ class TrtGraphConverter(object):
       output_node_names = _gather_names(input_signature_def.inputs).union(
           _gather_names(input_signature_def.outputs))
 
+      filename_tensor_name = \
+          input_meta_graph_def.saver_def.filename_tensor_name.split(':')[0]
+      save_tensor_name = \
+          input_meta_graph_def.saver_def.save_tensor_name.split(':')[0]
+      restore_op_name = \
+          input_meta_graph_def.saver_def.restore_op_name.split(':')[0]
+
+      # EmbeddingVariable can not be convert to constant, so we need to
+      # load ev varibles at runtime always.
+      if self._use_ev:
+        global_step_collection_ops = sess.graph.get_collection("global_step")
+        global_step_name = global_step_collection_ops[0].name.split(":")[0]
+        output_node_names.add(filename_tensor_name)
+        output_node_names.add(save_tensor_name)
+        output_node_names.add(restore_op_name)
+
+        tf_logging.info("TensorRT - global_step_name: %s" % str(global_step_name))
+        tf_logging.info("TensorRT - filename_tensor_name: %s" % str(filename_tensor_name))
+        tf_logging.info("TensorRT - save_tensor_name: %s" % str(save_tensor_name))
+        tf_logging.info("TensorRT - restore_op_name: %s" % str(restore_op_name))
+
       # Preserve nodes in collection
       for collection_key in self._collections_to_keep(
           input_meta_graph_def.collection_def):
@@ -512,9 +544,19 @@ class TrtGraphConverter(object):
 
       # Freeze the variables in the SavedModel graph and copy the frozen
       # graph over.
+      variable_names_blacklist = []
+      if self._use_ev:
+        variable_names_blacklist.append(global_step_name)
+
       frozen_graph_def = graph_util.convert_variables_to_constants(
           sess, sess.graph.as_graph_def(add_shapes=True),
-          list(output_node_names))
+          list(output_node_names), variable_names_blacklist=variable_names_blacklist)
+
+      if self._use_ev:
+        # Keep KV Variable in saver_def, these kv-vars will be initialized at runtime.
+        frozen_graph_def = graph_util.create_kv_variable_init_graph(
+            frozen_graph_def, global_step_name, restore_op_name)
+
       self._grappler_meta_graph_def = meta_graph_pb2.MetaGraphDef()
       self._grappler_meta_graph_def.graph_def.CopyFrom(frozen_graph_def)
 
@@ -523,6 +565,10 @@ class TrtGraphConverter(object):
           input_meta_graph_def.collection_def):
         self._grappler_meta_graph_def.collection_def[collection_key].CopyFrom(
             input_meta_graph_def.collection_def[collection_key])
+
+      # We keep saver_def to load EV variables at runtime.
+      if self._use_ev:
+        self._grappler_meta_graph_def.saver_def.CopyFrom(input_meta_graph_def.saver_def)
 
       self._add_nodes_blacklist()
 
@@ -715,11 +761,22 @@ class TrtGraphConverter(object):
           ops.get_default_graph(), self._grappler_meta_graph_def,
           self._collections_to_keep(
               self._grappler_meta_graph_def.collection_def))
+
+      new_saver = None
+      if self._use_ev:
+        tf_logging.info("TensorRT - create saver from saver_def.")
+        new_saver = saver.Saver.from_proto(self._grappler_meta_graph_def.saver_def);
+
       # We don't use any specific converter here.
       with session.Session(config=self._session_config) as sess:
+        if new_saver is not None:
+          new_saver.restore(sess,
+              saved_model_utils.get_variables_path(self._input_saved_model_dir))
+
         saved_model_builder.add_meta_graph_and_variables(
             sess,
             self._input_saved_model_tags,
+            saver = new_saver,
             signature_def_map=self._grappler_meta_graph_def.signature_def)
     # Ignore other meta graphs from the input SavedModel.
     saved_model_builder.save()

@@ -32,6 +32,7 @@ bool IsGoogleTensorRTEnabled() {
                     "missing libraries mentioned above are installed properly.";
     return false;
   } else {
+    LOG(INFO) << "TensorRT is enabled.";
     return true;
   }
 #else
