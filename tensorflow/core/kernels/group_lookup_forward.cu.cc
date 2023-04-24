@@ -30,7 +30,6 @@ limitations under the License.
 #include "tensorflow/core/kernels/training_op_helpers.h"
 #include "tensorflow/core/lib/core/spin_rw_lock.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
-#include "tensorflow/core/util/work_sharder.h"
 #include "tensorflow/stream_executor/stream_executor.h"
 
 namespace tensorflow {
@@ -57,22 +56,26 @@ class GroupEmbeddingVarLookupOp
         return default_v + len * (id % total_dim);
       };
     }
-
-    tensor_list_.reserve(this->num_lookups_);
   }
 
   ~GroupEmbeddingVarLookupOp() { delete[] occupy_flag_; }
 
   void Compute(OpKernelContext* ctx) override {
-    EmbeddingVar<TFKey, TValue>* ev = nullptr;
     const auto& device = ctx->eigen_device<GPUDevice>();
-    TValue* default_v = nullptr;
 
     const Tensor& dense_shape_tensor = ctx->input(this->num_lookups_ * 4);
     auto dense_shape = dense_shape_tensor.flat<int>().data();
     int batch_size = dense_shape[0];
 
+    std::vector<Tensor> tensor_list;
+    tensor_list.reserve(this->num_lookups_);
+
     for (size_t i = 0; i < this->num_lookups_; ++i) {
+      EmbeddingVar<TFKey, TValue>* ev = nullptr;
+      OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, i), &ev));
+      core::ScopedUnref unref_me(ev);
+      int64 dimension = ev->ValueLen();
+
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
       auto sp_values = sp_values_tensor.flat<TFKey>();
       int64 N = sp_values_tensor.NumElements();
@@ -81,15 +84,13 @@ class GroupEmbeddingVarLookupOp
       auto sp_indices = sp_indices_tensor.flat<int64>().data();
       int nnz = sp_indices_tensor.shape().dim_size(0);
 
-      OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, i), &ev));
-      core::ScopedUnref unref_me(ev);
+      TValue* default_v = nullptr;
       if (is_use_default_value_tensor_) {
         default_v = (TValue*)ctx->input(5 * this->num_lookups_).data();
       } else {
         default_v = ev->GetDefaultValuePtr();
       }
-      // DEBUG
-      int64 dimension = ev->ValueLen();
+
       // DEBUG
       const TFKey* key_base = sp_values.data();
       Tensor out_tensor;
@@ -99,10 +100,9 @@ class GroupEmbeddingVarLookupOp
 
       if (ev->IsSingleHbm()) {
         if (is_use_default_value_tensor_) {
-          Tensor default_values(ctx->input(5 * this->num_lookups_));
-          auto default_value_num = default_values.NumElements() / dimension;
+          auto default_value_num = default_v->NumElements() / dimension;
           auto default_values_matrix =
-              default_values.shaped<TValue, 2>({default_value_num, dimension});
+              default_v->shaped<TValue, 2>({default_value_num, dimension});
           TValue* default_v_base = &default_values_matrix(0, 0);
           ev->LookupOrCreate(key_base, out_base, default_v_base,
                              default_value_num, is_use_default_value_tensor_, N,
@@ -244,7 +244,7 @@ class GroupEmbeddingVarLookupOp
       this->lookuper_.set(i, out_base, op_output, values_offset, nnz,
                           sp_weights);
 
-      tensor_list_.emplace_back(out_tensor);
+      tensor_list.emplace_back(out_tensor);
     }
 
     if (this->combiner_ == "sum") {
@@ -254,12 +254,9 @@ class GroupEmbeddingVarLookupOp
     } else {
       this->template compute<true, Sqrtn>(batch_size, device.stream());
     }
-
-    tensor_list_.clear();
   }
 
  private:
-  std::vector<Tensor> tensor_list_;
   std::map<uint64, int64> hash_map_;
   std::function<TValue*(TValue*, TFKey, int64, int64, int64)> get_default_v_fn_;
   mutable easy_spinrwlock_t mu_ = EASY_SPINRWLOCK_INITIALIZER;
@@ -294,7 +291,7 @@ class GroupVariableLookupOp
     auto dense_shape = dense_shape_tensor.flat<int>().data();
     int batch_size = dense_shape[0];
 
-    for (int i = 0; i < this->num_lookups_; ++i) {
+    for (size_t i = 0; i < this->num_lookups_; ++i) {
       const Tensor& emb_variable_tensor = ctx->input(i);
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
       int64 emb_row_size = emb_variable_tensor.shape().dim_size(0);
@@ -340,6 +337,7 @@ class GroupVariableLookupOp
                               sp_values_tensor.flat<TFKey>().data())),
                           emb_row_size);
     }
+
     if (this->combiner_ == "sum") {
       this->template compute<false, Sum>(batch_size, stream);
     } else if (this->combiner_ == "mean") {

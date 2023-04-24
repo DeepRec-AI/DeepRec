@@ -556,7 +556,6 @@ class GroupEmbeddingLookupForWard {
                                    cudaMemcpyHostToDevice, stream));
 
     {
-      // TODO: double check why mapped 2D grid slower
       if (tile_size <= 32) {
         const int block_size = batch_size / 64 * tile_size + 1;
         compute_fn<<<block_size, 64, 0, stream>>>(batch_size, dimension_,
