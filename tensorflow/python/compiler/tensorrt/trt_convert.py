@@ -767,8 +767,11 @@ class TrtGraphConverter(object):
         tf_logging.info("TensorRT - create saver from saver_def.")
         new_saver = saver.Saver.from_proto(self._grappler_meta_graph_def.saver_def);
 
+      sess_config = self._session_config
+      sess_config.graph_options.rewrite_options.disable_trt = (
+          rewriter_config_pb2.RewriterConfig.ON)
       # We don't use any specific converter here.
-      with session.Session(config=self._session_config) as sess:
+      with session.Session(config=sess_config) as sess:
         if new_saver is not None:
           new_saver.restore(sess,
               saved_model_utils.get_variables_path(self._input_saved_model_dir))
