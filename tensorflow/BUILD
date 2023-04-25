@@ -696,6 +696,7 @@ tf_cc_shared_object(
     per_os_targets = True,
     soversion = VERSION,
     visibility = ["//visibility:public"],
+    linkstatic = 1,
     # add win_def_file for tensorflow_cc
     win_def_file = select({
         # We need this DEF file to properly export symbols on Windows
@@ -718,6 +719,21 @@ tf_cc_shared_object(
         "//tensorflow/contrib/tensor_forest:model_ops_lib",
         "//tensorflow/contrib/tensor_forest:forest_proto_impl",
         "//tensorflow/contrib/tensor_forest/kernels/v4:decision-tree-resource_impl",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:lib_internal_impl",
+        "//tensorflow/core:core_cpu_impl",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:framework_internal_impl",
+        "//tensorflow/core:gpu_runtime_impl",
+        "//tensorflow/cc/saved_model:loader",
+        "//tensorflow/cc/saved_model:loader_lite",
+        "//tensorflow/cc/saved_model:loader_lite_impl",
+        "//tensorflow/stream_executor:dnn_proto_cc",
+        "//tensorflow/stream_executor:dnn_proto_cc_impl",
+        "//tensorflow/core/platform:tensor_float_32_utils",
+        "//tensorflow/core/grappler/optimizers:custom_graph_optimizer_registry_impl",
+        "@nsync//:nsync_cpp",
     ] + if_ngraph(["@ngraph_tf//:ngraph_tf"]),
 )
 
