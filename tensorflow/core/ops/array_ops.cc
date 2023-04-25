@@ -391,6 +391,30 @@ REGISTER_OP("Pack")
       return Status::OK();
     });
 
+#if GOOGLE_CUDA
+REGISTER_OP("_TensorPackTransH2D")
+    .Input("input_tensor_list:dtypes")
+    .Output("output_tensor_list:dtypes")
+    .Attr("dtypes:list(type) >= 0")
+    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* ctx) {
+      int num_input = ctx->num_inputs();
+      int num_output = ctx->num_outputs();
+      if (num_input != num_output) {
+        return errors::InvalidArgument("Mismatched number of inputs ",
+                                       num_input, " and number of outputs",
+                                       num_output);
+      }
+      for (int i = 0; i < num_output; ++i) {
+        ctx->set_output(i, ctx->input(i));
+        auto* handle_data = ctx->input_handle_shapes_and_types(i);
+        if (handle_data != nullptr) {
+          ctx->set_output_handle_shapes_and_types(i, *handle_data);
+        }
+      }
+      return Status::OK();
+    });
+#endif // end of GOOGLE_CUDA
+
 REGISTER_OP("DeepCopy")
     .Input("x: T")
     .Output("y: T")

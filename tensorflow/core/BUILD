@@ -1730,6 +1730,7 @@ cc_library(
     ]) + if_cuda([
         "//tensorflow/core/grappler/optimizers:gpu_swapping_kernels",
         "//tensorflow/core/grappler/optimizers:gpu_swapping_ops",
+        "//tensorflow/core/kernels:tensor_pack_trans_ops"
     ]) + if_nccl([
         "//tensorflow/core/kernels:nccl_kernels",
     ]) + if_tensorrt([
@@ -3784,6 +3785,7 @@ tf_cuda_library(
         "common_runtime/gpu/gpu_util_platform_specific.cc",
         "common_runtime/gpu/gpu_device_placement_pass.cc",
         "common_runtime/gpu/gpu_stage_multi_stream_pass.cc",
+        "common_runtime/gpu/gpu_stage_pack_trans_pass.cc",
         "common_runtime/gpu/gpu_stage_subgraph_on_cpu_pass.cc"
     ],
     hdrs = GPU_RUNTIME_HEADERS,

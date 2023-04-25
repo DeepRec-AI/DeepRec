@@ -2846,6 +2846,15 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "tensor_pack_trans_ops",
+    srcs = ["tensor_pack_trans_ops.cc"],
+    deps=[
+        "//tensorflow/core:gpu_runtime",
+        "//tensorflow/core:proto_text"
+    ],
+)
+
+tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc",
