@@ -118,6 +118,7 @@ ParquetDataset
 :maxdepth: 2
 :caption: 编译优化
 
+TensorRT
 JitCugraph
 BladeDISC
 XLA
