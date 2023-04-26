@@ -92,6 +92,7 @@ class Storage {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) = 0;
@@ -100,6 +101,7 @@ class Storage {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) = 0;
   virtual void RestoreSsdHashmap(
@@ -126,14 +128,14 @@ class Storage {
       EventMgr* event_mgr,
       const DeviceBase::CpuWorkerThreads* worker_threads) = 0;
 
-  virtual void BatchLookupOrCreate(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
+  virtual void BatchLookupOrCreate(const K* key, V* val, int64 emb_index,
+      V* default_v, int32 default_v_num, bool is_use_default_value_tensor,
       size_t n, const Eigen::GpuDevice& device) {}
   virtual void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
       const Eigen::GpuDevice& device) {}
   virtual void ImportToHbm(const std::vector<K>& keys,
       const std::vector<V>& values, const Eigen::GpuDevice* device,
-      const EmbeddingConfig& emb_config) {};
+      int64 emb_index) {};
   virtual GPUHashTable<K, V>* HashTable() {
     return nullptr;
   }

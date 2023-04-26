@@ -53,9 +53,10 @@ class TestableEmbeddingVar : public EmbeddingVar<K, V> {
  public:
   TestableEmbeddingVar(const string& name,
                        embedding::StorageManager<K, V>* storage_manager,
-                       EmbeddingConfig emb_cfg = EmbeddingConfig(),
+                       int64 emb_index,
+                       EmbeddingConfig emb_cfg = EmbeddingConfig(0, 1, 1),
                        Allocator* alloc = nullptr) : EmbeddingVar<K, V>(
-                         name, storage_manager, emb_cfg, alloc) {}
+                           name, storage_manager, emb_index, emb_cfg, alloc) {}
 
   using EmbeddingVar<K, V>::GetFilter;
 };
@@ -125,7 +126,7 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 1.0));
   //float* fill_v = (float*)malloc(value_size * sizeof(float));
   EmbeddingConfig emb_config = 
-      EmbeddingConfig(0, 0, 1, 1, "", 0, 0, 99999, 14.0);
+      EmbeddingConfig(0, 1, 1, 0, 0, 99999, 14.0);
   auto storage_manager = new embedding::StorageManager<int64, float>(
                  "name",
                  embedding::StorageConfig(
@@ -134,7 +135,7 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
                      "light",
                      emb_config));
   auto emb_var = new EmbeddingVar<int64, float>("name",
-        storage_manager, emb_config,
+        storage_manager, 0, emb_config,
         cpu_allocator());
   emb_var ->Init(value, 1);
   
@@ -162,7 +163,7 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
 
   int steps_to_live = 5;
-  EmbeddingConfig emb_config = EmbeddingConfig(0, 0, 1, 1, "", steps_to_live);
+  EmbeddingConfig emb_config = EmbeddingConfig(0, 1, 1, steps_to_live);
   auto storage_manager = new embedding::StorageManager<int64, float>(
                  "name",
                   embedding::StorageConfig(
@@ -171,7 +172,7 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
                      "normal",
                      emb_config));
   auto emb_var = new EmbeddingVar<int64, float>("name",
-      storage_manager, emb_config,
+      storage_manager, 0, emb_config,
       cpu_allocator());
   emb_var ->Init(value, 1);
   LOG(INFO) << "size:" << emb_var->Size();
@@ -198,10 +199,16 @@ TEST(EmbeddingVariableTest, TestEmptyEV) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   {
+    auto emb_config = EmbeddingConfig(0, 1, 1);
     auto storage_manager = new embedding::StorageManager<int64, float>(
-        "EmbeddingVar", embedding::StorageConfig());
+        "EmbeddingVar",
+        embedding::StorageConfig(
+            StorageType::DRAM,
+            "", {1024, 1024, 1024, 1024},
+            "normal",
+            emb_config));
     auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-        storage_manager, EmbeddingConfig(), cpu_allocator());
+        storage_manager, 0, emb_config, cpu_allocator());
     variable->Init(value, 1);
 
     LOG(INFO) << "size:" << variable->Size();
@@ -264,11 +271,16 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
   int64 value_size = 8;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
+  auto emb_config = EmbeddingConfig(0, 1, 1, 5);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(0, 0, 1, 1, "", 5),
-      cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
   variable->Init(value, 1);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
@@ -340,10 +352,16 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
+  auto emb_config = EmbeddingConfig(0, 1, 1, 5);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(0, 0, 1, 1, "", 5),
+      storage_manager, 0, emb_config,
       cpu_allocator());
   variable->Init(value, 1);
 
@@ -424,10 +442,16 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
+  auto emb_config = EmbeddingConfig(0, 1, 1);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(), cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
 
   variable->Init(value, 1);
 
@@ -473,11 +497,18 @@ TEST(EmbeddingVariableTest, TestBloomFilter) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
+  auto emb_config =
+      EmbeddingConfig(0, 1, 1, 5, 3, 99999, -1.0, "normal", 10, 0.01);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01),
+      storage_manager, 0,
+      emb_config,
       cpu_allocator());
 
   var->Init(value, 1);
@@ -504,13 +535,21 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
   int value_size = 10;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
-  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+  float* fill_v = (float*)malloc(value_size * sizeof(float));
+  auto emb_config =
+      EmbeddingConfig(0, 1, 1, 5, 3, 99999, -1.0,
+          "normal", 10, 0.01, DT_UINT64);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
-          "normal", 10, 0.01, DT_UINT64), cpu_allocator());
+      storage_manager, 0,
+      emb_config,
+      cpu_allocator());
 
   var->Init(value, 1);
 
@@ -576,13 +615,20 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
-
+  auto emb_config =
+      EmbeddingConfig(0, 1, 1, 5, 3, 99999, -1.0,
+          "normal", 10, 0.01, DT_UINT32);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
-          "normal", 10, 0.01, DT_UINT32), cpu_allocator());
+      storage_manager, 0,
+      emb_config,
+      cpu_allocator());
 
   var->Init(value, 1);
 
@@ -649,12 +695,18 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
+  auto emb_config =
+      EmbeddingConfig(0, 1, 1, 5, 3, 99999, -1.0,
+          "normal", 10, 0.01, DT_UINT16);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
-          "normal_contiguous", 10, 0.01, DT_UINT16), cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
 
   var->Init(value, 1);
 
@@ -722,12 +774,18 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
+  auto emb_config =
+      EmbeddingConfig(0, 1, 1, 5, 3, 99999, -1.0,
+          "normal_contiguous", 10, 0.01, DT_UINT8);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
-          "normal_contiguous", 10, 0.01, DT_UINT8), cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
 
   var->Init(value, 1);
 
@@ -794,10 +852,16 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
   Tensor value(DT_INT64, TensorShape({value_size}));
   test::FillValues<int64>(&value, std::vector<int64>(value_size, 10));
  // float* fill_v = (int64*)malloc(value_size * sizeof(int64));
+  auto emb_config = EmbeddingConfig(0, 1, 1);
   auto storage_manager = new embedding::StorageManager<int64, int64>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto variable = new EmbeddingVar<int64, int64>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(), cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
 
   variable->Init(value, 1);
 
@@ -846,12 +910,18 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
   int value_size = 10;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
-  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+  float* fill_v = (float*)malloc(value_size * sizeof(float));
+  auto emb_config = EmbeddingConfig(0, 1, 1, 5, 7);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(0, 0, 1, 1, "", 5, 7),
+      storage_manager, 0,
+      emb_config,
       cpu_allocator());
 
   var->Init(value, 1);
@@ -873,10 +943,16 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
 EmbeddingVar<int64, float>* InitEV_Lockless(int64 value_size) {
   Tensor value(DT_INT64, TensorShape({value_size}));
   test::FillValues<int64>(&value, std::vector<int64>(value_size, 10));
+  auto emb_config = EmbeddingConfig(0, 1, 1);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(), cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
 
   variable->Init(value, 1);
   return variable;
@@ -996,17 +1072,23 @@ TEST(EmbeddingVariableTest, TestEVStorageType_DRAM) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
-  auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(/*emb_index = */0, /*primary_emb_index = */0,
+  auto emb_config = EmbeddingConfig(/*primary_emb_index = */0,
                       /*block_num = */1, /*slot_num = */1,
-                      /*name = */"", /*steps_to_live = */0,
+                      /*steps_to_live = */0,
                       /*filter_freq = */0, /*max_freq = */999999,
                       /*l2_weight_threshold = */-1.0, /*layout = */"normal",
                       /*max_element_size = */0, /*false_positive_probability = */-1.0,
-                      /*counter_type = */DT_UINT64),
+                      /*counter_type = */DT_UINT64);
+  auto storage_manager = new embedding::StorageManager<int64, float>(
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
+  auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
+      storage_manager, 0,
+      emb_config,
       cpu_allocator());
   variable->Init(value, 1);
 
@@ -1046,9 +1128,9 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   std::vector<int64> size;
   size.emplace_back(1000);
   auto emb_config = EmbeddingConfig(
-      /*emb_index = */0, /*primary_emb_index = */0,
+      /*primary_emb_index = */0,
       /*block_num = */1, /*slot_num = */0,
-      /*name = */"", /*steps_to_live = */0,
+      /*steps_to_live = */0,
       /*filter_freq = */0, /*max_freq = */999999,
       /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
       /*max_element_size = */0, /*false_positive_probability = */-1.0,
@@ -1059,7 +1141,7 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
         embedding::LEVELDB, testing::TmpDir(), size,
         "normal_contiguous", emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage_manager, 0,
       emb_config, cpu_allocator());
   variable->Init(value, 1);
   std::vector<ValuePtr<float>*> value_ptr_list;
@@ -1351,9 +1433,9 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
   std::vector<int64> size;
   size.emplace_back(64);
   auto emb_config = EmbeddingConfig(
-      /*emb_index = */0, /*primary_emb_index = */0,
+      /*primary_emb_index = */0,
       /*block_num = */1, /*slot_num = */0,
-      /*name = */"", /*steps_to_live = */0,
+      /*steps_to_live = */0,
       /*filter_freq = */0, /*max_freq = */999999,
       /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
       /*max_element_size = */0, /*false_positive_probability = */-1.0,
@@ -1365,7 +1447,7 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
       size, "normal_contiguous",
       emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, emb_config, cpu_allocator());
+      storage_manager, 0, emb_config, cpu_allocator());
   variable->Init(value, 1);
   variable->InitCache(CacheStrategy::LFU);
   RestoreBuffer buf;
@@ -1804,17 +1886,22 @@ TEST(EmbeddingVariableTest, TestLookupRemoveConcurrency) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   auto emb_config = EmbeddingConfig(
-      /*emb_index = */0, /*primary_emb_index = */0,
+      /*primary_emb_index = */0,
       /*block_num = */1, /*slot_num = */0,
-      /*name = */"", /*steps_to_live = */0,
+      /*steps_to_live = */0,
       /*filter_freq = */2, /*max_freq = */999999,
       /*l2_weight_threshold = */-1.0, /*layout = */"normal",
       /*max_element_size = */0, /*false_positive_probability = */-1.0,
       /*counter_type = */DT_UINT64);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+      "EmbeddingVar",
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config));
   auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage_manager, 0,
       emb_config,
       cpu_allocator());
 

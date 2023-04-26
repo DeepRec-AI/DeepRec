@@ -183,10 +183,10 @@ class StorageManager {
     storage_->AllocateMemoryForNewFeatures(value_ptr_list, num_of_value_ptrs);
   }
 
-  void BatchLookupOrCreate(const K* key, V* val, V* default_v,
+  void BatchLookupOrCreate(const K* key, V* val, int64 emb_index, V* default_v,
       int32 default_v_num, bool is_use_default_value_tensor,
       size_t n, const Eigen::GpuDevice& device) {
-    storage_->BatchLookupOrCreate(key, val, default_v, default_v_num,
+    storage_->BatchLookupOrCreate(key, val, emb_index, default_v, default_v_num,
         is_use_default_value_tensor, n, device);
   }
 
@@ -197,8 +197,8 @@ class StorageManager {
 
   void ImportToHbm(const std::vector<K>& keys,
       const std::vector<V>& values, const Eigen::GpuDevice* device,
-      const EmbeddingConfig& emb_config) {
-    storage_->ImportToHbm(keys, values, device, emb_config);
+      int64 emb_index) {
+    storage_->ImportToHbm(keys, values, device, emb_index);
   }
 
 
@@ -225,11 +225,12 @@ class StorageManager {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) {
     return storage_->GetSnapshot(key_list, value_list, version_list,
-        freq_list, emb_config, filter, it);
+        freq_list, emb_index, emb_config, filter, it);
   }
 
   int64 GetSnapshotWithoutFetchPersistentEmb(
@@ -237,12 +238,13 @@ class StorageManager {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) {
     return storage_->
         GetSnapshotWithoutFetchPersistentEmb(
             key_list, value_list, version_list,
-            freq_list, emb_config, ssd_rec_desc);
+            freq_list, emb_index, emb_config, ssd_rec_desc);
   }
 
   void RestoreSsdHashmap(

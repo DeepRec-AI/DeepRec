@@ -215,6 +215,7 @@ class SingleTierStorage : public Storage<K, V> {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) override {
@@ -226,8 +227,8 @@ class SingleTierStorage : public Storage<K, V> {
       return 0;
     }
     for (int64 i = 0; i < key_list_tmp.size(); ++i) {
-      V* val = value_ptr_list[i]->GetValue(emb_config.emb_index,
-        Storage<K, V>::GetOffset(emb_config.emb_index));
+      V* val = value_ptr_list[i]->GetValue(emb_index,
+        Storage<K, V>::GetOffset(emb_index));
       V* primary_val = value_ptr_list[i]->GetValue(
           emb_config.primary_emb_index,
           Storage<K, V>::GetOffset(emb_config.primary_emb_index));
@@ -259,6 +260,7 @@ class SingleTierStorage : public Storage<K, V> {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) override {
     LOG(FATAL)<<"The Storage dosen't use presisten memory"
@@ -384,10 +386,12 @@ class HbmStorage : public SingleTierStorage<K, V> {
     SingleTierStorage<K, V>::kv_->SetValueLen(value_len);
   }
 
-  void BatchLookupOrCreate(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
+  void BatchLookupOrCreate(const K* key, V* val, int64 emb_index,
+      V* default_v, int32 default_v_num, bool is_use_default_value_tensor,
       size_t n, const Eigen::GpuDevice& device) override {
-    SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(key, val, default_v, default_v_num,
+    SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(
+        key, val, emb_index,
+        default_v, default_v_num,
         is_use_default_value_tensor, n, device);
   }
 
@@ -400,22 +404,23 @@ class HbmStorage : public SingleTierStorage<K, V> {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) override {
     GPUHashMapKV<K, V>* gpu_kv =
         dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
-    gpu_kv->GetSnapshot(key_list, value_list, emb_config.emb_index);
+    gpu_kv->GetSnapshot(key_list, value_list, emb_index);
     return key_list->size();
   }
 
   void ImportToHbm(
       const std::vector<K>& keys, const std::vector<V>& values,
       const Eigen::GpuDevice* device,
-      const EmbeddingConfig& emb_config) override {
+      int64 emb_indx) override {
     GPUHashMapKV<K, V>* gpu_kv =
         dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
-    gpu_kv->Import(keys, values, device, emb_config);
+    gpu_kv->Import(keys, values, device, emb_indx);
   }
 
   GPUHashTable<K, V>* HashTable() override {

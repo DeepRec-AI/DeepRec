@@ -163,14 +163,13 @@ class KvResourceImportV2Op: public AsyncOpKernel {
              Allocator* allocator =
                 context->device()->GetAllocator(AllocatorAttributes());
              auto embedding_config = EmbeddingConfig(
-                 emb_index_ + block_num_ * slot_index_,
                  emb_index_,
-                 block_num_, slot_num_, opname + "-primary",
+                 block_num_, slot_num_,
                  steps_to_live_, filter_freq_,
                  max_freq_, l2_weight_threshold_,
                  layout_,  max_element_size_,
                  false_positive_probability_,
-                 counter_type_, default_value_dim_,
+                 counter_type_,
                  default_value_no_permission_,
                  record_freq_, record_version_);
               auto storage_manager =
@@ -180,6 +179,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                     embedding_config));
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
+                         emb_index_ + block_num_ * slot_index_,
                          embedding_config,
                          allocator);
              return Status::OK();
@@ -187,30 +187,32 @@ class KvResourceImportV2Op: public AsyncOpKernel {
       ev->Init(default_values, default_value_dim_);
     } else {
       EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
-      OP_REQUIRES_OK(
-       context,
-       LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-           context, handle_primary, &primary_variable,
-           [this, default_values, opname, context,
-            handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
-             int64 primary_slot_index(0), primary_emb_index(0);
-             Allocator* allocator =
-                context->device()->GetAllocator(AllocatorAttributes());
-             auto embedding_config = EmbeddingConfig(
-                 primary_emb_index + block_num_ * primary_slot_index,
+      int64 primary_emb_index(0);
+      auto embedding_config = EmbeddingConfig(
                  primary_emb_index, block_num_, slot_num_,
-                 opname + "-primary", steps_to_live_, filter_freq_,
+                 steps_to_live_, filter_freq_,
                  max_freq_, l2_weight_threshold_,
                  layout_,  max_element_size_,
                  false_positive_probability_,
                  counter_type_, 0, record_freq_, record_version_);
+      OP_REQUIRES_OK(
+       context,
+       LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
+           context, handle_primary, &primary_variable,
+           [this, default_values, embedding_config,
+            primary_emb_index, opname, context,
+            handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
+             int64 primary_slot_index(0);
+             Allocator* allocator =
+                context->device()->GetAllocator(AllocatorAttributes());
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(
                    storage_type_, storage_path_, storage_size_,
                    layout_, embedding_config));
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                 storage_manager, embedding_config, allocator);
+                 storage_manager, primary_emb_index + block_num_ * primary_slot_index,
+                 embedding_config, allocator);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -219,21 +221,15 @@ class KvResourceImportV2Op: public AsyncOpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, primary_variable,
+            [this, default_values, embedding_config,
+             opname, primary_variable,
              handle_self, context](EmbeddingVar<TKey, TValue>** ptr) {
               Allocator* allocator =
                 context->device()->GetAllocator(AllocatorAttributes());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                   primary_variable->storage_manager(),
-                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                    emb_index_, block_num_, slot_num_, opname,
-                    steps_to_live_, filter_freq_, max_freq_,
-                    l2_weight_threshold_, layout_, max_element_size_,
-                    false_positive_probability_,
-                    counter_type_, default_value_dim_,
-                    default_value_no_permission_,
-                    record_freq_, record_version_),
-                    allocator);
+                  emb_index_ + block_num_ * slot_index_,
+                  embedding_config, allocator);
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);

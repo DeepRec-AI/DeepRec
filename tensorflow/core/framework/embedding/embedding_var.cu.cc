@@ -66,7 +66,7 @@ void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
           reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
       value_address[i] =
           *((V**)((char*)(value_ptr->GetPtr()) + sizeof(FixedLengthHeader))) +
-          storage_manager_->GetOffset(emb_config_.emb_index);
+          storage_manager_->GetOffset(emb_index_);
       default_value_address[i] = get_default_v_fn(
           default_values, keys[*it], *it, GetDefaultValueDim(), ValueLen());
     }
@@ -83,10 +83,10 @@ void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
     for (auto it = init_cursor.cbegin(); it != init_cursor.cend(); ++it) {
       ValuePtr<V>* value_ptr =
           reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
-      value_ptr->SetInitialized(emb_config_.emb_index);
+      value_ptr->SetInitialized(emb_index_);
       memcpy_address[*it] = value_ptr->GetValue(
-          emb_config_.emb_index,
-          storage_manager_->GetOffset(emb_config_.emb_index));
+          emb_index_,
+          storage_manager_->GetOffset(emb_index_));
     }
     TypedAllocator::Deallocate(alloc_, dev_value_address, total * 2);
     TypedAllocator::Deallocate(cpu_allocator(), value_address, total * 2);
@@ -168,7 +168,7 @@ void EmbeddingVar<K, V>::CopyEmbeddingsFromCPUToGPU(
       bool init;
       // Get the curosr
       int64 cursor = *it & 0x0fffffffffffffff;
-      gpu_value_ptrs[i]->SetInitialized(emb_config_.emb_index);
+      gpu_value_ptrs[i]->SetInitialized(emb_index_);
       memcpy_address[cursor] = LookupOrCreateEmb(gpu_value_ptrs[i], init);
       value_address[i] = memcpy_address[cursor];
       copyback_keys[i] = keys[cursor];

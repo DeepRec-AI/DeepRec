@@ -70,15 +70,15 @@ class GPUHashMapKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status BatchLookupOrCreate(const K* keys, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
+  Status BatchLookupOrCreate(const K* keys, V* val, int64 emb_index,
+      V* default_v, int32 default_v_num, bool is_use_default_value_tensor,
       size_t n, const Eigen::GpuDevice& device) {
     int32* item_idxs = TypedAllocator::Allocate<int32>(alloc_, n,
         AllocationAttributes());
     BatchLookupOrCreateKeys(keys, n, item_idxs, device);
     functor::KvLookupCreateEmb<Eigen::GpuDevice, K, V>()(
         keys, val, default_v, value_len_, item_idxs, n,
-        config_.emb_index, default_v_num, is_use_default_value_tensor,
+        emb_index, default_v_num, is_use_default_value_tensor,
         hash_table_->d_bank_ptrs, hash_table_->d_existence_flag_ptrs,
         (config_.block_num * (1 + config_.slot_num)),
         hash_table_->initial_bank_size, device.stream());
@@ -88,7 +88,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
 
   void GetSnapshot(std::vector<K>* key_list,
       std::vector<V*>* value_list,
-      const EmbeddingConfig& emb_config) {
+      int64 emb_index) {
     auto size = hash_table_->Size();
     if (size > 0) {
       int32* item_idxs = TypedAllocator::Allocate<int32>(
@@ -103,13 +103,13 @@ class GPUHashMapKV : public KVInterface<K, V> {
 
       auto slot_num = config_.block_num * (1 + config_.slot_num);
       functor::KvKeyGetSnapshot<Eigen::GpuDevice, K, V>()(
-          keys_gpu, item_idxs, emb_config.emb_index,
-          emb_config.primary_emb_index, hash_table_->d_existence_flag_ptrs,
+          keys_gpu, item_idxs, emb_index,
+          config_.primary_emb_index, hash_table_->d_existence_flag_ptrs,
           hash_table_->mem_bank_num, slot_num,
           hash_table_->initial_bank_size, hash_table_, size, NULL);
       functor::KvEmbGetSnapshot<Eigen::GpuDevice, K, V>()(
           keys_gpu, values_gpu, -1, value_len_, item_idxs,size,
-          emb_config.emb_index, hash_table_->d_bank_ptrs,
+          emb_index, hash_table_->d_bank_ptrs,
           hash_table_->mem_bank_num, slot_num,
           hash_table_->initial_bank_size, NULL);
 
@@ -132,7 +132,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
   Status Import(const std::vector<K>& key_import,
       const std::vector<V>& value_import,
       const Eigen::GpuDevice* device,
-      const EmbeddingConfig& emb_config) {
+      int64 emb_index) {
     int n = key_import.size();
     auto stream = device->stream();
     if (n > 0) {
@@ -150,9 +150,9 @@ class GPUHashMapKV : public KVInterface<K, V> {
 
       functor::KvUpdateEmb<Eigen::GpuDevice, K, V>()(
           key_import.data(), value_gpu, value_len_, item_idxs, n,
-          emb_config.emb_index, key_import.size(),
+          emb_index, key_import.size(),
           hash_table_->d_bank_ptrs, hash_table_->d_existence_flag_ptrs,
-          (emb_config.block_num * (1 + emb_config.slot_num)),
+          (config_.block_num * (1 + config_.slot_num)),
           hash_table_->initial_bank_size, stream);
       EventSynchronize(stream);
       TypedAllocator::Deallocate(alloc_, item_idxs, n);

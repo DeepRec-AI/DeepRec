@@ -360,6 +360,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) override {
@@ -383,7 +384,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
                                     dram_value_ptr_list,
                                     Storage<K, V>::alloc_len_,
                                     gpu_alloc_,
-                                    emb_config.emb_index);
+                                    emb_index);
     // This return value is not the exact number of IDs
     // because the two tables intersect.
     return temp_hbm_key_list.size() + temp_dram_key_list.size();

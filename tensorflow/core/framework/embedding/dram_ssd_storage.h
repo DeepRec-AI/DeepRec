@@ -177,6 +177,7 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
       std::vector<V*>* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) override {
     {
@@ -185,9 +186,8 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
       std::vector<K> temp_key_list;
       TF_CHECK_OK(dram_kv_->GetSnapshot(&temp_key_list, &value_ptr_list));
       MultiTierStorage<K, V>::SetListsForCheckpoint(
-          temp_key_list, value_ptr_list, emb_config,
-          key_list, value_list, version_list,
-          freq_list);
+          temp_key_list, value_ptr_list, emb_index,
+          emb_config, key_list, value_list, version_list, freq_list);
     }
     {
       mutex_lock l(ssd_mu_);

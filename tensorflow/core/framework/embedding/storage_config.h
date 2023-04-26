@@ -21,13 +21,6 @@ limitations under the License.
 namespace tensorflow {
 namespace embedding {
 struct StorageConfig {
-  StorageConfig() : type(StorageType::DEFAULT),
-                    path(""),
-                    layout_type(LayoutType::NORMAL),
-                    cache_strategy(CacheStrategy::LFU) {
-    size = {1<<30,1<<30,1<<30,1<<30};
-  }
-
   StorageConfig(StorageType t,
                 const std::string& p,
                 const std::vector<int64>& s,
@@ -35,7 +28,9 @@ struct StorageConfig {
                 const EmbeddingConfig& ec,
                 const CacheStrategy cache_strategy_ = CacheStrategy::LFU)
                                       : type(t),
+                                        layout_type(LayoutType::NORMAL),
                                         path(p),
+                                        size(s),
                                         embedding_config(ec),
                                         cache_strategy(cache_strategy_) {
     if ("normal" == layout) {
@@ -53,14 +48,13 @@ struct StorageConfig {
         << layout << ", use LayoutType::NORMAL by default.";
       layout_type = LayoutType::NORMAL;
     }
-    size = s;
   }
   StorageType type;
   LayoutType layout_type;
   std::string path;
   std::vector<int64> size;
-  CacheStrategy cache_strategy;
   EmbeddingConfig embedding_config;
+  CacheStrategy cache_strategy;
 };
 } // namespace embedding
 } // namespace tensorflow

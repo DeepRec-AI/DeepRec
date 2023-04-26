@@ -109,6 +109,7 @@ class MultiTierStorage : public Storage<K, V> {
   void SetListsForCheckpoint(
       const std::vector<K>& input_key_list,
       const std::vector<ValuePtr<V>*>& input_value_ptr_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       std::vector<K>* output_key_list,
       std::vector<V*>* output_value_list,
@@ -126,8 +127,8 @@ class MultiTierStorage : public Storage<K, V> {
         output_version_list->emplace_back(dump_version);
       }
 
-      V* val = input_value_ptr_list[i]->GetValue(emb_config.emb_index,
-          Storage<K, V>::GetOffset(emb_config.emb_index));
+      V* val = input_value_ptr_list[i]->GetValue(emb_index,
+          Storage<K, V>::GetOffset(emb_index));
       V* primary_val = input_value_ptr_list[i]->GetValue(
           emb_config.primary_emb_index,
           Storage<K, V>::GetOffset(emb_config.primary_emb_index));
@@ -152,6 +153,7 @@ class MultiTierStorage : public Storage<K, V> {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) override {
@@ -165,7 +167,7 @@ class MultiTierStorage : public Storage<K, V> {
         continue;
       }
       SetListsForCheckpoint(
-          key_list_tmp, value_ptr_list, emb_config,
+          key_list_tmp, value_ptr_list, emb_index, emb_config,
           key_list, value_list, version_list, freq_list);
     }
     return key_list->size();
@@ -176,6 +178,7 @@ class MultiTierStorage : public Storage<K, V> {
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
+      int64 emb_index,
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) override {
     LOG(FATAL)<<"The Storage dosen't use presisten memory"

@@ -73,7 +73,8 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
                 int bucket_num,
                 int64 partition_id,
                 int64 partition_num,
-                bool is_filter) override {
+                bool is_filter,
+                int64 emb_index) override {
     K* key_buff = (K*)restore_buff.key_buffer;
     V* value_buff = (V*)restore_buff.value_buffer;
     int64* version_buff = (int64*)restore_buff.version_buffer;
@@ -109,7 +110,9 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
         }
       }
     }
-    if (ev_->IsMultiLevel() && !ev_->IsUseHbm() && config_.is_primary()) {
+    if (ev_->IsMultiLevel() &&
+       !ev_->IsUseHbm() &&
+       config_.is_primary(emb_index)) {
       ev_->UpdateCache(key_buff, key_num, version_buff, freq_buff);
     }
     return Status::OK();
@@ -121,7 +124,8 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
                 int64 partition_id,
                 int64 partition_num,
                 bool is_filter,
-                V* default_values) override {
+                V* default_values,
+                int64 default_value_dim) override {
     K* key_buff = (K*)restore_buff.key_buffer;
     V* value_buff = (V*)restore_buff.value_buffer;
     int64* version_buff = (int64*)restore_buff.version_buffer;
@@ -154,7 +158,7 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
         } else {
           ev_->LookupOrCreateEmb(value_ptr,
               default_values +
-                (key_buff[i] % config_.default_value_dim)
+                (key_buff[i] % default_value_dim)
                  * ev_->ValueLen(),
               ev_allocator());
         }
