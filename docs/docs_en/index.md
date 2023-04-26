@@ -115,6 +115,7 @@ ParquetDataset
 :maxdepth: 2
 :caption: Compiler
 
+TensorRT
 BladeDISC
 XLA
 ```
