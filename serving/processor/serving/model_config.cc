@@ -109,6 +109,14 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] select_session_policy must be 'RR' or 'MOD'");
   }
 
+  bool enable_device_placement_optimization = false;
+  if (!json_config["enable_device_placement_optimization"].isNull()) {
+    enable_device_placement_optimization =
+        json_config["enable_device_placement_optimization"].asBool();
+  }
+  (*config)->enable_device_placement_optimization =
+      enable_device_placement_optimization;
+
   bool enable_inline_execute = false;
   if (!json_config["enable_inline_execute"].isNull()) {
     enable_inline_execute = json_config["enable_inline_execute"].asBool();

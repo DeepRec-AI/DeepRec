@@ -326,6 +326,9 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 # 在GPU任务中，是否使用multi-stream
 "use_multi_stream": false,
 
+# GPU任务中是否开启device placement优化
+"enable_device_placement_optimization": false,
+
 # 是否单线程执行 Session run
 "enable_inline_execute": false,
   
