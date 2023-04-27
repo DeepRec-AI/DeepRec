@@ -310,7 +310,7 @@ def build_model_input(filename, batch_size, num_epochs):
     '''Work Queue Feature'''
     if args.workqueue and not args.tf:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         # For multiple files:
         # work_queue = WorkQueue([filename, filename1,filename2,filename3])
         files = work_queue.input_dataset()
@@ -323,13 +323,15 @@ def build_model_input(filename, batch_size, num_epochs):
         if args.parquet_dataset_shuffle:
             dataset = dataset.shuffle(buffer_size=20000,
                                       seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=28)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=20000,
                                   seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
@@ -395,7 +397,7 @@ def build_feature_columns():
                                 column_name, dtype=tf.string, ev_option=ev_opt)
                         elif args.adaptive_emb:
                             '''                 Adaptive Embedding Feature Part 2 of 2
-                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                             'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                             For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                             tensor with shape [batch_size].
@@ -473,7 +475,7 @@ def build_feature_columns():
                             column_name, dtype=tf.string, ev_option=ev_opt)
                     elif args.adaptive_emb:
                         '''                 Adaptive Embedding Feature Part 2 of 2
-                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                         'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                         For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                         tensor with shape [batch_size].
@@ -547,7 +549,7 @@ def train(sess_config,
     '''
                             Incremental_Checkpoint
     Please add `save_incremental_checkpoint_secs` in 'tf.train.MonitoredTrainingSession'
-    it's default to None, Incremental_save checkpoint time in seconds can be set 
+    it's default to None, Incremental_save checkpoint time in seconds can be set
     to use incremental checkpoint function, like `tf.train.MonitoredTrainingSession(
         save_incremental_checkpoint_secs=args.incremental_ckpt)`
     '''
@@ -658,7 +660,7 @@ def main(tf_config=None, server=None):
     dataset_output_types = tf.data.get_output_types(train_dataset)
     dataset_output_shapes = tf.data.get_output_shapes(test_dataset)
     iterator = tf.data.Iterator.from_structure(dataset_output_types,
-                                               dataset_output_shapes)    
+                                               dataset_output_shapes)
     next_element = iterator.get_next()
 
     train_init_op = iterator.make_initializer(train_dataset)

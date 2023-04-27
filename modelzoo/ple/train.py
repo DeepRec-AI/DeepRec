@@ -161,13 +161,13 @@ class PLE():
             self._create_loss()
             self._create_optimizer()
             self._create_metrics()
-    
+
     # used to add summary in tensorboard
     def _add_layer_summary(self, value, tag):
         tf.summary.scalar('%s/fraction_of_zero_values' % tag,
                         tf.nn.zero_fraction(value))
         tf.summary.histogram('%s/activation' % tag, value)
-    
+
     def _make_scope(self, name, bf16, part):
         if(bf16):
             return tf.variable_scope(name, partitioner=part, reuse=tf.AUTO_REUSE).keep_weights(dtype=tf.float32)
@@ -291,7 +291,7 @@ class PLE():
             for i, tower in enumerate(self._towers):
                 tower_name = tower[0]
                 hidden_units = tower[2]
-                
+
                 with tf.variable_scope(tower_name, reuse=tf.AUTO_REUSE):
                     tower_output = self._dnn(ple_outputs[i], dnn_hidden_units=hidden_units, layer_name='tower_'+tower_name)
                     final_tower_predict = tf.layers.dense(inputs=tower_output,
@@ -306,7 +306,7 @@ class PLE():
             self._logits = tf.squeeze(tower_stack, [2])
             self.probability = tf.math.sigmoid(self._logits)
             self.output = tf.round(self.probability)
-    
+
     # compute loss
     def _create_loss(self):
         self._logits = tf.squeeze(self._logits)
@@ -317,7 +317,7 @@ class PLE():
             reduction=tf.losses.Reduction.SUM_OVER_BATCH_SIZE)
         print(self.loss)
         tf.summary.scalar('loss', self.loss)
-    
+
     # define optimizer and generate train_op
     def _create_optimizer(self):
         self.global_step = tf.train.get_or_create_global_step()
@@ -350,7 +350,7 @@ class PLE():
         with tf.control_dependencies(update_ops):
             self.train_op = optimizer.minimize(self.loss,
                                                global_step=self.global_step)
-    
+
     # compute acc & auc
     def _create_metrics(self):
         self.auc1, self.auc_op1 = tf.metrics.auc(labels=self._label[:,0],
@@ -363,7 +363,7 @@ class PLE():
                                                     predictions=self.output[:,0])
         self.acc2, self.acc_op2 = tf.metrics.accuracy(labels=self._label[:,1],
                                                     predictions=self.output[:,1])
-        
+
         tf.summary.scalar('eval_auc1', self.auc1)
         tf.summary.scalar('eval_auc2', self.auc2)
         tf.summary.scalar('eval_acc1', self.acc1)
@@ -394,11 +394,11 @@ def build_model_input(filename, batch_size, num_epochs):
       label = tf.stack(labels, axis=1)
       features = value
       return features, label
-    
+
     '''Work Queue Feature'''
     if args.workqueue and not args.tf:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         files = work_queue.input_dataset()
     else:
         files = filename
@@ -410,13 +410,15 @@ def build_model_input(filename, batch_size, num_epochs):
         if args.parquet_dataset_shuffle:
           dataset = dataset.shuffle(buffer_size=40000,
                                     seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+          dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=28)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=400000,
                                   seed=args.seed)  # set seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+          dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
@@ -436,7 +438,7 @@ def build_feature_cols():
                         column_name,
                         hash_bucket_size=HASH_BUCKET_SIZES[column_name],
                         dtype=tf.string)
-                    
+
                     if not args.tf:
                         '''Feature Elimination of EmbeddingVariable Feature'''
                         if args.ev_elimination == 'gstep':
@@ -469,7 +471,7 @@ def build_feature_cols():
                                 column_name, dtype=tf.string, ev_option=ev_opt)
                         elif args.adaptive_emb:
                             '''                 Adaptive Embedding Feature Part 2 of 2
-                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                             'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                             For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                             tensor with shape [batch_size].
@@ -484,11 +486,11 @@ def build_feature_cols():
                             '''Dynamic-dimension Embedding Variable'''
                             print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
                             sys.exit()
-                    
+
                     if args.tf or not args.emb_fusion:
                         embedding_column = tf.feature_column.embedding_column(
-                            categorical_column, 
-                            dimension=EMBEDDING_DIM, 
+                            categorical_column,
+                            dimension=EMBEDDING_DIM,
                             combiner='mean')
                     else:
                         '''Embedding Fusion Feature'''
@@ -511,7 +513,7 @@ def build_feature_cols():
                     column_name,
                     hash_bucket_size=HASH_BUCKET_SIZES[column_name],
                     dtype=tf.string)
-                
+
                 if not args.tf:
                     '''Feature Elimination of EmbeddingVariable Feature'''
                     if args.ev_elimination == 'gstep':
@@ -544,7 +546,7 @@ def build_feature_cols():
                             column_name, dtype=tf.string, ev_option=ev_opt)
                     elif args.adaptive_emb:
                         '''                 Adaptive Embedding Feature Part 2 of 2
-                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                         'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                         For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                         tensor with shape [batch_size].
@@ -559,11 +561,11 @@ def build_feature_cols():
                         '''Dynamic-dimension Embedding Variable'''
                         print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
                         sys.exit()
-                
+
                 if args.tf or not args.emb_fusion:
                     embedding_column = tf.feature_column.embedding_column(
-                        categorical_column, 
-                        dimension=EMBEDDING_DIM, 
+                        categorical_column,
+                        dimension=EMBEDDING_DIM,
                         combiner='mean')
                 else:
                     '''Embedding Fusion Feature'''
@@ -593,7 +595,7 @@ def train(sess_config,
     scaffold = tf.train.Scaffold(
         local_init_op=tf.group(tf.local_variables_initializer(), data_init_op),
         saver=tf.train.Saver(max_to_keep=args.keep_checkpoint_max))
-    
+
     stop_hook = tf.train.StopAtStepHook(last_step=steps)
     log_hook = tf.train.LoggingTensorHook(
         {
@@ -610,7 +612,7 @@ def train(sess_config,
     '''
                             Incremental_Checkpoint
     Please add `save_incremental_checkpoint_secs` in 'tf.train.MonitoredTrainingSession'
-    it's default to None, Incremental_save checkpoint time in seconds can be set 
+    it's default to None, Incremental_save checkpoint time in seconds can be set
     to use incremental checkpoint function, like `tf.train.MonitoredTrainingSession(
         save_incremental_checkpoint_secs=args.incremental_ckpt)`
     '''
@@ -618,7 +620,7 @@ def train(sess_config,
         print("Incremental_Checkpoint is not really enabled.")
         print("Please see the comments in the code.")
         sys.exit()
-    
+
     with tf.train.MonitoredTrainingSession(
             master=server.target if server else '',
             is_chief=tf_config['is_chief'] if tf_config else True,
@@ -671,7 +673,7 @@ def main(tf_config=None, server=None):
     if (not os.path.exists(train_file)) or (not os.path.exists(test_file)):
         print("Dataset does not exist in the given data_location.")
         sys.exit()
-    
+
     no_of_training_examples = 0
     no_of_test_examples = 0
     if args.parquet_dataset and not args.tf:
@@ -736,7 +738,7 @@ def main(tf_config=None, server=None):
         max_partitions=num_ps_replicas,
         min_slice_size=args.dense_layer_partitioner <<
         10) if args.dense_layer_partitioner else None
-    
+
     # Session config
     sess_config = tf.ConfigProto()
     sess_config.inter_op_parallelism_threads = args.inter
@@ -943,7 +945,7 @@ def generate_cluster_info(TF_CONFIG):
             chief_hosts = value
     if chief_hosts:
         worker_hosts = chief_hosts + worker_hosts
-    
+
     if not ps_hosts or not worker_hosts:
         print('TF_CONFIG ERROR')
         sys.exit()
@@ -982,11 +984,11 @@ def generate_cluster_info(TF_CONFIG):
 
 def set_env_for_DeepRec():
     '''
-    Set some ENV for these DeepRec's features enabled by ENV. 
+    Set some ENV for these DeepRec's features enabled by ENV.
     More Detail information is shown in https://deeprec.readthedocs.io/zh/latest/index.html.
     START_STATISTIC_STEP & STOP_STATISTIC_STEP: On CPU platform, DeepRec supports memory optimization
-        in both stand-alone and distributed trainging. It's default to open, and the 
-        default start and stop steps of collection is 1000 and 1100. Reduce the initial 
+        in both stand-alone and distributed trainging. It's default to open, and the
+        default start and stop steps of collection is 1000 and 1100. Reduce the initial
         cold start time by the following settings.
     MALLOC_CONF: On CPU platform, DeepRec can use memory optimization with the jemalloc library.
         Please preload libjemalloc.so by `LD_PRELOAD=./libjemalloc.so.2 python ...`
@@ -1019,7 +1021,7 @@ if __name__ == '__main__':
 
     if not args.tf:
         set_env_for_DeepRec()
-    
+
     TF_CONFIG = os.getenv('TF_CONFIG')
     if not TF_CONFIG:
         main()

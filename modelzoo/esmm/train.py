@@ -332,11 +332,11 @@ def build_model_input(filename, batch_size, num_epochs, seed, stock_tf, workqueu
         label = tf.multiply(labels[0], labels[1])
         features = value
         return features, label
-    
+
     '''Work Queue Feature'''
     if not stock_tf and workqueue:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         files = work_queue.input_dataset()
     else:
         files = filename
@@ -346,12 +346,14 @@ def build_model_input(filename, batch_size, num_epochs, seed, stock_tf, workqueu
         if args.parquet_dataset_shuffle:
             dataset = dataset.shuffle(buffer_size=10000,
                                       seed=seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=10000, seed=seed)
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = dataset.prefetch(2)
