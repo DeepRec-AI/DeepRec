@@ -287,6 +287,7 @@ std::unique_ptr<GrapplerItem> GrapplerItemFromMetaGraphDef(
     LOG(ERROR) << "id must be non-empty.";
     return nullptr;
   }
+
   std::unique_ptr<GrapplerItem> new_item(new GrapplerItem());
   new_item->id = id;
   new_item->graph = meta_graph.graph_def();
@@ -338,7 +339,7 @@ std::unique_ptr<GrapplerItem> GrapplerItemFromMetaGraphDef(
                 &signature_feed_nodes,
                 NodeName(input.coo_sparse().indices_tensor_name()))) {
           Tensor indices_tensor(DT_INT64, shape_2d);
-          InitializeTensor(input.dtype(), &indices_tensor);
+          InitializeTensor(DT_INT64, &indices_tensor);
           new_item->feed.emplace_back(
               NodeName(input.coo_sparse().indices_tensor_name()),
               indices_tensor);
@@ -347,7 +348,7 @@ std::unique_ptr<GrapplerItem> GrapplerItemFromMetaGraphDef(
                 &signature_feed_nodes,
                 NodeName(input.coo_sparse().dense_shape_tensor_name()))) {
           Tensor dense_shape_tensor(DT_INT64, shape_1d);
-          InitializeTensor(input.dtype(), &dense_shape_tensor);
+          InitializeTensor(DT_INT64, &dense_shape_tensor);
           new_item->feed.emplace_back(
               NodeName(input.coo_sparse().dense_shape_tensor_name()),
               dense_shape_tensor);

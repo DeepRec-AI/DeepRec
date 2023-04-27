@@ -508,7 +508,22 @@ class TrtGraphConverter(object):
 
       def _gather_names(tensor_info):
         """Get the node names from a TensorInfo."""
-        return set([tensor_info[key].name.split(":")[0] for key in tensor_info])
+        names = []
+        for key in tensor_info:
+          encoding = tensor_info[key].WhichOneof("encoding")
+          if encoding == "coo_sparse":
+            names.append(
+                tensor_info[key].coo_sparse.indices_tensor_name.split(":")[0])
+            names.append(
+                tensor_info[key].coo_sparse.values_tensor_name.split(":")[0])
+            names.append(
+                tensor_info[key].coo_sparse.dense_shape_tensor_name.split(":")[0])
+          elif encoding == "name":
+            names.append(tensor_info[key].name.split(":")[0])
+          else:
+            raise TypeError("_gather_names required 'coo_sparse' or 'name' type now.")
+
+        return set(names)
 
       # Get input and outputs from all SignatureDef.
       output_node_names = _gather_names(input_signature_def.inputs).union(
