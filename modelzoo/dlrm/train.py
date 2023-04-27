@@ -309,7 +309,7 @@ def build_model_input(filename, batch_size, num_epochs):
     '''Work Queue Feature'''
     if args.workqueue and not args.tf:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         # For multiple files：
         # work_queue = WorkQueue([filename, filename1,filename2,filename3])
         files = work_queue.input_dataset()
@@ -323,13 +323,15 @@ def build_model_input(filename, batch_size, num_epochs):
         if args.parquet_dataset_shuffle:
             dataset = dataset.shuffle(buffer_size=20000,
                                       seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=28)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=20000,
                                   seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
@@ -381,7 +383,7 @@ def build_feature_columns():
                                 column_name, dtype=tf.string, ev_option=ev_opt)
                         elif args.adaptive_emb:
                             '''                 Adaptive Embedding Feature Part 2 of 2
-                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                             'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                             For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                             tensor with shape [batch_size].
@@ -455,7 +457,7 @@ def build_feature_columns():
                             column_name, dtype=tf.string, ev_option=ev_opt)
                     elif args.adaptive_emb:
                         '''                 Adaptive Embedding Feature Part 2 of 2
-                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                         'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                         For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                         tensor with shape [batch_size].
@@ -525,7 +527,7 @@ def train(sess_config,
     '''
                             Incremental_Checkpoint
     Please add `save_incremental_checkpoint_secs` in 'tf.train.MonitoredTrainingSession'
-    it's default to None, Incremental_save checkpoint time in seconds can be set 
+    it's default to None, Incremental_save checkpoint time in seconds can be set
     to use incremental checkpoint function, like `tf.train.MonitoredTrainingSession(
         save_incremental_checkpoint_secs=args.incremental_ckpt)`
     '''
@@ -912,11 +914,11 @@ def generate_cluster_info(TF_CONFIG):
 # A triple quotes comment is used to introduce these features and play an emphasizing role.
 def set_env_for_DeepRec():
     '''
-    Set some ENV for these DeepRec's features enabled by ENV. 
+    Set some ENV for these DeepRec's features enabled by ENV.
     More Detail information is shown in https://deeprec.readthedocs.io/zh/latest/index.html.
     START_STATISTIC_STEP & STOP_STATISTIC_STEP: On CPU platform, DeepRec supports memory optimization
-        in both stand-alone and distributed trainging. It's default to open, and the 
-        default start and stop steps of collection is 1000 and 1100. Reduce the initial 
+        in both stand-alone and distributed trainging. It's default to open, and the
+        default start and stop steps of collection is 1000 and 1100. Reduce the initial
         cold start time by the following settings.
     MALLOC_CONF: On CPU platform, DeepRec can use memory optimization with the jemalloc library.
         Please preload libjemalloc.so by `LD_PRELOAD=./libjemalloc.so.2 python ...`
@@ -927,7 +929,7 @@ def set_env_for_DeepRec():
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
     if args.group_embedding == "collective":
         tf.config.experimental.enable_distributed_strategy(strategy="collective")
-        
+
 if __name__ == '__main__':
     parser = get_arg_parser()
     args = parser.parse_args()
