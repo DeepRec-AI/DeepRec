@@ -80,23 +80,6 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  void WeightedLookupOrCreate(K key, V* val, V* sp_weights,
-      const V* default_value_ptr, ValuePtr<V>** value_ptr,
-      int count, const V* default_value_no_permission) override {
-    if (GetBloomFreq(key) >= config_.filter_freq) {
-      TF_CHECK_OK(ev_->LookupOrCreateKey(key, value_ptr));
-      V* mem_val = ev_->LookupOrCreateEmb(*value_ptr, default_value_ptr);
-      for (int i = 0; i < ev_->ValueLen(); ++i) {
-        val[i] += mem_val[i] * sp_weights[i];
-      }
-    } else {
-      AddFreq(key, count);
-      for (int i = 0; i < ev_->ValueLen(); ++i) {
-        val[i] += default_value_no_permission[i] * sp_weights[i];
-      }
-    }
-  }
-
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) override {
     if (GetFreq(key, *val) >= config_.filter_freq) {

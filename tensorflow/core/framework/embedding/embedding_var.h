@@ -42,6 +42,10 @@ namespace tensorflow {
       EventMgr* event_mgr);
 #endif //GOOGLE_CUDA
 
+namespace {
+const char* kInferenceMode = "INFERENCE_MODE";
+}
+
 template <class K, class V>
 class GPUHashTable;
 
@@ -233,15 +237,6 @@ class EmbeddingVar : public ResourceBase {
       (default_v == nullptr) ? default_value_ : default_v;
     ValuePtr<V>* value_ptr = nullptr;
     filter_->LookupOrCreate(key, val, default_value_ptr, &value_ptr, count,
-                            default_value_no_permission_);
-    add_freq_fn_(value_ptr, count, emb_config_.filter_freq);
-  }
-
-  void WeightedLookupOrCreate(K key, V* val, V* sp_weights, V* default_v, int count = 1)  {
-    const V* default_value_ptr =
-      (default_v == nullptr) ? default_value_ : default_v;
-    ValuePtr<V>* value_ptr = nullptr;
-    filter_->WeightedLookupOrCreate(key, val, sp_weights, default_value_ptr, &value_ptr, count,
                             default_value_no_permission_);
     add_freq_fn_(value_ptr, count, emb_config_.filter_freq);
   }

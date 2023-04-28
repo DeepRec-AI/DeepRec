@@ -127,7 +127,6 @@ __global__ void WeightedEmbeddingVarComputeFn(
         out += sum * sp_weights;
       }
       out = Combine<combiner>(out, feature_num);
-      printf("tid is %d, bid is %d ev_id is %d  feature_num is %d indices is %d emb_element is %f\n", tid, bid, ev_id, feature_num, value_offset, out);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }
@@ -212,7 +211,7 @@ __global__ void EmbeddingVarComputeFn(
       } else {
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
-      float out = 0.0f;
+      TValue out = 0.0;
 
       // #pragma unroll
       for (int j = 0; j < feature_num; ++j) {
@@ -233,7 +232,6 @@ __global__ void EmbeddingVarComputeFn(
         out += sum;
       }
       out = Combine<combiner>(out, feature_num);
-      printf("tid is %d, bid is %d ev_id is %d feature_num is %d indices is %d emb_element is %f\n", tid, bid, ev_id, feature_num, value_offset, out);
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
   }

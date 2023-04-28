@@ -1814,7 +1814,6 @@ def group_embedding_lookup(params,
   if not isinstance(params, list):
     params = [params]
 
-
   if len(params) != len(ids):
     raise ValueError("len of params must be equal to len of ids")
 
@@ -1863,7 +1862,7 @@ def group_embedding_lookup(params,
         
         ev_dimensions[group_id] = dim
         ev_handlers[group_id].append(param.handle)
-        ev_ids[group_id].append(ev_id)
+        ev_ids[group_id].append(array_ops.reshape(ev_id, [-1]))
         output_index_list[group_id].append(params_idx_map[param])
 
       for group_id in range(ev_group_id):
@@ -1872,8 +1871,8 @@ def group_embedding_lookup(params,
         with ops.name_scope(name, "localized_group_embedding_lookup_ev_dim{}".format(dim),
                             params + ids) as name_scope:
           outputs = group_embedding_lookup_ops.group_embedding_var_lookup_dense(ev_handlers[group_id],
-                                                                          ev_ids[group_id],
-                                                                          dim)[0]
+                                                                                ev_ids[group_id],
+                                                                                dim)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
     
@@ -1893,7 +1892,7 @@ def group_embedding_lookup(params,
 
         tf_dimensions[group_id] = dim
         tf_handlers[group_id].append(param)
-        tf_ids[group_id].append(tf_id)
+        tf_ids[group_id].append(array_ops.reshape(tf_id, [-1]))
         output_index_list[group_id].append(params_idx_map[param])
 
       for group_id in range(tf_group_id):
@@ -1901,9 +1900,9 @@ def group_embedding_lookup(params,
         output_index = output_index_list[group_id]
         with ops.name_scope(name, "localized_group_embedding_lookup_variable_dim{}".format(dim),
                             params + ids) as name_scope:
-          outputs = group_embedding_lookup_ops.group_variable_lookup(tf_handlers[group_id],
-                                                                     tf_ids[group_id],
-                                                                     dim)[0]
+          outputs = group_embedding_lookup_ops.group_variable_lookup_dense(tf_handlers[group_id],
+                                                                          tf_ids[group_id],
+                                                                          dim)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
                                                                 

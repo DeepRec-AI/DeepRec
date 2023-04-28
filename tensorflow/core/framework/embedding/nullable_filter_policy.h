@@ -56,16 +56,6 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
     memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
   }
 
-  void WeightedLookupOrCreate(K key, V* val, V* sp_weights,
-      const V* default_value_ptr, ValuePtr<V>** value_ptr,
-      int count, const V* default_value_no_permission) override {
-    TF_CHECK_OK(ev_->LookupOrCreateKey(key, value_ptr));
-    V* mem_val = ev_->LookupOrCreateEmb(*value_ptr, default_value_ptr);
-    for (int i = 0; i < ev_->ValueLen(); ++i) {
-      val[i] += mem_val[i] * sp_weights[i];
-    }
-  }
-
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) override {
     *is_filter = true;

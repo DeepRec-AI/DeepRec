@@ -26,7 +26,7 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/resource_var.h"
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
-#include "tensorflow/core/kernels/group_lookup_forward_base_ops.cu.h"
+#include "tensorflow/core/kernels/group_embedding/group_embedding_lookup_sparse_forward_base_ops.cu.h"
 #include "tensorflow/core/kernels/training_op_helpers.h"
 #include "tensorflow/core/lib/core/spin_rw_lock.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
@@ -72,7 +72,7 @@ class GroupEmbeddingVarLookupOp
     auto dense_shape = dense_shape_tensor.flat<int>().data();
     int batch_size = dense_shape[0];
 
-    for (size_t i = 0; i < this->num_lookups_; ++i) {
+    for (int i = 0; i < this->num_lookups_; ++i) {
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
       auto sp_values = sp_values_tensor.flat<TFKey>();
       int64 N = sp_values_tensor.NumElements();
@@ -223,8 +223,20 @@ class GroupEmbeddingVarLookupOp
       TensorShape values_offset_tensor_shape =
           TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
 
+      // Fake Output
+      Tensor* unique_keys_tensor = nullptr;
+      OP_REQUIRES_OK(ctx,
+                     ctx->forward_input_or_allocate_output(
+                        {this->num_lookups_ + i}, this->num_lookups_ + i,
+                        sp_values_tensor.shape(), &unique_keys_tensor));
+
+      Tensor* unique_idx_tensor = nullptr;
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 2 + i,
+                                               values_offset_tensor_shape,
+                                               &unique_idx_tensor));
+
       Tensor* values_offset_tensor = nullptr;
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ + i,
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 3 + i,
                                                values_offset_tensor_shape,
                                                &values_offset_tensor));
       auto values_offset = values_offset_tensor->flat<int>().data();
@@ -315,8 +327,19 @@ class GroupVariableLookupOp
       // allocate offset tensor
       TensorShape values_offset_tensor_shape =
           TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
+      // Fake Output
+      Tensor* unique_keys_tensor = nullptr;
+      OP_REQUIRES_OK(ctx,
+                     ctx->forward_input_or_allocate_output(
+                        {this->num_lookups_ + i}, this->num_lookups_ + i,
+                        sp_values_tensor.shape(), &unique_keys_tensor));
+
+      Tensor* unique_idx_tensor = nullptr;
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 2 + i,
+                                               values_offset_tensor_shape,
+                                               &unique_idx_tensor));
       Tensor* values_offset_tensor = nullptr;
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ + i,
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 3 + i,
                                                values_offset_tensor_shape,
                                                &values_offset_tensor));
       auto values_offset = values_offset_tensor->flat<int>().data();

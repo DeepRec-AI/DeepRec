@@ -5392,12 +5392,14 @@ tf_kernel_library(
 
 tf_kernel_library(
     name = "group_embedding_ops",
-    srcs = ["group_lookup_forward_ops.cc",
-            "group_lookup_backward_ops.cc",],
-    gpu_srcs = ["group_lookup_forward_base_ops.cu.h",
-                "group_lookup_backward_base_ops.cu.h",
-                "group_lookup_forward_ops.cu.cc",
-                "group_lookup_backward_ops.cu.cc",],
+    hdrs = ["group_embedding/group_embedding_lookup_sparse_forward_base_ops.h"],
+    srcs = ["group_embedding/group_embedding_lookup_ops.cc",
+            "group_embedding/group_embedding_lookup_sparse_forward_ops.cc",
+            "group_embedding/group_embedding_lookup_sparse_backward_ops.cc",],
+    gpu_srcs = ["group_embedding/group_embedding_lookup_sparse_forward_base_ops.cu.h",
+                "group_embedding/group_embedding_lookup_sparse_backward_base_ops.cu.h",
+                "group_embedding/group_embedding_lookup_sparse_forward_ops.cu.cc",
+                "group_embedding/group_embedding_lookup_sparse_backward_ops.cu.cc",],
     deps = ["//third_party/eigen3",
             "//tensorflow/core/kernels:gpu_device_array",
             ":training_op_helpers",
@@ -5415,7 +5417,7 @@ tf_kernel_library(
 tf_cuda_cc_test(
     name = "group_embedding_ops_test",
     size = "small",
-    srcs = ["group_lookup_ops_test.cc"],
+    srcs = ["group_embedding/group_embedding_lookup_ops_test.cc"],
     extra_copts = ["-fexceptions", "-g"],
     deps = [
         ":group_embedding_ops",
