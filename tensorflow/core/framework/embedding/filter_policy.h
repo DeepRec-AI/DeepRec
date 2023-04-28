@@ -41,10 +41,6 @@ class FilterPolicy {
       const V* default_value_ptr, ValuePtr<V>** value_ptr,
       int count, const V* default_value_no_permission) = 0;
 
-  virtual void WeightedLookupOrCreate(K key, V* val, V* sp_weights,
-      const V* default_value_ptr, ValuePtr<V>** value_ptr,
-      int count, const V* default_value_no_permission) = 0;
-
   virtual Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
     const V* default_value_no_permission) = 0;
 

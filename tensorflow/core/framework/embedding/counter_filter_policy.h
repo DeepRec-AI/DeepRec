@@ -51,23 +51,6 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  void WeightedLookupOrCreate(K key, V* val, V* sp_weights,
-      const V* default_value_ptr, ValuePtr<V>** value_ptr,
-      int count, const V* default_value_no_permission) override {
-    TF_CHECK_OK(ev_->LookupOrCreateKey(key, value_ptr));
-    if (GetFreq(key, *value_ptr) >= config_.filter_freq) {
-      V* mem_val = ev_->LookupOrCreateEmb(*value_ptr, default_value_ptr);
-      for (int i = 0; i < ev_->ValueLen(); ++i) {
-        val[i] += mem_val[i] * sp_weights[i];
-      }
-    } else {
-      memcpy(val, default_value_no_permission, sizeof(V) * ev_->ValueLen());
-      for (int i = 0; i < ev_->ValueLen(); ++i) {
-        val[i] += default_value_no_permission[i] * sp_weights[i];
-      }
-    }  
-  }
-
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) override {
     Status s = ev_->LookupOrCreateKey(key, val);
