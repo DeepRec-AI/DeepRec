@@ -59,14 +59,17 @@ class DataFrame(object):  # pylint: disable=useless-object-inheritance
       self._ragged_rank = ragged_rank
       if shape:
         shape = tensor_shape.TensorShape(shape)
-        for d in shape:
-          if d.value is None:
-            raise ValueError(
-              f'Field {name} has incomplete shape: {shape}')
-        if ragged_rank is not None and ragged_rank > 1:
+        shape_rank = 0
+        for _ in shape:
+          shape_rank += 1
+        if ragged_rank is not None and ragged_rank != shape_rank:
           raise ValueError(
             f'Field {name} is a nested list ({ragged_rank}) '
             f'with shape {shape}')
+        self._ragged_rank = shape_rank
+      elif ragged_rank is not None:
+        shape = tensor_shape.TensorShape([None for _ in xrange(ragged_rank)])
+
       self._shape = shape
 
     @property
@@ -131,17 +134,16 @@ class DataFrame(object):  # pylint: disable=useless-object-inheritance
     def output_types(self):
       return self.map(lambda i: self._dtype if i == 0 else dtypes.int32)
 
-    @property
-    def output_shapes(self):
+    def output_shapes(self, batch_size=None):
       if self._shape is None:
-        return self.map(lambda _: tensor_shape.vector(None))
+        return self.map(lambda i: tensor_shape.vector(batch_size) if i == 0
+                        else tensor_shape.vector(None))
       return self.map(
-        lambda i: tensor_shape.vector(None).concatenate(self._shape) if i == 0
+        lambda i: tensor_shape.vector(batch_size).concatenate(self._shape) if i == 0
         else tensor_shape.vector(None))
 
-    @property
-    def output_specs(self):
-      shape = tensor_shape.vector(None)
+    def output_specs(self, batch_size=None):
+      shape = tensor_shape.vector(batch_size)
       if self._shape is not None:
         shape = shape.concatenate(self._shape)
       specs = [tensor_spec.TensorSpec(shape, dtype=self._dtype)]
