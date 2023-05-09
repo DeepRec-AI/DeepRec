@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph_constructor.h"
+#include "tensorflow/core/graph/graph_util.h"
 #include "tensorflow/core/public/session_options.h"
 
 namespace tensorflow {
@@ -51,7 +52,7 @@ class DevicePlacementPass : public GraphOptimizationPass {
     CopyGraph(*graph, device_graph.get());
 
     std::unordered_set<Node*> boundary_node_set;
-    GetDevicePlacementBoundaryNodes(device_graph.get(), boundary_node_set);
+    graph_util::GetComputeGraphBoundaryNodes(device_graph.get(), boundary_node_set);
     if (boundary_node_set.empty()) {
       LOG(FATAL) << "DevicePlacementOptimization: Failed to get boundary_node, "
                     "disable DevicePlacementOptimization";
@@ -77,106 +78,12 @@ class DevicePlacementPass : public GraphOptimizationPass {
 
  private:
 
-  void MarkComputeGraph(const Graph* dest, std::vector<bool>& is_var_relate) {
-    // Get the starting node of the coloring algorithm
-    std::queue<const Node*> q;
-    for (Node* n : dest->op_nodes()) {
-      if (n->IsVariable() || n->IsKvVarHandle() || n->IsControlFlow() ||
-	  n->type_string() == "VarHandleOp")
-	q.emplace(n);
-    }
-
-    // mark compute graph node
-    while (!q.empty()) {
-      const Node* node = q.front();
-      q.pop();
-      is_var_relate[node->id()] = true;
-      for (auto e : node->out_edges()) {
-	if (!is_var_relate[e->dst()->id()])
-	  q.emplace(e->dst());
-      }
-    }
-  }
-
-  void DealWithNode(Graph* dest, Node* n,
-                    const std::vector<bool>& is_var_relate,
-		    std::queue<Node*>& queue,
-		    std::unordered_set<Node*>& has_visit_node,
-		    std::unordered_set<Node*>& boundary_node_set) {
-    if (!n->IsConstant()) {
-      for (auto edge : n->out_edges()) {
-	Node* dst = edge->dst();
-	if (is_var_relate[dst->id()]) {
-	  boundary_node_set.emplace(n);
-	} else {
-	  queue.emplace(dst);
-	}
-      }
-      return;
-    }
-
-    // classify the output edges of const op
-    bool is_connect_to_marked_graph = false;
-    std::unordered_set<const Edge*> data_edge_to_unmarked_graph;
-    for (auto edge : n->out_edges()) {
-      // skip control edge
-      if (edge->IsControlEdge())
-	continue;
-
-      Node* dst = edge->dst();
-      if (is_var_relate[dst->id()]) {
-	is_connect_to_marked_graph = true;
-      } else {
-	data_edge_to_unmarked_graph.emplace(edge);
-	queue.emplace(dst);
-      }
-    }
-
-    // const op connects to marked graph and unmarked graph at the same time,
-    // duplicate a new const op node to avoid memcpy bewteen cpu and gpu.
-    if (is_connect_to_marked_graph && !data_edge_to_unmarked_graph.empty()) {
-      Node* new_node = dest->CopyNode(n);
-      std::string new_name(n->name() + "_duplicate");
-      new_node->set_name(new_name);
-      has_visit_node.emplace(new_node);
-
-      for (auto edge : data_edge_to_unmarked_graph) {
-	Node* dst_node = edge->dst();
-        dest->AddEdge(new_node, edge->src_output(), dst_node,
-                      edge->dst_input());
-	dest->RemoveEdge(edge);
-      }
-    }
-  }
-
-  void GetDevicePlacementBoundaryNodes(
-      Graph* dest, std::unordered_set<Node*> &boundary_node_set) {
-    // mark compute graph node
-    std::vector<bool> is_var_relate(dest->num_node_ids(), false);
-    MarkComputeGraph(dest, is_var_relate);
-
-    // get boundary node
-    std::unordered_set<Node*> has_visit_node;
-    std::queue<Node*> queue;
-    queue.emplace(dest->source_node());
-    while (!queue.empty()) {
-      Node* n = queue.front();
-      queue.pop();
-      if (has_visit_node.find(n) != has_visit_node.end())
-	continue;
-
-      has_visit_node.emplace(n);
-      DealWithNode(dest, n, is_var_relate, queue, has_visit_node,
-                   boundary_node_set);
-    }
-  }
-
   void GetCpuDeviceName(const std::vector<Device*>& devices,
                         std::string& cpu_device_name) {
     for (auto iter = devices.begin(); iter != devices.end(); iter++) {
       if ((*iter)->device_type() == DEVICE_CPU) {
-	cpu_device_name = (*iter)->name();
-	break;
+        cpu_device_name = (*iter)->name();
+        break;
       }
     }
   }

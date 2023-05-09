@@ -27,12 +27,12 @@ limitations under the License.
 namespace tensorflow {
 
 class SmartStagePass : public GraphOptimizationPass {
-public:
+ public:
   Status Run(const GraphOptimizationPassOptions& options) override {
     if (options.session_options == nullptr) {
       return Status::OK();
     }
-    
+
     bool is_enable_smart_stage =
       options.session_options->config.graph_options()
           .optimizer_options().do_smart_stage();
@@ -49,7 +49,7 @@ public:
     CopyGraph(*graph, new_graph.get());
 
     // Get Target Node.
-    std::vector<std::string> target_nodes;    
+    std::vector<std::string> target_nodes;
     GetTargetNodesName(target_nodes);
 
     SmartStageGraph(new_graph, target_nodes);
@@ -60,7 +60,7 @@ public:
 
  private:
   void GetTargetNodesName(std::vector<std::string> & target_nodes) {
-    std::string tn;    
+    std::string tn;
     ReadStringFromEnvVar("TARGET_NODES_NAME", "", &tn);
     for (std::string s : str_util::Split(tn, ';')) {
       target_nodes.push_back(s.substr(0, s.find_last_of(':')));
@@ -85,21 +85,21 @@ public:
     for (auto it = stage_node_map.begin(); it != stage_node_map.end(); ++it) {
       if (unstage_node_map.find(it->first) != unstage_node_map.end()) {
         StageGraph(g.get(), it->second, unstage_node_map[it->first],
-                   target_nodes);        
+                   target_nodes);
       }
     }
   }
 
   void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
-		  const std::vector<std::string>& target_nodes) {
+        const std::vector<std::string>& target_nodes) {
     std::string s1 = stage_node->def().attr().at("shared_name").s();
     std::string s2 = unstage_node->def().attr().at("shared_name").s();
     CHECK(s1 == s2);
-    
+
     std::vector<const Edge*> out_edges;
     for (const Edge* e : unstage_node->out_edges()) {
       if (!e->IsControlEdge()) {
-	out_edges.push_back(e);
+        out_edges.push_back(e);
       }
     }
 
@@ -110,7 +110,8 @@ public:
       Status s = stage_node->input_edge(index, &in_edge);
       TF_CHECK_OK(s);
       Node* dst = out_edge->dst();
-      s = dest->UpdateEdge(in_edge->src(), in_edge->src_output(), out_edge->dst(), out_edge->dst_input());
+      s = dest->UpdateEdge(in_edge->src(), in_edge->src_output(),
+                           out_edge->dst(), out_edge->dst_input());
       TF_CHECK_OK(s);
       source_node_set.insert(dst);
     }
@@ -131,30 +132,30 @@ public:
   }
 
   void GetStagingEdges(const Graph& dest,
-		       const std::unordered_set<Node *>& source_node_set,
-		       const std::vector<std::string>& target_nodes,
-		       std::vector<const Edge*>& edge_vec) {
+      const std::unordered_set<Node *>& source_node_set,
+      const std::vector<std::string>& target_nodes,
+      std::vector<const Edge*>& edge_vec) {
     std::queue<const Node*> q;
     for (Node* n : dest.op_nodes()) {
       if (n->IsVariable() || n->IsKvVarHandle() || n->IsPlaceholder() ||
-	  n->IsControlFlow() || n->type_string() == "VarHandleOp" ||
-	  std::find(target_nodes.begin(), target_nodes.end(), n->name()) !=
-	  target_nodes.end()) {
-	q.push(n);
+          n->IsControlFlow() || n->type_string() == "VarHandleOp" ||
+          std::find(target_nodes.begin(), target_nodes.end(), n->name()) !=
+              target_nodes.end()) {
+        q.push(n);
       }
     }
-    
+
     std::vector<bool> is_var_relate(dest.num_node_ids(), false);
     while (!q.empty()) {
       const Node* node = q.front();
       q.pop();
       is_var_relate[node->id()] = true;
       for (const Edge* e : node->out_edges()) {
-	if (e->dst()->type_string() == "_OPT_KvResourceLookupID") {
-	  continue;
-	} else if (!is_var_relate[e->dst()->id()]) {
-	  q.push(e->dst());
-	}
+        if (e->dst()->type_string() == "_OPT_KvResourceLookupID") {
+          continue;
+        } else if (!is_var_relate[e->dst()->id()]) {
+          q.push(e->dst());
+        }
       }
     }
 
@@ -167,17 +168,18 @@ public:
     while (!queue.empty()) {
       Node *n = queue.front();
       queue.pop();
-      if (has_visit_node.find(n) != has_visit_node.end())
-	continue;
-    
+      if (has_visit_node.find(n) != has_visit_node.end()) {
+        continue;
+      }
+
       has_visit_node.insert(n);
       for (auto edge : n->out_edges()) {
-	Node *dst = edge->dst();
-	if (is_var_relate[dst->id()]) {
-	  edge_vec.push_back(edge);
-	} else {
-	  queue.push(dst);
-	}
+        Node *dst = edge->dst();
+        if (is_var_relate[dst->id()]) {
+          edge_vec.push_back(edge);
+        } else {
+          queue.push(dst);
+        }
       }
     }
   }
@@ -192,30 +194,30 @@ public:
     std::map<const Edge*, int64> edge_to_unstage;
     for (const Edge* e : edge_vec) {
       if (e->IsControlEdge()) {
-	// control flow is implemented by stage node and unstage node, remove control edge.
-	dest->RemoveEdge(e);
-	continue;
+        // control flow is implemented by stage node and unstage node, remove control edge.
+        dest->RemoveEdge(e);
+        continue;
       }
       std::string name = e->src()->name() + std::to_string(e->src_output());
       if (edge_map.find(name) == edge_map.end()) {
-	type_vec.push_back(e->src()->output_type(e->src_output()));
-	src_list.emplace_back(e->src()->name(), e->src_output(), e->src()->output_type(e->src_output()));
-	edge_to_stage[e] = i;
-	edge_map[name] = i;
-	++i;
+        type_vec.push_back(e->src()->output_type(e->src_output()));
+        src_list.emplace_back(e->src()->name(), e->src_output(), e->src()->output_type(e->src_output()));
+        edge_to_stage[e] = i;
+        edge_map[name] = i;
+        ++i;
       }
       edge_to_unstage[e] = edge_map[name];
     }
 
     NodeDef node_def_stage;
     TF_CHECK_OK(NodeDefBuilder(stage_node->name(), "TensorBufferPut")
-		.Device(stage_node->requested_device())
-		.Input(src_list)
-		.Attr("container", stage_node->def().attr().at("container"))
-		.Attr("shared_capacity", stage_node->def().attr().at("shared_capacity"))
-		.Attr("shared_name", stage_node->def().attr().at("shared_name"))
-		.Attr("timeout_millis", stage_node->def().attr().at("timeout_millis"))
-		.Finalize(&node_def_stage));
+    .Device(stage_node->requested_device())
+    .Input(src_list)
+    .Attr("container", stage_node->def().attr().at("container"))
+    .Attr("shared_capacity", stage_node->def().attr().at("shared_capacity"))
+    .Attr("shared_name", stage_node->def().attr().at("shared_name"))
+    .Attr("timeout_millis", stage_node->def().attr().at("timeout_millis"))
+    .Finalize(&node_def_stage));
     if (stage_node->def().attr().contains("_stream_id")) {
       auto stream_id_attr = stage_node->def().attr().at("_stream_id");
       node_def_stage.mutable_attr()->insert({"_stream_id", stream_id_attr});
@@ -227,13 +229,13 @@ public:
 
     NodeDef node_def_unstage;
     TF_CHECK_OK(NodeDefBuilder(unstage_node->name(), "TensorBufferTake")
-		.Device(unstage_node->requested_device())
-		.Attr("container", unstage_node->def().attr().at("container"))
-		.Attr("dtypes", DataTypeSlice(type_vec))
-		.Attr("shared_capacity", unstage_node->def().attr().at("shared_capacity"))
-		.Attr("shared_name", unstage_node->def().attr().at("shared_name"))
-		.Attr("shared_threads", unstage_node->def().attr().at("shared_threads"))
-		.Finalize(&node_def_unstage));
+    .Device(unstage_node->requested_device())
+    .Attr("container", unstage_node->def().attr().at("container"))
+    .Attr("dtypes", DataTypeSlice(type_vec))
+    .Attr("shared_capacity", unstage_node->def().attr().at("shared_capacity"))
+    .Attr("shared_name", unstage_node->def().attr().at("shared_name"))
+    .Attr("shared_threads", unstage_node->def().attr().at("shared_threads"))
+    .Finalize(&node_def_unstage));
     Node* unstage_xxx = dest->AddNode(node_def_unstage, &s);
     TF_CHECK_OK(s);
     dest->RemoveNode(unstage_node);
@@ -252,5 +254,5 @@ public:
 };
 
 REGISTER_OPTIMIZATION(OptimizationPassRegistry::PRE_PLACEMENT, 24, SmartStagePass);
-  
+
 } // end of namespace tensorflow
