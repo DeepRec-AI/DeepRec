@@ -7,6 +7,7 @@
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/public/session.h"
 #include <thread>
 #include <atomic>
 
@@ -42,6 +43,13 @@ struct ModelSession {
   std::vector<Session*> GetLeaderSessions();
   Status Warmup(Request& req, Response& resp, bool local=true);
 
+  Session::CallableHandle* GetIncrRestoreHandler(const Session* sess);
+  Session::CallableHandle* GetMainOpHandler(const Session* sess);
+  void SetIncrRestoreHandler(const Session* sess,
+      Session::CallableHandle* handler);
+  void SetMainOpHandler(const Session* sess,
+      Session::CallableHandle* handler);
+
   SessionGroup* session_group_ = nullptr;
   SelectSessionPolicy select_session_policy_ =
       SelectSessionPolicy::MOD;
@@ -56,6 +64,17 @@ struct ModelSession {
   bool is_local_ = true;
   Version version_;
   std::string graph_hash_value_;
+
+  // Store the handlers of increment restore related grpahs,
+  // to avoid create executor at every increment restore,
+  // which will decrease inference performence.
+  // Consider multi-session_groups jobs, so we use map here.
+  // and CallableHandle is owned by ModelSession, so we must
+  // delete them at dtor.
+  std::unordered_map<const Session*, Session::CallableHandle*>
+      incr_restore_handler_map;
+  std::unordered_map<const Session*, Session::CallableHandle*>
+      main_op_handler_map;
 
  private:
   int GetServingSessionId();

@@ -272,10 +272,46 @@ ModelSession::ModelSession(SessionGroup* s,
 }
 
 ModelSession::~ModelSession() {
+  for (auto iter : incr_restore_handler_map) {
+    const_cast<Session*>(iter.first)
+        ->ReleaseCallable(*iter.second).IgnoreError();
+  }
+
+  for (auto iter : main_op_handler_map) {
+    const_cast<Session*>(iter.first)
+        ->ReleaseCallable(*iter.second).IgnoreError();
+  }
+
   if (session_group_) {
     delete session_group_;
     session_group_ = nullptr;
   }
+}
+
+Session::CallableHandle* ModelSession::GetIncrRestoreHandler(const Session* sess) {
+  auto iter = incr_restore_handler_map.find(sess);
+  if (iter == incr_restore_handler_map.end()) {
+    return nullptr;
+  }
+  return iter->second;
+}
+
+Session::CallableHandle* ModelSession::GetMainOpHandler(const Session* sess) {
+  auto iter = main_op_handler_map.find(sess);
+  if (iter == main_op_handler_map.end()) {
+    return nullptr;
+  }
+  return iter->second;
+}
+
+void ModelSession::SetIncrRestoreHandler(const Session* sess,
+    Session::CallableHandle* handler) {
+  incr_restore_handler_map[sess] = handler;
+}
+
+void ModelSession::SetMainOpHandler(const Session* sess,
+    Session::CallableHandle* handler) {
+  main_op_handler_map[sess] = handler;
 }
 
 std::vector<Session*> ModelSession::GetLeaderSessions() {
@@ -596,24 +632,64 @@ Status ModelSessionMgr::CreateModelSession(
   }
 
   LOG(INFO) << "CreateModelSession get leader sessions count: " << sessions.size();
-  for (auto session : sessions) {
-    TF_RETURN_IF_ERROR(util::RunRestoreCheckpoint(
-        is_incr_ckpt, *run_options_, full_ckpt_name,
-        incr_ckpt_name, version.savedmodel_dir.c_str(),
-        restore_op_name, filename_tensor_name,
-        incr_filename_tensor_name, asset_file_defs_, session,
-        thread_opt));
 
-    if (util::HasMainOp(meta_graph_def_)) {
-      TF_RETURN_IF_ERROR(util::RunMainOp(*run_options_,
+  if (is_incr_ckpt) {
+    for (auto session : sessions) {
+      bool init_create_handler = false;
+      Session::CallableHandle* incr_restore_handler = nullptr;
+      Session::CallableHandle* main_op_handler = nullptr;
+      incr_restore_handler = serving_model_session_->GetIncrRestoreHandler(session);
+      main_op_handler = serving_model_session_->GetMainOpHandler(session);
+      if (!incr_restore_handler || !main_op_handler) {
+        init_create_handler = true;
+      }
+
+      TF_RETURN_IF_ERROR(util::RunIncrRestoreCheckpoint(
+          *run_options_, full_ckpt_name,
+          incr_ckpt_name, version.savedmodel_dir.c_str(),
+          restore_op_name, filename_tensor_name,
+          incr_filename_tensor_name, asset_file_defs_, session,
+          thread_opt, &incr_restore_handler));
+
+      if (util::HasMainOp(meta_graph_def_)) {
+        TF_RETURN_IF_ERROR(util::RunIncrMainOp(
+            *run_options_, version.savedmodel_dir.c_str(),
+            meta_graph_def_, asset_file_defs_,
+            session, kSavedModelMainOpKey,
+            thread_opt, &main_op_handler));
+      } else {
+        TF_RETURN_IF_ERROR(util::RunIncrMainOp(
+            *run_options_, version.savedmodel_dir.c_str(),
+            meta_graph_def_, asset_file_defs_, session,
+            kSavedModelLegacyInitOpKey, thread_opt, &main_op_handler));
+      }
+
+      if (init_create_handler) {
+        serving_model_session_->SetIncrRestoreHandler(
+            session, incr_restore_handler);
+        serving_model_session_->SetMainOpHandler(
+            session, main_op_handler);
+      }
+    }
+  } else {
+    for (auto session : sessions) {
+      TF_RETURN_IF_ERROR(util::RunRestoreCheckpoint(
+          *run_options_, full_ckpt_name,
           version.savedmodel_dir.c_str(),
-          meta_graph_def_, asset_file_defs_,
-          session, kSavedModelMainOpKey));
-    } else {
-      TF_RETURN_IF_ERROR(util::RunMainOp(
-          *run_options_, version.savedmodel_dir.c_str(),
-          meta_graph_def_, asset_file_defs_, session,
-          kSavedModelLegacyInitOpKey));
+          restore_op_name, filename_tensor_name,
+          incr_filename_tensor_name, asset_file_defs_, session));
+
+      if (util::HasMainOp(meta_graph_def_)) {
+        TF_RETURN_IF_ERROR(util::RunMainOp(*run_options_,
+            version.savedmodel_dir.c_str(),
+            meta_graph_def_, asset_file_defs_,
+            session, kSavedModelMainOpKey));
+      } else {
+        TF_RETURN_IF_ERROR(util::RunMainOp(
+            *run_options_, version.savedmodel_dir.c_str(),
+            meta_graph_def_, asset_file_defs_, session,
+            kSavedModelLegacyInitOpKey));
+      }
     }
   }
 

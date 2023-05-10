@@ -62,8 +62,7 @@ Status RunOnce(
     const std::vector<string>& output_tensor_names,
     const std::vector<string>& target_node_names,
     std::vector<Tensor>* outputs, RunMetadata* run_metadata,
-    Session* session,
-    thread::ThreadPoolOptions thread_opt) {
+    Session* session) {
   CallableOptions callable_options;
   std::vector<Tensor> feed_tensors;
   *callable_options.mutable_run_options() = run_options;
@@ -82,11 +81,63 @@ Status RunOnce(
 
   Session::CallableHandle callable_handle;
   TF_RETURN_IF_ERROR(session->MakeCallable(callable_options, &callable_handle));
+
   const Status run_status = session->RunCallable(callable_handle, feed_tensors,
-                                                 outputs, run_metadata, thread_opt);
+                                                 outputs, run_metadata);
   // Be sure to call ReleaseCallable() regardless of the outcome of
   // RunCallable().
   session->ReleaseCallable(callable_handle).IgnoreError();
+
+  return run_status;
+}
+
+Status RunOnce(
+    const RunOptions& run_options,
+    const std::vector<std::pair<string, Tensor>>& inputs,
+    const std::vector<string>& output_tensor_names,
+    const std::vector<string>& target_node_names,
+    std::vector<Tensor>* outputs, RunMetadata* run_metadata,
+    Session* session,
+    thread::ThreadPoolOptions thread_opt,
+    Session::CallableHandle** handler) {
+  CallableOptions callable_options;
+  std::vector<Tensor> feed_tensors;
+  *callable_options.mutable_run_options() = run_options;
+  for (const auto& input : inputs) {
+    const string& name = input.first;
+    const Tensor& tensor = input.second;
+    callable_options.add_feed(name);
+    feed_tensors.push_back(tensor);
+  }
+  for (const string& output_tensor_name : output_tensor_names) {
+    callable_options.add_fetch(output_tensor_name);
+  }
+  for (const string& target_node_name : target_node_names) {
+    callable_options.add_target(target_node_name);
+  }
+
+  Session::CallableHandle callable_handle;
+  if (!handler || !(*handler)) {
+    TF_RETURN_IF_ERROR(session->MakeCallable(callable_options, &callable_handle));
+  } else {
+    callable_handle = **handler;
+  }
+
+  const Status run_status = session->RunCallable(callable_handle, feed_tensors,
+                                                 outputs, run_metadata, thread_opt);
+  /* DO NOT delete here.
+  // Be sure to call ReleaseCallable() regardless of the outcome of
+  // RunCallable().
+  //session->ReleaseCallable(callable_handle).IgnoreError();
+  */
+  if (!handler) {
+    LOG(ERROR) << "Handler can not be nullptr. Please check the code.";
+    session->ReleaseCallable(callable_handle).IgnoreError();
+  } else if (!(*handler)) {
+    *handler = new Session::CallableHandle();
+    **handler = callable_handle;
+  }
+
   return run_status;
 }
 
@@ -96,8 +147,7 @@ bool HasMainOp(const MetaGraphDef& meta_graph_def) {
     collection_def_map.end();
 }
 
-Status RunRestoreCheckpoint(
-    bool restore_incr_checkpoint,
+Status RunIncrRestoreCheckpoint(
     const RunOptions& run_options,
     const std::string& full_ckpt_name,
     const std::string& incr_ckpt_name,
@@ -106,7 +156,8 @@ Status RunRestoreCheckpoint(
     const StringPiece variable_filename_const_op_name,
     const StringPiece incr_variable_filename_const_op_name,
     const std::vector<AssetFileDef>& asset_file_defs,
-    Session* session, thread::ThreadPoolOptions thread_opt) {
+    Session* session, thread::ThreadPoolOptions thread_opt,
+    Session::CallableHandle** handler) {
   LOG(INFO) << "Restoring checkpoint.";
   // Find path to variables to be restored in export directory.
   // Add variables to the graph.
@@ -116,19 +167,43 @@ Status RunRestoreCheckpoint(
   std::vector<std::pair<string, Tensor>> inputs = {
       {string(variable_filename_const_op_name), variables_path_tensor}};
 
-  if (restore_incr_checkpoint) {
-    Tensor incr_variables_path_tensor(DT_STRING, TensorShape({}));
-    incr_variables_path_tensor.scalar<string>()() = incr_ckpt_name;
-    inputs.push_back(
-        {string(incr_variable_filename_const_op_name), incr_variables_path_tensor});
-  }
+  Tensor incr_variables_path_tensor(DT_STRING, TensorShape({}));
+  incr_variables_path_tensor.scalar<string>()() = incr_ckpt_name;
+  inputs.push_back(
+      {string(incr_variable_filename_const_op_name), incr_variables_path_tensor});
 
   util::AddAssetsTensorsToInputs(savedmodel_dir, asset_file_defs, &inputs);
 
   RunMetadata run_metadata;
   return util::RunOnce(run_options, inputs, {}, {string(restore_op_name)},
-                       nullptr /* outputs */, &run_metadata, session, thread_opt);
+                       nullptr /* outputs */, &run_metadata, session, thread_opt, handler);
 }
+
+Status RunRestoreCheckpoint(
+    const RunOptions& run_options,
+    const std::string& full_ckpt_name,
+    const std::string& savedmodel_dir,
+    const StringPiece restore_op_name,
+    const StringPiece variable_filename_const_op_name,
+    const StringPiece incr_variable_filename_const_op_name,
+    const std::vector<AssetFileDef>& asset_file_defs,
+    Session* session) {
+  LOG(INFO) << "Restoring checkpoint.";
+  // Find path to variables to be restored in export directory.
+  // Add variables to the graph.
+  Tensor variables_path_tensor(DT_STRING, TensorShape({}));
+  variables_path_tensor.scalar<string>()() = full_ckpt_name;
+
+  std::vector<std::pair<string, Tensor>> inputs = {
+      {string(variable_filename_const_op_name), variables_path_tensor}};
+
+  util::AddAssetsTensorsToInputs(savedmodel_dir, asset_file_defs, &inputs);
+
+  RunMetadata run_metadata;
+  return util::RunOnce(run_options, inputs, {}, {string(restore_op_name)},
+                       nullptr /* outputs */, &run_metadata, session);
+}
+
 
 Status RunRestore(const RunOptions& run_options, const string& export_dir,
                   const StringPiece restore_op_name,
@@ -165,6 +240,31 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
   RunMetadata run_metadata;
   return util::RunOnce(run_options, inputs, {}, {string(restore_op_name)},
                        nullptr /* outputs */, &run_metadata, session);
+}
+
+Status RunIncrMainOp(const RunOptions& run_options, const string& export_dir,
+                     const MetaGraphDef& meta_graph_def,
+                     const std::vector<AssetFileDef>& asset_file_defs,
+                     Session* session, const string& main_op_key,
+                     thread::ThreadPoolOptions thread_opt,
+                     Session::CallableHandle** handler) {
+  LOG(INFO) << "Running MainOp with key " << main_op_key
+            << " on SavedModel bundle.";
+  const auto& collection_def_map = meta_graph_def.collection_def();
+  const auto main_op_it = collection_def_map.find(main_op_key);
+  if (main_op_it != collection_def_map.end()) {
+    if (main_op_it->second.node_list().value_size() != 1) {
+      return errors::FailedPrecondition(
+          strings::StrCat("Expected exactly one main op in : ", export_dir));
+    }
+    std::vector<std::pair<string, Tensor>> inputs;
+    util::AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
+    RunMetadata run_metadata;
+    const StringPiece main_op_name = main_op_it->second.node_list().value(0);
+    return util::RunOnce(run_options, inputs, {}, {string(main_op_name)},
+                         nullptr /* outputs */, &run_metadata, session, thread_opt, handler);
+  }
+  return Status::OK();
 }
 
 Status RunMainOp(const RunOptions& run_options, const string& export_dir,

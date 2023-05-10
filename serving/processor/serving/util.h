@@ -30,16 +30,24 @@ Status GetAssetFileDefs(const MetaGraphDef& meta_graph_def,
 void AddAssetsTensorsToInputs(const StringPiece export_dir,
                               const std::vector<AssetFileDef>& asset_file_defs,
                               std::vector<std::pair<string, Tensor>>* inputs);
- 
+Status RunOnce(
+    const RunOptions& run_options,
+    const std::vector<std::pair<string, Tensor>>& inputs,
+    const std::vector<string>& output_tensor_names,
+    const std::vector<string>& target_node_names,
+    std::vector<Tensor>* outputs, RunMetadata* run_metadata,
+    Session* session);
+
 Status RunOnce(const RunOptions& run_options,
                const std::vector<std::pair<string, Tensor>>& inputs,
                const std::vector<string>& output_tensor_names,
                const std::vector<string>& target_node_names,
                std::vector<Tensor>* outputs, RunMetadata* run_metadata,
                Session* session,
-               thread::ThreadPoolOptions thread_opt = thread::ThreadPoolOptions());
-Status RunRestoreCheckpoint(
-    bool restore_incr_checkpoint,
+               thread::ThreadPoolOptions thread_opt,
+               Session::CallableHandle** handler);
+
+Status RunIncrRestoreCheckpoint(
     const RunOptions& run_options,
     const std::string& full_ckpt_name,
     const std::string& incr_ckpt_name,
@@ -48,7 +56,18 @@ Status RunRestoreCheckpoint(
     const StringPiece variable_filename_const_op_name,
     const StringPiece incr_variable_filename_const_op_name,
     const std::vector<AssetFileDef>& asset_file_defs,
-    Session* session, thread::ThreadPoolOptions thread_opt);
+    Session* session, thread::ThreadPoolOptions thread_opt,
+    Session::CallableHandle** handler);
+
+Status RunRestoreCheckpoint(
+    const RunOptions& run_options,
+    const std::string& full_ckpt_name,
+    const std::string& savedmodel_dir,
+    const StringPiece restore_op_name,
+    const StringPiece variable_filename_const_op_name,
+    const StringPiece incr_variable_filename_const_op_name,
+    const std::vector<AssetFileDef>& asset_file_defs,
+    Session* session);
 
 Status RunRestore(const RunOptions& run_options, const string& export_dir,
                   const StringPiece restore_op_name,
@@ -57,6 +76,13 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
                   Session* session);
  
 bool HasMainOp(const MetaGraphDef& meta_graph_def);
+
+Status RunIncrMainOp(const RunOptions& run_options, const string& export_dir,
+                     const MetaGraphDef& meta_graph_def,
+                     const std::vector<AssetFileDef>& asset_file_defs,
+                     Session* session, const string& main_op_key,
+                     thread::ThreadPoolOptions thread_opt,
+                     Session::CallableHandle** handler);
 
 Status RunMainOp(const RunOptions& run_options, const string& export_dir,
                  const MetaGraphDef& meta_graph_def,
