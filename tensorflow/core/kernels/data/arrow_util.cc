@@ -84,6 +84,7 @@ int SetArrowCpuThreadPoolCapacityFromEnv() {
     case ::arrow::Type::DOUBLE:
       *numpy_dtype = "float64";
       break;
+    case ::arrow::Type::BINARY:
     case ::arrow::Type::STRING:
       *numpy_dtype = "O";
       break;
@@ -149,7 +150,7 @@ class ArrowPrimitiveTensorBuffer : public TensorBuffer {
 }
 
 ::arrow::Status MakeStringTensorFromArrowArray(
-    const ::arrow::StringArray& array, Tensor* tensor) {
+    const ::arrow::BinaryArray& array, Tensor* tensor) {
   if (array.null_count() != 0) {
     return ::arrow::Status::Invalid("Null elements not supported");
   }
@@ -236,6 +237,7 @@ class RaggedTensorBuilder : public ::arrow::ArrayVisitor {
   RAGGED_TENSOR_BUILDER_PRIMITIVE_VISIT(::arrow::FloatArray);
   RAGGED_TENSOR_BUILDER_PRIMITIVE_VISIT(::arrow::DoubleArray);
 
+  RAGGED_TENSOR_BUILDER_STRING_VISIT(::arrow::BinaryArray);
   RAGGED_TENSOR_BUILDER_STRING_VISIT(::arrow::StringArray);
 
  private:
@@ -271,6 +273,7 @@ Status MakeDataTypeAndRaggedRankFromArrowDataType(
     CASE_ARROW_ENUM_SET_DTYPE(dtype, ::arrow::Type::HALF_FLOAT);
     CASE_ARROW_ENUM_SET_DTYPE(dtype, ::arrow::Type::FLOAT);
     CASE_ARROW_ENUM_SET_DTYPE(dtype, ::arrow::Type::DOUBLE);
+    CASE_ARROW_ENUM_SET_DTYPE(dtype, ::arrow::Type::BINARY);
     CASE_ARROW_ENUM_SET_DTYPE(dtype, ::arrow::Type::STRING);
     default:
       return errors::Unimplemented("Arrow data type ", arrow_dtype->ToString(),
