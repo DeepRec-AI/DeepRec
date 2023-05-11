@@ -850,8 +850,8 @@ template <typename T>
 void MutableGraphView::ReplaceNodeFanouts(MutableNodeView* node, T* fanouts) {
   node->num_regular_fanouts_ = fanouts->num_regular_fanouts_;
   node->regular_fanouts_by_port_ = std::move(fanouts->regular_fanouts_by_port_);
-  for (int i = 0; i < node->regular_fanouts_by_port_.size(); ++i) {
-    for (int j = 0; j < node->regular_fanouts_by_port_[i].size(); ++j) {
+  for (size_t i = 0; i < node->regular_fanouts_by_port_.size(); ++i) {
+    for (size_t j = 0; j < node->regular_fanouts_by_port_[i].size(); ++j) {
       auto& fanout = node->regular_fanouts_by_port_[i][j];
       auto* fanout_node_view = fanout.node_view();
       auto& fanout_fanin = fanout_node_view->regular_fanins_[fanout.index()];
@@ -866,7 +866,7 @@ void MutableGraphView::ReplaceNodeFanouts(MutableNodeView* node, T* fanouts) {
     }
   }
   node->controlled_fanouts_ = std::move(fanouts->controlled_fanouts_);
-  for (int i = 0; i < node->controlled_fanouts_.size(); ++i) {
+  for (size_t i = 0; i < node->controlled_fanouts_.size(); ++i) {
     auto& fanout = node->controlled_fanouts_[i];
     auto* fanout_node_view = fanout.node_view();
     auto& fanout_fanin =
