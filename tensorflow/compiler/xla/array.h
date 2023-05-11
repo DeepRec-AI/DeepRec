@@ -403,7 +403,7 @@ class Array {
 
   // Returns the size of the dimension at the given index.
   int64 dim(int64 n) const {
-    CHECK(n < sizes_.size());
+    CHECK((size_t)n < sizes_.size());
     return sizes_[n];
   }
 
