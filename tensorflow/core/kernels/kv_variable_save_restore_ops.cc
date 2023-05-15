@@ -17,6 +17,8 @@ limitations under the License.
 
 #if GOOGLE_CUDA
 #define EIGEN_USE_GPU
+
+#include "tensorflow/stream_executor/cuda/cuda_activation.h"
 #endif
 
 #include "tensorflow/core/framework/bounds_check.h"
@@ -386,11 +388,22 @@ class KvResourceImportV3Op: public AsyncOpKernel {
           LoadSsdData(ev, ssd_record_file_name, ssd_emb_file_name);
         }
       }
-      const Device& device = context->eigen_device<Device>();
-      EVRestoreDynamically(
-          ev, name_string, partition_id_, partition_num_, context, &reader,
-          "-partition_offset", "-keys", "-values", "-versions", "-freqs",
-          reset_version_, (Eigen::GpuDevice*)(&device));
+      if (ev->IsSingleHbm()) {
+#if GOOGLE_CUDA
+        se::cuda::ScopedActivateExecutorContext scoped_activation{
+            context->op_device_context()->stream()->parent()};
+        const Eigen::GpuDevice& device = context->eigen_gpu_device();
+        EVRestoreDynamically(
+            ev, name_string, partition_id_, partition_num_, context, &reader,
+            "-partition_offset", "-keys", "-values", "-versions", "-freqs",
+            reset_version_, &device);
+#endif
+      } else {
+        EVRestoreDynamically(
+            ev, name_string, partition_id_, partition_num_, context, &reader,
+            "-partition_offset", "-keys", "-values", "-versions", "-freqs",
+            reset_version_, nullptr);
+      }
       ev->SetInitialized();
       done();
     };

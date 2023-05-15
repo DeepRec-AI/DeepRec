@@ -215,7 +215,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "cuCollections",                     # Apache License 2.0
-        patch_file = [clean_dep("//third_party:0001-cuco-modification-for-deeprec.patch")],
+        patch_file = [clean_dep("//third_party:cucollection.patch")],
         build_file = clean_dep("//third_party:cuco.BUILD"),
         sha256 = "c5c77a1f96b439b67280e86483ce8d5994aa4d14b7627b1d3bd7880be6be23fa",
         strip_prefix = "cuCollections-193de1aa74f5721717f991ca757dc610c852bb17",
@@ -1085,8 +1085,8 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         strip_prefix = "seastar-2f0de60d31d75f9048cec0901a961f3fc7ed04ec",
         build_file = str(Label("//third_party:seastar.BUILD")),
         urls = [
-            "https://github.com/AlibabaPAI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
-            "https://github.com/AlibabaPAI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
+            "https://github.com/DeepRec-AI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
+            "https://github.com/DeepRec-AI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
         ],
     )
 
@@ -1199,6 +1199,173 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         urls = [
             "https://storage.googleapis.com/mirror.tensorflow.org/github.com/miloyip/rapidjson/archive/418331e99f859f00bdc8306f69eba67e8693c55e.tar.gz",
             "https://github.com/miloyip/rapidjson/archive/418331e99f859f00bdc8306f69eba67e8693c55e.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "colm",                            # MIT License
+        build_file = "//third_party:colm.BUILD",
+        sha256 = "322cb2489d7e08b69c003453a14c6842a4beb243cd73c9ec2c23089a0f422205",
+        strip_prefix = "colm-colm-0.13.0.6",
+        urls = [
+            "https://github.com/adrian-thurston/colm/archive/colm-0.13.0.6.tar.gz",
+            "https://github.com/adrian-thurston/colm/archive/colm-0.13.0.6.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "ragel",                          # MIT License
+        build_file = "//third_party:ragel.BUILD",
+        sha256 = "7c3ded1c57540083acea63dfed99bc097503a3c56f9a3154fe8b0dd5f22f2189",
+        strip_prefix = "ragel-ragel-7.0.0.11",
+        urls = [
+            "https://github.com/adrian-thurston/ragel/archive/ragel-7.0.0.11.tar.gz",
+            "https://github.com/adrian-thurston/ragel/archive/ragel-7.0.0.11.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "sctp",                          #  GPL-2.0 license
+        build_file = "//third_party:sctp.BUILD",
+        sha256 = "3e9ab5b3844a8b65fc8152633aafe85f406e6da463e53921583dfc4a443ff03a",
+        strip_prefix = "lksctp-tools-1.0.18",
+        urls = [
+            "https://github.com/sctp/lksctp-tools/archive/v1.0.18.tar.gz",
+            "https://github.com/sctp/lksctp-tools/archive/v1.0.18.tar.gz"
+        ],
+    )
+
+    tf_http_archive(
+        name = "uuid",                         #  GPL-2.0 license
+        build_file = "//third_party:uuid.BUILD",
+        sha256 = "068d6aad9bbcbad47c383bc9cf249deb349de01e6b6aef663e44599a49537bc3",
+        strip_prefix = "util-linux-2.35.1",
+        urls = [
+            "https://github.com/util-linux/util-linux/archive/v2.35.1.tar.gz",
+            "https://github.com/util-linux/util-linux/archive/v2.35.1.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "xfs",                         # GPL license
+        build_file = "//third_party:xfs.BUILD",
+        sha256 = "cfbb0b136799c48cb79435facd0969c5a60a587a458e2d16f9752771027efbec",
+        strip_prefix = "xfsprogs-5.5.0",
+        urls = [
+            "https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/xfsprogs/xfsprogs-5.5.0.tar.xz",
+            "https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/xfsprogs/xfsprogs-5.5.0.tar.xz"
+        ],
+    )
+
+    tf_http_archive(
+        name = "aliyun_oss_c_sdk",          # Apache License 2.0
+        build_file = "//serving/third_party:oss_c_sdk.BUILD",
+        sha256 = "6450d3970578c794b23e9e1645440c6f42f63be3f82383097660db5cf2fba685",
+        strip_prefix = "aliyun-oss-c-sdk-3.7.0",
+        urls = [
+            "https://github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
+            "https://github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
+        ],
+    )
+    
+    tf_http_archive(
+        name = "concurrent_queue",         # BSD License/Boost Software License/zlib License
+        build_file = "//serving/third_party:concurrent_queue.BUILD",
+        sha256 = "c3aeb97c97169f743a53ca33812ea2ab61dd06dfd28319ca3f0a0771372fc7fc",
+        strip_prefix = "concurrentqueue-1.0.2",
+        urls = [
+            "https://github.com/cameron314/concurrentqueue/archive/v1.0.2.tar.gz",
+            "https://github.com/cameron314/concurrentqueue/archive/v1.0.2.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "libevent",                # BSD License
+        build_file = "//serving/third_party:libevent.BUILD",
+        sha256 = "7180a979aaa7000e1264da484f712d403fcf7679b1e9212c4e3d09f5c93efc24",
+        strip_prefix = "libevent-release-2.1.12-stable",
+        patch_args = ["-p1"],
+        patches = [
+            "//serving/third_party:libevent1.patch",
+            "//serving/third_party:libevent.patch",
+        ],
+        urls = [
+            "https://github.com/libevent/libevent/archive/release-2.1.12-stable.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "hiredis",                # BSD-3-Clause license
+        build_file = "//serving/third_party:hiredis.BUILD",
+        sha256 = "e0ab696e2f07deb4252dda45b703d09854e53b9703c7d52182ce5a22616c3819",
+        strip_prefix = "hiredis-1.0.2",
+        urls = [
+            "https://github.com/redis/hiredis/archive/v1.0.2.tar.gz",
+            "https://github.com/redis/hiredis/archive/v1.0.2.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "libexpat",               # MIT license
+        build_file = "//serving/third_party:libexpat.BUILD",
+        sha256 = "574499cba22a599393e28d99ecfa1e7fc85be7d6651d543045244d5b561cb7ff",
+        strip_prefix = "libexpat-R_2_2_6/expat",
+        urls = [
+            "https://github.com/libexpat/libexpat/archive/R_2_2_6.tar.gz",
+            "https://github.com/libexpat/libexpat/archive/R_2_2_6.tar.gz"
+        ],
+    )
+
+    http_archive(
+        name = "libapr1",               # Apache License 2.0
+        build_file = "//serving/third_party:libapr1.BUILD",
+        sha256 = "096968a363b2374f7450a3c65f3cc0b50561204a8da7bc03a2c39e080febd6e1",
+        strip_prefix = "apr-1.6.5",
+        patch_args = ["-p1"],
+        patches = [
+            "//serving/third_party:libapr1.patch",
+        ],
+        urls = [
+            "https://github.com/apache/apr/archive/1.6.5.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "libaprutil1",                                # Apache License 2.0
+        build_file = "//serving/third_party:libaprutil1.BUILD",
+        sha256 = "1e4299da5a3eca49cc3acab60600d0d7c0cda2de46d662ca14fadf5ab68a8c4f",
+        strip_prefix = "apr-util-1.6.1",
+        patch_args = ["-p1"],
+        patches = [
+            "//serving/third_party:libaprutil1.patch",
+        ],
+        urls = [
+            "https://github.com/apache/apr-util/archive/1.6.1.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "mxml",                                        # Apache License 2.0
+        build_file = "//serving/third_party:mxml.BUILD",
+        sha256 = "4d850d15cdd4fdb9e82817eb069050d7575059a9a2729c82b23440e4445da199",
+        strip_prefix = "mxml-2.12",
+        patch_args = ["-p1"],
+        patches = [
+            "//serving/third_party:mxml.patch",
+        ],
+        urls = [
+            "https://github.com/michaelrsweet/mxml/archive/v2.12.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "hugectr",                                     # Apache License 2.0
+        build_file = "//third_party:hugectr.BUILD",
+        strip_prefix = "HugeCTR-4.3",
+        patch_args = ["-p1"],
+        patches = ["//third_party:HugeCTR.patch"],
+        urls = [
+            "https://github.com/NVIDIA-Merlin/HugeCTR/archive/refs/tags/v4.3.tar.gz",
         ],
     )
 

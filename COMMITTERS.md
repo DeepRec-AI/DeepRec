@@ -1,7 +1,3 @@
-# Leader & Co-leaders
-
-- Tongxuan LIU, tongxuan.ltx@alibaba-inc.com, Alibaba
-
 # Committer List
 
 - Tongxuan LIU, tongxuan.ltx@alibaba-inc.com, Alibaba
@@ -11,9 +7,15 @@
 - Bangduo CHEN, chenbangduo.cbd@alibaba-inc.com, Alibaba
 - Junqi HU, hujunqi.hjq@alibaba-inc.com, Alibaba
 - Yitong HUANG, huangyitong.hyt@alibaba-inc.com, Alibaba
+- Man YUAN, yuanman.ym@alibaba-inc.com, Alibaba
+- Langshi CHEN, langshi.cls@alibaba-inc.com, Alibaba
+- Wanchen SUI, wanchen.swc@alibaba-inc.com, Alibaba
+- Lanbo LI, lanbo.llb@alibaba-inc.com, Alibaba
+- Ziji SHI, ziji.shi@alibaba-inc.com, Alibaba
 - Yong LI, jiufeng.ly@alibaba-inc.com, Alibaba
 - Wei LIN, weilin.lw@alibaba-inc.com, Alibaba
 - Ruozhou ZANG, zrzn@foxmail.com, MetaApp
+- Jin OUYANG, oyjmical@gmail.com, Kuaishou
 - Changqing LI, changqing.li@intel.com, Intel
 - Pujiang HE, pujiang.he@intel.com, Intel
 - Weifei YU, weifei.yu@intel.com, Intel

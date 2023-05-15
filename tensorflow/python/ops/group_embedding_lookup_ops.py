@@ -11,7 +11,9 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.framework import dtypes
 
 __all__ = ["group_embedding_var_lookup", "_GroupGatherGrad",
-           "group_variable_lookup", "_GroupEmbeddingLookup"]
+           "group_variable_lookup", "_GroupEmbeddingLookup",
+           "group_embedding_var_lookup_dense", "_GroupGatherDenseGrad",
+           "group_variable_lookup_dense", "_GroupLookupGrad"]
 
 #for GPU EV group_lookup
 def group_embedding_var_lookup(params,
@@ -46,34 +48,31 @@ def group_embedding_var_lookup(params,
 @ops.RegisterGradient("GroupEmbeddingVarLookup")
 def _GroupGatherGrad(op, *grads):
   ev_num = op.get_attr("num_lookups")
-  return_grads = []
   combiner = op.get_attr("combiner")
   dimension = op.get_attr("dimension")
+  return_grads = []
   params = op.inputs[:ev_num]
-  sp_values = op.inputs[ev_num:2*ev_num]
-  sp_values_offset = op.outputs[ev_num:2*ev_num]
-  tmp_grads = gen_kv_variable_ops.group_embedding_variable_lookup_grad(grads[:ev_num],
+  sp_indices = op.inputs[ev_num*2:ev_num*3]
+  unique_values = op.outputs[ev_num:2*ev_num]
+  batch_nums = op.outputs[3*ev_num:4*ev_num]
+  with ops.colocate_with(params[0]):
+    nnz_grads = gen_kv_variable_ops.group_embedding_variable_lookup_grad(grads[:ev_num],
                                                                       params,
-                                                                      sp_values,
-                                                                      sp_values_offset,
+                                                                      unique_values,
+                                                                      sp_indices,
+                                                                      batch_nums,
                                                                       dimension,
                                                                       combiner)                                                            
   for i in range(ev_num):
-    handle = op.inputs[i]
+    handle = params[i]
     while handle.op.type != "KvVarHandleOp":
       handle = handle.op.inputs[0]
     params_shape = ops.convert_to_tensor(
         tensor_shape.TensorShape(handle.op.get_attr("shape")))
-    indice = op.inputs[ev_num+i]
-    grad = tmp_grads[i]
-    size = array_ops.expand_dims(array_ops.size(indice), 0)
-    values_shape = array_ops.concat([size, params_shape[0:]], 0)
-    grad = array_ops.reshape(grad, values_shape)
-    indice = array_ops.reshape(indice, size)
+    indice = unique_values[i]
+    grad = nnz_grads[i]
     return_grads.append(ops.IndexedSlices(grad, indice, params_shape))
-  for _ in range(ev_num*3 + 2):
-    return_grads.append(None)
-  return return_grads
+  return return_grads + [None for _ in range(ev_num*3 + 2)]
   
 #for GPU EV group_lookup
 def group_variable_lookup(params,
@@ -114,26 +113,87 @@ def _GroupEmbeddingLookup(op, *grads):
   combiner = op.get_attr("combiner")
   dimension = op.get_attr("dimension")
   params = op.inputs[:ev_num]
-  sp_values = op.inputs[ev_num:2*ev_num]
-  sp_values_offset = op.outputs[ev_num:2*ev_num]
-  tmp_grads = gen_kv_variable_ops.group_variable_lookup_grad(grads[:ev_num],
-                                                            params,
-                                                            sp_values,
-                                                            sp_values_offset,
-                                                            dimension,
-                                                            combiner)
+  sp_indices = op.inputs[ev_num*2:ev_num*3]
+  unique_values = op.outputs[ev_num:2*ev_num]
+  batch_nums = op.outputs[3*ev_num:4*ev_num]
+  with ops.colocate_with(params[0]):
+    nnz_grads = gen_kv_variable_ops.group_variable_lookup_grad(grads[:ev_num],
+                                                               params,
+                                                               unique_values,
+                                                               sp_indices,
+                                                               batch_nums,
+                                                               dimension,
+                                                               combiner)
   for i in range(ev_num):
-    params = op.inputs[i]
-    with ops.colocate_with(params):
-      params_shape = array_ops.shape(params, out_type=ops.dtypes.int64)
+    param = params[i]
+    with ops.colocate_with(param):
+      params_shape = array_ops.shape(param, out_type=ops.dtypes.int64)
       params_shape = math_ops.cast(params_shape, dtypes.int32)
-    indice = op.inputs[ev_num+i]
-    grad = tmp_grads[i]
-    size = array_ops.expand_dims(array_ops.size(indice), 0)
-    values_shape = array_ops.concat([size, params_shape[1:]], 0)
-    grad = array_ops.reshape(grad, values_shape)
-    indice = array_ops.reshape(indice, size)
+    grad = nnz_grads[i]
+    indices = unique_values[i]
+    return_grads.append(ops.IndexedSlices(grad, indices, params_shape))
+  return return_grads + [None for _ in range(ev_num*3 + 2)]
+
+#for GPU EV group_lookup_dense
+def group_embedding_var_lookup_dense(params,
+                                     dense_values,
+                                     dimensions,
+                                     ev_init_value = None):
+  if ev_init_value is not None:
+    default_value = ev_init_value
+    is_use_default_value_tensor = True
+  else:
+    default_value = ops.convert_to_tensor(1.0)
+    is_use_default_value_tensor = False
+  return gen_kv_variable_ops.group_embedding_var_lookup_dense(params,
+                                                              dense_values,
+                                                              default_value,
+                                                              dimensions,
+                                                              is_use_default_value_tensor)
+
+
+@ops.RegisterGradient("GroupEmbeddingVarLookupDense")
+def _GroupGatherDenseGrad(op, *grads):
+  ev_num = op.get_attr("num_lookups")
+  return_grads = []
+  params = op.inputs[:ev_num]
+  unique_values = op.outputs[ev_num:2*ev_num]
+
+  for i in range(ev_num):
+    handle = op.inputs[i]
+    while handle.op.type != "KvVarHandleOp":
+      handle = handle.op.inputs[0]
+    params_shape = ops.convert_to_tensor(
+        tensor_shape.TensorShape(handle.op.get_attr("shape")))
+    indice = unique_values[i]
+    grad = grads[i]
     return_grads.append(ops.IndexedSlices(grad, indice, params_shape))
-  for _ in range(ev_num*3+2):
-    return_grads.append(None)
-  return return_grads
+  return return_grads + [None for _ in range(ev_num + 1)]
+
+#for GPU EV group_lookup_dense
+def group_variable_lookup_dense(params,
+                                dense_values,
+                                dimensions):
+  default_value = ops.convert_to_tensor(1.0)
+  return gen_kv_variable_ops.group_variable_lookup_dense(params,
+                                                         dense_values=dense_values,
+                                                         default_value=default_value,
+                                                         dimension=dimensions)
+
+
+@ops.RegisterGradient("GroupVariableLookupDense")
+def _GroupLookupGrad(op, *grads):
+  ev_num = op.get_attr("num_lookups")
+  return_grads = []
+  params = op.inputs[:ev_num]
+  unique_values = op.outputs[ev_num:2*ev_num]
+
+  for i in range(ev_num):
+    param = params[i]
+    with ops.colocate_with(param):
+      params_shape = array_ops.shape(param, out_type=ops.dtypes.int64)
+      params_shape = math_ops.cast(params_shape, dtypes.int32)
+    grad = nnz_grads[i]
+    indices = unique_values[i]
+    return_grads.append(ops.IndexedSlices(grad, indices, params_shape))
+  return return_grads + [None for _ in range(ev_num + 1)]

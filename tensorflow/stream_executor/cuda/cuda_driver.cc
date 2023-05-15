@@ -1646,6 +1646,14 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     GpuContext* context, GpuGraphHandle graph, GpuGraphExecHandle* graph_exec) {
 #if CUDA_VERSION >= 11000
   ScopedActivateContext activated{context};
+#if CUDA_VERSION >= 12000
+  CUresult res = cuGraphInstantiate(graph_exec, graph, 0LL);
+  if (res != CUDA_SUCCESS) {
+    LOG(ERROR) << "could not instantiate executable graph for context "
+               << context->context() << ": " << ToString(res);
+    return false;
+  }
+#else
   char log_buffer[1024];
   CUresult res = cuGraphInstantiate(graph_exec, graph,
                                     /* error_node = */ nullptr, log_buffer,
@@ -1656,6 +1664,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
                << log_buffer;
     return false;
   }
+#endif
 
   VLOG(1) << "successfully instantiated executable graph for context "
           << context->context() << " on thread";
@@ -1672,9 +1681,14 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
                                                    GpuGraphHandle graph) {
 #if CUDA_VERSION >= 11000
   ScopedActivateContext activated{context};
+#if CUDA_VERSION >= 12000
+  CUgraphExecUpdateResultInfo result_info;
+  CUresult res = cuGraphExecUpdate(graph_exec, graph, &result_info);
+#else
   CUresult res = cuGraphExecUpdate(graph_exec, graph,
                                    /* error_node = */ nullptr,
                                    /* update_result = */ nullptr);
+#endif
   if (res != CUDA_SUCCESS) {
     // VLOG because updating a graph is often done optimistically before falling
     // back to instantiating a new graph, so an ERROR is not appropriate.

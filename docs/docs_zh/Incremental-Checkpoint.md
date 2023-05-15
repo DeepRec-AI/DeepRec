@@ -74,7 +74,7 @@ def model_fn(self, features, labels, mode, params):
 ```
 
 ## 模型导出
-在默认情况下，无法将增量checkpoint相关子图导出到SavedModel中，如果用户希望在Serving中通过“增量模型更新”来支持秒级更新，就需要将增量相关子图导出到SavedModel。目前需要使用DeepRec提供的[Estimator](https://github.com/AlibabaPAI/estimator)来导出。
+在默认情况下，无法将增量checkpoint相关子图导出到SavedModel中，如果用户希望在Serving中通过“增量模型更新”来支持秒级更新，就需要将增量相关子图导出到SavedModel。目前需要使用DeepRec提供的[Estimator](https://github.com/DeepRec-AI/estimator)来导出。
 
 示例代码：
 ```python

@@ -982,6 +982,13 @@ class MklFusedMatMulOpTest : public OpsTestBase {
             next_op = ops::Add(root.WithOpName("with_add"), next_op, input_op);
           }
 
+          if (std::find(fused_ops.begin(), fused_ops.end(), "LeakyRelu") !=
+              fused_ops.end()) {
+            last_op = "with_leakyrelu";
+            next_op =
+                ops::internal::LeakyRelu(root.WithOpName(last_op), next_op);
+          }
+
           CommonTestUtilities<T>::RunAndFetch(root, last_op, output);
         };
 
@@ -1075,6 +1082,15 @@ TYPED_TEST_P(MklFusedMatMulOpTest, WithBiasAndAdd) {
                           {"BiasAdd", "Add"});
 }
 
+TYPED_TEST_P(MklFusedMatMulOpTest, WithBiasAndLeakyRelu) {
+  const int batch = 3;
+  const int input_channel = 4;
+  const int output_channel = 5;
+
+  this->VerifyFusedMatMul(batch, input_channel, output_channel,
+                          {"BiasAdd", "LeakyRelu"});
+}
+
 REGISTER_TYPED_TEST_CASE_P(MklFusedMatMulOpTest,  //
                            WithBias,              //
                            WithBiasAndRelu,       //
@@ -1083,6 +1099,7 @@ REGISTER_TYPED_TEST_CASE_P(MklFusedMatMulOpTest,  //
                            WithBiasAndTanh,       //
                            WithBiasAndGelu,       //
                            WithBiasAndGeluErf,    //
+                          WithBiasAndLeakyRelu,  //
                            WithBiasAndAdd);
 
 using MklFusedMatMulDataTypes = ::testing::Types<float>;

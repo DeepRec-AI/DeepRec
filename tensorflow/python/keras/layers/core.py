@@ -1047,7 +1047,6 @@ class Dense(Layer):
       if not context.executing_eagerly():
         shape = inputs.shape.as_list()
         output_shape = shape[:-1] + [self.units]
-        outputs.set_shape(output_shape)
     else:
       inputs = math_ops.cast(inputs, self._compute_dtype)
       if K.is_sparse(inputs):
@@ -1058,6 +1057,10 @@ class Dense(Layer):
       outputs = nn.bias_add(outputs, self.bias)
     if self.activation is not None:
       return self.activation(outputs)  # pylint: disable=not-callable
+    
+    # Delay Reshape so that Biasadd and activation can be fused with MatMul.
+    if rank > 2 and not context.executing_eagerly():
+        outputs.set_shape(output_shape)
     return outputs
 
   def compute_output_shape(self, input_shape):

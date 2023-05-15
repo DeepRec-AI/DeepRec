@@ -330,6 +330,9 @@ The second argument "**model_config**" of the initialize function is a content i
 # whether to use multi-stream In GPU tasks
 "use_multi_stream": false,
 
+# Whether to enable device placement optimization in GPU tasks
+"enable_device_placement_optimization": false,
+
 # Whether to execute Session run in a single thread
 "enable_inline_execute": false,
   

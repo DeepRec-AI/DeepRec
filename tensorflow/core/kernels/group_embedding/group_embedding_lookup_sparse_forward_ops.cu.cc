@@ -24,7 +24,7 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/resource_var.h"
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
-#include "tensorflow/core/kernels/group_lookup_forward_base_ops.cu.h"
+#include "tensorflow/core/kernels/group_embedding/group_embedding_lookup_sparse_forward_base_ops.cu.h"
 #include "tensorflow/core/kernels/training_op_helpers.h"
 #include "tensorflow/core/lib/core/spin_rw_lock.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
@@ -68,9 +68,9 @@ class GroupEmbeddingVarLookupOp
     GroupEmbeddingLookupForWard<TKey, TValue> lookuper(
         this->num_lookups_, this->dimension_, this->max_norm_, gpu_allocator);
 
-    std::vector<Tensor> tensor_list_;
+    std::vector<Tensor> tensor_list;
 
-    for (size_t i = 0; i < this->num_lookups_; ++i) {
+    for (int i = 0; i < this->num_lookups_; ++i) {
       EmbeddingVar<TFKey, TValue>* ev = nullptr;
       OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, i), &ev));
       core::ScopedUnref unref_me(ev);
@@ -224,8 +224,20 @@ class GroupEmbeddingVarLookupOp
       TensorShape values_offset_tensor_shape =
           TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
 
+      // Fake Output
+      Tensor* unique_keys_tensor = nullptr;
+      OP_REQUIRES_OK(ctx,
+                     ctx->forward_input_or_allocate_output(
+                        {this->num_lookups_ + i}, this->num_lookups_ + i,
+                        sp_values_tensor.shape(), &unique_keys_tensor));
+
+      Tensor* unique_idx_tensor = nullptr;
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 2 + i,
+                                               values_offset_tensor_shape,
+                                               &unique_idx_tensor));
+
       Tensor* values_offset_tensor = nullptr;
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ + i,
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 3 + i,
                                                values_offset_tensor_shape,
                                                &values_offset_tensor));
       auto values_offset = values_offset_tensor->flat<int>().data();
@@ -248,7 +260,7 @@ class GroupEmbeddingVarLookupOp
           values_offset, nnz);
 
       lookuper.set(group_embedding_args);
-      tensor_list_.emplace_back(out_tensor);
+      tensor_list.emplace_back(out_tensor);
     }
 
     if (this->combiner_ == "sum") {
@@ -301,7 +313,7 @@ class GroupVariableLookupOp
     GroupEmbeddingLookupForWard<TKey, TValue> lookuper(
         this->num_lookups_, this->dimension_, this->max_norm_, gpu_allocator);
 
-    for (size_t i = 0; i < this->num_lookups_; ++i) {
+    for (int i = 0; i < this->num_lookups_; ++i) {
       const Tensor& emb_variable_tensor = ctx->input(i);
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
       int64 emb_vec_size = emb_variable_tensor.shape().dim_size(1);
@@ -321,8 +333,19 @@ class GroupVariableLookupOp
       // allocate offset tensor
       TensorShape values_offset_tensor_shape =
           TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
+      // Fake Output
+      Tensor* unique_keys_tensor = nullptr;
+      OP_REQUIRES_OK(ctx,
+                     ctx->forward_input_or_allocate_output(
+                        {this->num_lookups_ + i}, this->num_lookups_ + i,
+                        sp_values_tensor.shape(), &unique_keys_tensor));
+
+      Tensor* unique_idx_tensor = nullptr;
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 2 + i,
+                                               values_offset_tensor_shape,
+                                               &unique_idx_tensor));
       Tensor* values_offset_tensor = nullptr;
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ + i,
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 3 + i,
                                                values_offset_tensor_shape,
                                                &values_offset_tensor));
       auto values_offset = values_offset_tensor->flat<int>().data();

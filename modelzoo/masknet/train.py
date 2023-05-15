@@ -158,6 +158,8 @@ class MaskNet():
                     activation=tf.nn.relu,
                     name=dnn_layer_scope)
                 if self.use_bn:
+                    # By using default axis=-1, the input is normalized across the last dimension.
+                    # Therefore, batch_norm behaves the same as layer_norm.
                     dnn_input = tf.layers.batch_normalization(
                         dnn_input, training=self.is_training, trainable=True)
                 self._add_layer_summary(dnn_input, dnn_layer_scope.name)
@@ -169,8 +171,9 @@ class MaskNet():
         with tf.variable_scope('mask_block' + str(index), default_name='mask_block', reuse=tf.AUTO_REUSE) as mask_block_scope:
             V_mask = self._dnn(dnn_input=V_emb, dnn_hidden_units=[
                                hidden_dim*reduction_ratio, hidden_dim])
-            LN_HID = tf.layers.batch_normalization(tf.layers.dense(
-                V_mask * V_hidden, output_dim, use_bias=False))
+            hidden_val = tf.layers.dense(V_mask * V_hidden, output_dim, use_bias=False)
+            LN = tf.keras.layers.LayerNormalization()
+            LN_HID = LN(hidden_val)
             V_out = tf.nn.relu(LN_HID)
         return V_out
 
@@ -188,15 +191,15 @@ class MaskNet():
                     for col in CATEGORICAL_COLUMNS:
                         adaptive_mask_tensors[col] = tf.ones([args.batch_size],
                                                              tf.int32)
-                    net = tf.feature_column.input_layer(
+                    feat_embedding = tf.feature_column.input_layer(
                         features=self._feature,
                         feature_columns=self._deep_column,
                         adaptive_mask_tensors=adaptive_mask_tensors)
                 else:
-                    net = tf.feature_column.input_layer(
+                    feat_embedding = tf.feature_column.input_layer(
                         features=self._feature,
                         feature_columns=self._deep_column)
-                self._add_layer_summary(net, 'input_from_feature_columns')
+                self._add_layer_summary(feat_embedding, 'input_from_feature_columns')
 
             # hidden layers
             dnn_scope = tf.variable_scope('dnn_layers',
@@ -204,20 +207,20 @@ class MaskNet():
             with dnn_scope.keep_weights(dtype=tf.float32) if self.bf16 \
                     else dnn_scope:
                 if self.bf16:
-                    net = tf.cast(net, dtype=tf.bfloat16)
+                    feat_embedding = tf.cast(feat_embedding, dtype=tf.bfloat16)
 
                 if self.model_type == "parallel":
                     block_out = []
                     for i in range(self._num_blocks):
                         block_out.append(self._maskblock(
-                            net, net, hidden_dim=net.shape[1], output_dim=64, reduction_ratio=1, index=i))
+                            feat_embedding, feat_embedding, hidden_dim=feat_embedding.shape[1], output_dim=64, reduction_ratio=1, index=i))
                     concat_out = tf.concat(block_out, -1)
                     V_out = self._dnn(concat_out, dnn_hidden_units=[64, 16, 1])
                 elif self.model_type == "serial":
-                    V_out = net
+                    V_out = feat_embedding
                     for i in range(self._num_blocks):
                         V_out = self._maskblock(
-                            net, V_out, hidden_dim=V_out.shape[1], output_dim=64, reduction_ratio=1, index=i)
+                            feat_embedding, V_out, hidden_dim=V_out.shape[1], output_dim=64, reduction_ratio=1, index=i)
                     V_out = tf.layers.dense(V_out, units=1)
 
         self._logits = V_out
@@ -307,7 +310,7 @@ def build_model_input(filename, batch_size, num_epochs):
     '''Work Queue Feature'''
     if args.workqueue and not args.tf:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         # For multiple files:
         # work_queue = WorkQueue([filename, filename1,filename2,filename3])
         files = work_queue.input_dataset()
@@ -320,13 +323,15 @@ def build_model_input(filename, batch_size, num_epochs):
         if args.parquet_dataset_shuffle:
             dataset = dataset.shuffle(buffer_size=20000,
                                       seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=28)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=20000,
                                   seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
@@ -392,7 +397,7 @@ def build_feature_columns():
                                 column_name, dtype=tf.string, ev_option=ev_opt)
                         elif args.adaptive_emb:
                             '''                 Adaptive Embedding Feature Part 2 of 2
-                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                             'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                             For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                             tensor with shape [batch_size].
@@ -470,7 +475,7 @@ def build_feature_columns():
                             column_name, dtype=tf.string, ev_option=ev_opt)
                     elif args.adaptive_emb:
                         '''                 Adaptive Embedding Feature Part 2 of 2
-                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                         'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                         For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                         tensor with shape [batch_size].
@@ -544,7 +549,7 @@ def train(sess_config,
     '''
                             Incremental_Checkpoint
     Please add `save_incremental_checkpoint_secs` in 'tf.train.MonitoredTrainingSession'
-    it's default to None, Incremental_save checkpoint time in seconds can be set 
+    it's default to None, Incremental_save checkpoint time in seconds can be set
     to use incremental checkpoint function, like `tf.train.MonitoredTrainingSession(
         save_incremental_checkpoint_secs=args.incremental_ckpt)`
     '''
@@ -607,7 +612,8 @@ def main(tf_config=None, server=None):
         train_file += '/train.csv'
         test_file += '/eval.csv'
     if (not os.path.exists(train_file)) or (not os.path.exists(test_file)):
-        print("Dataset does not exist in the given data_location.")
+        print("Dataset does not exist in the given data_location. \
+            Expected {} and {}.".format(train_file, test_file))
         sys.exit()
     no_of_training_examples = 0
     no_of_test_examples = 0
@@ -654,7 +660,7 @@ def main(tf_config=None, server=None):
     dataset_output_types = tf.data.get_output_types(train_dataset)
     dataset_output_shapes = tf.data.get_output_shapes(test_dataset)
     iterator = tf.data.Iterator.from_structure(dataset_output_types,
-                                               dataset_output_shapes)    
+                                               dataset_output_shapes)
     next_element = iterator.get_next()
 
     train_init_op = iterator.make_initializer(train_dataset)

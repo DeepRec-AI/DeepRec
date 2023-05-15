@@ -115,7 +115,7 @@ __global__ void WeightedEmbeddingVarComputeFn(
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
 
-      TValue out = 0.0;
+      float out = 0.0f;
 
       // #pragma unroll
       if (feature_num > 0) {

@@ -239,7 +239,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
                             [1., 1., 1.],
                             [1., 1., 1.],
                             [1., 1., 1.]], fetches[1])
-        self.assertAllEqual([0, 0, 0, 0, 0, 0], fetches[2])
+        self.assertAllEqual([-1, -1, -1, -1, -1, -1], fetches[2])
         self.assertAllEqual([1, 1, 1, 1, 1, 1], fetches[3])
 
   def testEmbeddingVariableForGetShape(self):
@@ -2081,7 +2081,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       s, f, v = sess.run([shape, frequency, version])
       self.assertAllEqual(np.array([5,3]), s)
       self.assertAllEqual(np.array([3,1,2,0,2,0,1]), f)
-      self.assertAllEqual(np.array([2,0,1,0,2,0,2]), v)
+      self.assertAllEqual(np.array([2,0,1,-1,2,-1,2]), v)
 
   def testEmbeddingVariableForInference(self):
     print("testEmbeddingVariableForInference")

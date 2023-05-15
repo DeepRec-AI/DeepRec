@@ -333,6 +333,11 @@ Status MetaOptimizer::InitializeOptimizersByName(
     std::vector<std::unique_ptr<GraphOptimizer>>* optimizers) const {
   std::set<string> initialized_custom_optimizers;
   for (const string& optimizer_name : cfg_.optimizers()) {
+    if (optimizer_name == "TensorRTOptimizer" &&
+        cfg_.disable_trt() == RewriterConfig::ON) {
+      continue;
+    }
+
     auto optimizer = MakeNewOptimizer(optimizer_name);
     if (optimizer) {
       VLOG(2) << "Registered default graph optimizer: " << optimizer_name;
@@ -361,6 +366,11 @@ Status MetaOptimizer::InitializeCustomGraphOptimizers(
     const std::set<string>& pre_initialized_optimizers,
     std::vector<std::unique_ptr<GraphOptimizer>>* optimizers) const {
   for (const auto& optimizer_config : cfg_.custom_optimizers()) {
+    if (optimizer_config.name() == "TensorRTOptimizer" &&
+        cfg_.disable_trt() == RewriterConfig::ON) {
+      continue;
+    }
+
     if (pre_initialized_optimizers.find(optimizer_config.name()) !=
         pre_initialized_optimizers.end()) {
       continue;
@@ -901,6 +911,7 @@ bool MetaOptimizerEnabled(const ConfigProto& cfg) {
          rewrite_cfg.scoped_allocator_optimization() == RewriterConfig::ON ||
          rewrite_cfg.pin_to_host_optimization() == RewriterConfig::ON ||
          rewrite_cfg.use_multi_stream() == RewriterConfig::ON ||
+         rewrite_cfg.disable_trt() != RewriterConfig::ON ||
          AutoMixedPrecisionEnabled(rewrite_cfg.auto_mixed_precision()) ||
          AutoMixedPrecisionEnabled(rewrite_cfg.auto_mixed_precision_mkl()) ||
          !rewrite_cfg.optimizers().empty() ||

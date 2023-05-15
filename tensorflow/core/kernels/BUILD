@@ -12,6 +12,7 @@ load(
     "tf_cc_tests",
     "tf_copts",
     "tf_cuda_library",
+    "tf_cuda_only_cc_test",
     "cuda_library",
     "tf_kernel_library",
     "tf_mkl_kernel_library",
@@ -519,6 +520,26 @@ cc_library(
     name = "ops_util_hdrs",
     hdrs = ["ops_util.h"],
     deps = ["//third_party/eigen3"],
+)
+
+cc_library(
+    name = "gpu_prim_helpers",
+    hdrs = ["gpu_prim_helpers.h"]
+)
+
+tf_cuda_only_cc_test(
+    name = "gpu_prim_helpers_test",
+    srcs = ["gpu_prim_helpers_test.cu.cc"],
+    tags = tf_cuda_tests_tags() + ["no_cuda_asan"],
+    deps = [
+        ":gpu_prim_helpers",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 cc_library(
@@ -2821,6 +2842,15 @@ tf_kernel_library(
       "//tensorflow/core:tensor_buffer_ops_op_lib",
       "//tensorflow/core",
       "//third_party/eigen3",
+    ],
+)
+
+tf_kernel_library(
+    name = "tensor_pack_trans_ops",
+    srcs = ["tensor_pack_trans_ops.cc"],
+    deps=[
+        "//tensorflow/core:gpu_runtime",
+        "//tensorflow/core:proto_text"
     ],
 )
 
@@ -5362,10 +5392,14 @@ tf_kernel_library(
 
 tf_kernel_library(
     name = "group_embedding_ops",
-    gpu_srcs = ["group_lookup_forward_base_ops.cu.h",
-                "group_lookup_backward_base_ops.cu.h",
-                "group_lookup_forward.cu.cc",
-                "group_lookup_backward.cu.cc",],
+    hdrs = ["group_embedding/group_embedding_lookup_sparse_forward_base_ops.h"],
+    srcs = ["group_embedding/group_embedding_lookup_ops.cc",
+            "group_embedding/group_embedding_lookup_sparse_forward_ops.cc",
+            "group_embedding/group_embedding_lookup_sparse_backward_ops.cc",],
+    gpu_srcs = ["group_embedding/group_embedding_lookup_sparse_forward_base_ops.cu.h",
+                "group_embedding/group_embedding_lookup_sparse_backward_base_ops.cu.h",
+                "group_embedding/group_embedding_lookup_sparse_forward_ops.cu.cc",
+                "group_embedding/group_embedding_lookup_sparse_backward_ops.cu.cc",],
     deps = ["//third_party/eigen3",
             "//tensorflow/core/kernels:gpu_device_array",
             ":training_op_helpers",
@@ -5373,6 +5407,7 @@ tf_kernel_library(
             "//tensorflow/core:embedding_gpu",
             "@sparsehash_c11//:dense_hash_map",
             "@libcuckoo//:libcuckoo",
+            ":unique_ali_op",
             "@com_github_google_leveldb//:leveldb",] + DYNAMIC_DEPS + mkl_deps() +
            if_cuda(["@cub_archive//:cub",
                     ":fused_embedding_common_cuh",
@@ -5382,8 +5417,7 @@ tf_kernel_library(
 tf_cuda_cc_test(
     name = "group_embedding_ops_test",
     size = "small",
-    srcs = ["group_lookup_ops_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    srcs = ["group_embedding/group_embedding_lookup_ops_test.cc"],
     extra_copts = ["-fexceptions", "-g"],
     deps = [
         ":group_embedding_ops",
@@ -5738,7 +5772,11 @@ tf_kernel_library(
 tf_kernel_library(
     name = "sparse_slice_op",
     prefix = "sparse_slice_op",
-    deps = SPARSE_DEPS,
+    deps = SPARSE_DEPS + if_cuda_or_rocm([
+        ":cuda_solvers",
+        ":gpu_device_array",
+        ":gpu_prim_helpers"
+    ]),
 )
 
 tf_kernel_library(

@@ -33,7 +33,7 @@ class DevicePlacementPass : public GraphOptimizationPass {
     if (options.session_options == nullptr) {
       return Status::OK();
     }
-    
+
     bool is_enable_device_placement_optimization =
       options.session_options->config.graph_options().optimizer_options()
             .device_placement_optimization();
@@ -42,7 +42,7 @@ class DevicePlacementPass : public GraphOptimizationPass {
     } else {
       return Status::OK();
     }
-    
+
     Graph* graph = options.graph->get();
     if (graph == nullptr)
       return errors::Internal("a graph should be available");
@@ -70,7 +70,7 @@ class DevicePlacementPass : public GraphOptimizationPass {
 
     // Put the nodes in front of the boundary nodes on the CPU
     PlaceNodesOnCPU(cpu_device_name, boundary_node_set, device_graph.get());
-    
+
     options.graph->swap(device_graph);
     return Status::OK();
   }
@@ -100,38 +100,10 @@ class DevicePlacementPass : public GraphOptimizationPass {
 
   void DealWithNode(Graph* dest, Node* n,
                     const std::vector<bool>& is_var_relate,
-		    std::queue<Node*> &queue,
+		    std::queue<Node*>& queue,
 		    std::unordered_set<Node*>& has_visit_node,
 		    std::unordered_set<Node*>& boundary_node_set) {
-    if (n->IsConstant()) {
-      // Classify the output edges of Const Op
-      bool is_connect_to_marked_graph = false;
-      std::unordered_set<const Edge*> edge_to_unmarked_graph;
-      for (auto edge : n->out_edges()) {
-	Node* dst = edge->dst();
-	if (is_var_relate[dst->id()]) {
-	  is_connect_to_marked_graph = true;
-	} else {
-	  edge_to_unmarked_graph.emplace(edge);
-	  queue.emplace(dst);
-	}
-      }
-
-      // const op connects to marked graph and unmarked graph at the same time,
-      // duplicate a new const op node to avoid memcpy bewteen cpu and gpu.
-      if (is_connect_to_marked_graph && !edge_to_unmarked_graph.empty()) {
-	Node* new_node = dest->CopyNode(n);
-	std::string new_name(n->name() + "_duplicate");
-	new_node->set_name(new_name);
-	has_visit_node.emplace(new_node);
-
-	for (auto edge : edge_to_unmarked_graph) {
-	  Node* dst_node = edge->dst();
-	  dest->AddEdge(new_node, 0, dst_node, edge->dst_input());
-	  dest->RemoveEdge(edge);
-	}
-      }
-    } else {
+    if (!n->IsConstant()) {
       for (auto edge : n->out_edges()) {
 	Node* dst = edge->dst();
 	if (is_var_relate[dst->id()]) {
@@ -139,6 +111,40 @@ class DevicePlacementPass : public GraphOptimizationPass {
 	} else {
 	  queue.emplace(dst);
 	}
+      }
+      return;
+    }
+
+    // classify the output edges of const op
+    bool is_connect_to_marked_graph = false;
+    std::unordered_set<const Edge*> data_edge_to_unmarked_graph;
+    for (auto edge : n->out_edges()) {
+      // skip control edge
+      if (edge->IsControlEdge())
+	continue;
+
+      Node* dst = edge->dst();
+      if (is_var_relate[dst->id()]) {
+	is_connect_to_marked_graph = true;
+      } else {
+	data_edge_to_unmarked_graph.emplace(edge);
+	queue.emplace(dst);
+      }
+    }
+
+    // const op connects to marked graph and unmarked graph at the same time,
+    // duplicate a new const op node to avoid memcpy bewteen cpu and gpu.
+    if (is_connect_to_marked_graph && !data_edge_to_unmarked_graph.empty()) {
+      Node* new_node = dest->CopyNode(n);
+      std::string new_name(n->name() + "_duplicate");
+      new_node->set_name(new_name);
+      has_visit_node.emplace(new_node);
+
+      for (auto edge : data_edge_to_unmarked_graph) {
+	Node* dst_node = edge->dst();
+        dest->AddEdge(new_node, edge->src_output(), dst_node,
+                      edge->dst_input());
+	dest->RemoveEdge(edge);
       }
     }
   }
@@ -172,12 +178,12 @@ class DevicePlacementPass : public GraphOptimizationPass {
 	cpu_device_name = (*iter)->name();
 	break;
       }
-    }    
+    }
   }
 
   void PlaceNodesOnCPU(const std::string& cpu_device_name,
       const std::unordered_set<Node*>& boundary_node_set, Graph* device_graph) {
-    
+
     auto set_stage_subgraph_node_device = [cpu_device_name](Node* n) {
       n->set_assigned_device_name(cpu_device_name);
     };
@@ -187,9 +193,9 @@ class DevicePlacementPass : public GraphOptimizationPass {
       boundary_node_vec.emplace_back(node);
     }
     ReverseDFSFrom(*device_graph, boundary_node_vec,
-                   std::move(set_stage_subgraph_node_device), nullptr);    
+                   std::move(set_stage_subgraph_node_device), nullptr);
   }
-      
+
 };
 
 REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_PLACEMENT, 0,

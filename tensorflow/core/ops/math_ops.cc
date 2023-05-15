@@ -1066,6 +1066,8 @@ REGISTER_OP("_FusedMatMul")
     .Attr("fused_ops: list(string) = []")
     // Attributes for the FusedBatchNorm ----------- //
     .Attr("epsilon: float = 0.0001")
+    // Attributes for the LeakyRelu ----------------------------------------- //
+    .Attr("leakyrelu_alpha: float = 0.2")
     // --------------------------------------------- //
     .SetShapeFn(shape_inference::MatMulShape)
     .Doc(R"doc(
@@ -1408,6 +1410,7 @@ REGISTER_OP("UnsortedSegmentProd")
     .Attr("Tnumsegments: {int32,int64} = DT_INT32")
     .SetShapeFn(shape_inference::UnsortedSegmentReductionShapeFn);
 
+#ifndef TF_API_COMPATIBLE_1150
 REGISTER_OP("SparseSegmentSum")
     .Input("data: T")
     .Input("indices: Tidx")
@@ -1495,6 +1498,87 @@ REGISTER_OP("SparseSegmentSqrtNGrad")
     .Attr("Tidx: {int32, int64} = DT_INT32")
     .Attr("Tsegmentids: {int32,int64} = DT_INT32")
     .SetShapeFn(SparseSegmentReductionGradShapeFn);
+#else
+REGISTER_OP("SparseSegmentSum")
+    .Input("data: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Output("output: T")
+    .Attr("T: realnumbertype")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionShapeFn);
+
+REGISTER_OP("SparseSegmentSumWithNumSegments")
+    .Input("data: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Input("num_segments: Tnumsegments")
+    .Output("output: T")
+    .Attr("T: realnumbertype")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .Attr("Tnumsegments: {int32,int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionWithNumSegmentsShapeFn);
+
+REGISTER_OP("SparseSegmentMean")
+    .Input("data: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Output("output: T")
+    .Attr("T: {float, double}")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionShapeFn);
+
+REGISTER_OP("SparseSegmentMeanWithNumSegments")
+    .Input("data: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Input("num_segments: Tnumsegments")
+    .Output("output: T")
+    .Attr("T: {float, double}")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .Attr("Tnumsegments: {int32,int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionWithNumSegmentsShapeFn);
+
+REGISTER_OP("SparseSegmentMeanGrad")
+    .Input("grad: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Input("output_dim0: int32")
+    .Output("output: T")
+    .Attr("T: {float, double}")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionGradShapeFn);
+
+REGISTER_OP("SparseSegmentSqrtN")
+    .Input("data: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Output("output: T")
+    .Attr("T: {float, double}")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionShapeFn);
+
+REGISTER_OP("SparseSegmentSqrtNWithNumSegments")
+    .Input("data: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Input("num_segments: Tnumsegments")
+    .Output("output: T")
+    .Attr("T: {float, double}")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .Attr("Tnumsegments: {int32,int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionWithNumSegmentsShapeFn);
+
+REGISTER_OP("SparseSegmentSqrtNGrad")
+    .Input("grad: T")
+    .Input("indices: Tidx")
+    .Input("segment_ids: int32")
+    .Input("output_dim0: int32")
+    .Output("output: T")
+    .Attr("T: {float, double}")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .SetShapeFn(SparseSegmentReductionGradShapeFn);
+#endif
 
 REGISTER_OP("All")
     .Input("input: bool")

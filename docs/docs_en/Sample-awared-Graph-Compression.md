@@ -67,7 +67,7 @@ def serving_input_receiver_fn():
 estiamtor = ...
 estiamtor.export_savedmodel(output_dir, serving_input_receiver_fn)
 ```
-1. Need to use [estimator](https://github.com/AlibabaPAI/estimator) provided by DeepRec at the same time
+1. Need to use [estimator](https://github.com/DeepRec-AI/estimator) provided by DeepRec at the same time
 
 2. Input data format
     Generally, in the inference scenario, the input data is protobuf, which contains the values of each feature required by the model and the tensor indicating the number of items in the sample. The user tensor shape is [Duser], and the item tensor shape is [N, Ditem]

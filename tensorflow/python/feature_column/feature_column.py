@@ -209,7 +209,8 @@ def _internal_input_layer(features,
       with variable_scope.variable_scope(
           None, default_name=column._var_scope_name):  # pylint: disable=protected-access
         if group_name != '':
-          output_tensors.append(group_embedding_tensor[column])
+          output_tensor = group_embedding_tensor[column]
+          output_tensors.append(output_tensor)
         else:
           tensor = column._get_dense_tensor(  # pylint: disable=protected-access
               builder,
@@ -220,16 +221,16 @@ def _internal_input_layer(features,
           output_tensor = array_ops.reshape(
               tensor, shape=output_shape)
           output_tensors.append(output_tensor)
-          if cols_to_vars is not None:
-            # Retrieve any variables created (some _DenseColumn's don't create
-            # variables, in which case an empty list is returned).
-            cols_to_vars[column] = ops.get_collection(
-                ops.GraphKeys.GLOBAL_VARIABLES,
-                scope=variable_scope.get_variable_scope().name)
-          if cols_to_output_tensors is not None:
-            cols_to_output_tensors[column] = output_tensor
-          ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
-      
+        if cols_to_vars is not None:
+          # Retrieve any variables created (some _DenseColumn's don't create
+          # variables, in which case an empty list is returned).
+          cols_to_vars[column] = ops.get_collection(
+              ops.GraphKeys.GLOBAL_VARIABLES,
+              scope=variable_scope.get_variable_scope().name)
+        if cols_to_output_tensors is not None:
+          cols_to_output_tensors[column] = output_tensor
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
+        
     _verify_static_batch_size_equality(output_tensors, ordered_columns)
     return array_ops.concat(output_tensors, -1)
     

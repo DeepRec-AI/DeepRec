@@ -230,6 +230,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       // Extend the basic parameters for data types and fusions.
       this->ExtendMklDnnMatMulFwdParams(context, matmul_fwd_dims);
 
+      MklDnnThreadPool eigen_tp(context);
       // Get a MatMul fwd from primitive pool.
       matmul_fwd =
           MklDnnMatMulFwdPrimitiveFactory<float, Tinput, Tweight, Tbias,
@@ -294,7 +295,6 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       }
 
       std::shared_ptr<stream> cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
       cpu_stream.reset(CreateStream(&eigen_tp, matmul_fwd->GetEngine()));
       // Execute inner-product
       Tbias* bias_data = this->GetBiasHandle(

@@ -114,6 +114,7 @@ struct NormalHeader {
     memset(this, 0, sizeof(NormalHeader));
     meta.SetLayoutType(LayoutType::NORMAL);
     meta.SetHeaderSize(sizeof(NormalHeader) / sizeof(int64));
+    SetGlobalStep(-1);
   }
 
   inline int64 GetGlobalStep() {
@@ -157,6 +158,7 @@ struct FixedLengthHeader {
 
   FixedLengthHeader() {
     memset(this, 0, sizeof(FixedLengthHeader));
+    SetGlobalStep(-1);
   }
 
    inline int64 GetGlobalStep() {

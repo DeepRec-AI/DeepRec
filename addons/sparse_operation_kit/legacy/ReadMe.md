@@ -24,7 +24,7 @@ Install via `PYPI` will be supported in the near future.
 If you want to build this module from souce code, here are the steps to follow: <br>
 + **download the deeprec**
 ```shell
-$ git clone https://github.com/AlibabaPAI/DeepRec.git DeepRec
+$ git clone https://github.com/alibaba/DeepRec.git DeepRec
 ```
 + **install to system path**
 ```shell
