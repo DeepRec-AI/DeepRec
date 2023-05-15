@@ -66,7 +66,7 @@ if __name__ == "__main__":
                     value = float(line.split()[2])
                     auc_dic[file_name_nosurf] = value
     
-        gstep = [float(i) for i in output[20:30]]
+        gstep = [float(i) for i in output[20:-1]]
         avg = sum(gstep) / len(gstep)
         gstep_dic[file_name_nosurf] = avg
 

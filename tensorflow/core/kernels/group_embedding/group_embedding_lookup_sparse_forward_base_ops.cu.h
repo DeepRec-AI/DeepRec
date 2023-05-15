@@ -59,13 +59,13 @@ __global__ void SetToIntMaxSTG128(const int batch_size, int* values_offset) {
   }
 }
 
-__global__ void CalcPerElementRowOffset(const int batch_size, const int64_t nnz,
-                                        const int64_t* indices,
+__global__ void CalcPerElementRowOffset(int batch_size, int nnz,
+                                        int stride, const int64_t* indices,
                                         volatile int* values_offset) {
   const int thread_offset = blockIdx.x * blockDim.x + threadIdx.x;
   const int int_max = 0x7fffffff;
-  if (thread_offset < int(nnz)) {
-    const int64_t element_row = indices[thread_offset];
+  if (thread_offset < nnz) {
+    const int64_t element_row = indices[stride*thread_offset];
     atomicMin((int*)values_offset + int(element_row), thread_offset);
     __syncthreads();
     if (thread_offset < int(batch_size - 1)) {
@@ -77,7 +77,7 @@ __global__ void CalcPerElementRowOffset(const int batch_size, const int64_t nnz,
   }
 }
 
-inline void launch_cal_per_element_row_offset(const int batch_size, int nnz,
+inline void launch_cal_per_element_row_offset(const int batch_size, int nnz, int stride,
                                               const int64_t* sp_indices,
                                               int* offset_indices,
                                               cudaStream_t stream) {
@@ -88,7 +88,7 @@ inline void launch_cal_per_element_row_offset(const int batch_size, int nnz,
 
   blocks = (nnz - 1) / threads + 1;
   CalcPerElementRowOffset<<<blocks, threads, 0, stream>>>(
-      batch_size, nnz, sp_indices, offset_indices);
+      batch_size, nnz, stride, sp_indices, offset_indices);
 }
 
 template <typename TKey, typename TValue, Combiner combiner, int Tilesize>
@@ -588,6 +588,7 @@ class GroupEmbeddingLookupForwardBaseOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("dimension", &dimension_));
     OP_REQUIRES_OK(c, c->GetAttr("max_norm", &max_norm_));
     OP_REQUIRES_OK(c, c->GetAttr("ignore_weights", &ignore_weights_));
+    OP_REQUIRES_OK(c, c->GetAttr("is_sequence", &is_sequence_));
   }
 
   template <bool isEv, Combiner combiner>
@@ -693,6 +694,7 @@ class GroupEmbeddingLookupForwardBaseOp : public OpKernel {
   int num_lookups_;
   int dimension_;
   bool ignore_weights_;
+  bool is_sequence_;
 };
 
 }  // namespace

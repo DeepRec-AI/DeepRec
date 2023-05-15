@@ -40,7 +40,7 @@ class StorageFactory {
     switch (sc.type) {
       case StorageType::DRAM:
         return new DramStorage<K, V>(sc, ev_allocator(),
-            layout_creator);
+            layout_creator, new LocklessHashMap<K, V>());
       case StorageType::PMEM_MEMKIND:
         return new PmemMemkindStorage<K, V>(sc, pmem_allocator(),
             layout_creator);
@@ -77,7 +77,7 @@ class StorageFactory {
 #endif  // GOOGLE_CUDA
       default:
         return new DramStorage<K, V>(sc, ev_allocator(),
-            layout_creator);
+            layout_creator, new LocklessHashMap<K, V>());
     }
   }
 };

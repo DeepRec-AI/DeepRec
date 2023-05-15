@@ -8,6 +8,7 @@
 
 ## UserAPI
 
+### Environment Variable
 ```python
 # If ARROW_NUM_THREADS > 0, specified number of threads will be used.
 # If ARROW_NUM_THREADS = 0, no threads will be used.
@@ -15,6 +16,7 @@
 os.environ['ARROW_NUM_THREADS'] = '2'
 ```
 
+### ParquetDataset API
 ```python
 class ParquetDataset(dataset_ops.DatasetV2):
   def __init__(
@@ -38,25 +40,85 @@ def read_parquet(
     num_sequential_reads=1):
 ```
 
-- `filenames`: A 0-D or 1-D `tf.string` tensor, `string`, list or tuple of `string`, `DataSet` containing one or more filenames.
+- `filenames`: the filename of parquet file, This parameter can receive the following types.
+    - A 0-D or 1-D `tf.string` tensor
+    - `string`
+    - `list` or `tuple` of `string`
+    - `Dataset` containing one or more filenames.
 
-- `batch_size`: (Optional.) Maxium number of samples in an output batch.
+- `batch_size`: *(Optional.)* Maxium number of samples in an output batch.
 
-- `fields`: (Optional.) List of DataFrame fields.
+- `fields`: *(Optional.)* List of DataFrame fields.
+    | `filenames` parameter type             | `fields` parameter requirement                     | `fields` parameter type                                                                         |
+    |----------------------------------------|----------------------------------------------------|-------------------------------------------------------------------------------------------------|
+    | `Tensor`/`DataSet`                     | required                                           | `DataFrame.Field`/`list` or `tuple` of `DataFrame.Field`                                        |
+    | `string`/`list` or `tuple` of `string` | optional, the default value means read all columns | `DataFrame.Field`/`list` or `tuple` of `DataFrame.Field`/`string`/`list` or `tuple` of `string` |
 
-- `partition_count`: (Optional.) Count of row group partitions.
+- `partition_count`: *(Optional.)* Count of row group partitions.
 
-- `partition_index`: (Optional.) Index of row group partitions.
+- `partition_index`: *(Optional.)* Index of row group partitions.
 
-- `drop_remainder`: (Optional.) If True, only keep batches with exactly `batch_size` samples.
+- `drop_remainder`: *(Optional.)* If True, only keep batches with exactly `batch_size` samples.
 
-- `num_parallel_reads`: (Optional.) A `tf.int64` scalar representing the number of files to read in parallel. Defaults to reading files sequentially.
+- `num_parallel_reads`: *(Optional.)* A `tf.int64` scalar representing the number of files to read in parallel. Defaults to reading files sequentially.
 
-- `num_sequential_reads`: (Optional.) A `tf.int64` scalar representing the number of batches to read in sequential. Defaults to 1.
+- `num_sequential_reads`: *(Optional.)* A `tf.int64` scalar representing the number of batches to read in sequential. Defaults to 1.
 
-> When the parameter `filenames` is a Tensor or DataSet, the parameter `fields` must be assigned by a list or tuple of the DataFrame. 
-> 
-> Only when the parameter `filenames` is a string or a list or tuple of string, the parameter `fields` can be assigned by a list or tuple of string.
+### DataFrame
+A data frame is a table consisting of multiple named columns. A named column has a logical data type and a physical data type.
+
+#### Logical Type of DataFrame
+
+| Logical Type                            | Output Type                         |
+|-----------------------------------------|-------------------------------------|
+| Scalar                                  | `tf.Tensor`/`DataFrame.Value`       |
+| Fixed-Length List                       | `tf.Tensor`/`DataFrame.Value`       |
+| Variable-Length List                    | `tf.SparseTensor`/`DataFrame.Value` |
+| Variable-Length Nested List             | `tf.SparseTensor`/`DataFrame.Value` |
+
+#### Physical Type of DataFrame
+| Category | Physical Type                                    |
+|----------|--------------------------------------------------|
+| Integers | `int64` `uint64` `int32` `uint32` `int8` `uint8` |
+| Numerics | `float64` `float32` `float16`                    |
+| Text     | `string`                                         |
+
+#### DataFrame API
+
+```python
+class DataFrame(object):
+    class Field(object):
+        def __init__(self, name,
+            type=None,
+            ragged_rank=None,
+            shape=None):
+
+    class Value(collections.namedtuple(
+        'DataFrameValue', ['values', 'nested_row_splits'])):
+        def to_sparse(self, name=None):
+
+# Convert values to tensors or sparse tensors from input dataset.
+def to_sparse(num_parallel_calls=None):
+```
+
+##### DataFrame.Field API
+- `name`: Name of column.
+- `type`: data type of column, such as `tf.int64`
+- `ragged_rank`: *(optional.)* Specify the number of nesting levels when column is a nested list
+- `shape`: *(optional.)* Specify the shape of column when column is a fixed-length list
+> Attention: For fix-length list, only the shape needs to be specified.
+
+##### DataFrame.Value Conversion API (Use according to the actual situation)
+Since there may be `DataFrame.Value` types in the output of ParquetDataset that cannot be accessed by model directly, it needs to convert the `DataFrame.Value` to SparseTensor. Please use the `to_sparse` API for conversion.
+```python
+import tensorflow as tf
+from tensorflow.python.data.experimental.ops import parquet_dataset_ops
+from tensorflow.python.data.experimental.ops import dataframe
+
+ds = parquet_dataset_ops.ParquetDataset(...)
+ds.apply(dataframe.to_sparse())
+...
+```
 
 ## Examples
 

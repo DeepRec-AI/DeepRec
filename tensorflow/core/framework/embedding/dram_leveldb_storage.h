@@ -16,7 +16,9 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DRAM_LEVELDB_STORAGE_H_
 
 #include "tensorflow/core/framework/embedding/leveldb_kv.h"
+#include "tensorflow/core/framework/embedding/cpu_hash_map_kv.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
+#include "tensorflow/core/framework/embedding/single_tier_storage.h"
 
 namespace tensorflow {
 template <class V>
@@ -31,55 +33,23 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
  public:
   DramLevelDBStore(const StorageConfig& sc, Allocator* alloc,
       LayoutCreator<V>* lc, const std::string& name)
-      : alloc_(alloc), layout_creator_(lc),
-        MultiTierStorage<K, V>(sc, name) {
-    dram_kv_ = new LocklessHashMap<K, V>();
-    leveldb_ = new LevelDBKV<K, V>(sc.path);
-    if (sc.embedding_config.steps_to_live != 0) {
-      dram_policy_ = new GlobalStepShrinkPolicy<K, V>(dram_kv_, alloc_,
-          sc.embedding_config.slot_num + 1);
-      leveldb_policy_ = new GlobalStepShrinkPolicy<K, V>(leveldb_, alloc_,
-          sc.embedding_config.slot_num + 1);
-    } else if (sc.embedding_config.l2_weight_threshold != -1.0) {
-      dram_policy_ =
-          new L2WeightShrinkPolicy<K, V>(
-              sc.embedding_config.l2_weight_threshold,
-              sc.embedding_config.primary_emb_index,
-              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
-              dram_kv_, alloc_,
-              sc.embedding_config.slot_num + 1);
-      leveldb_policy_ =
-          new L2WeightShrinkPolicy<K, V>(
-              sc.embedding_config.l2_weight_threshold,
-              sc.embedding_config.primary_emb_index,
-              Storage<K, V>::GetOffset(sc.embedding_config.primary_emb_index),
-              leveldb_, alloc_,
-              sc.embedding_config.slot_num + 1);
-    } else {
-      dram_policy_ = nullptr;
-      leveldb_policy_ = nullptr;
-    }
-
-    MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_, dram_policy_));
-    MultiTierStorage<K, V>::kvs_.emplace_back(
-        KVInterfaceDescriptor<K, V>(leveldb_, alloc_,
-                                    leveldb_mu_, leveldb_policy_));
+      : MultiTierStorage<K, V>(sc, name) {
+    dram_ = new DramStorage<K, V>(sc, alloc, lc, new LocklessHashMap<K, V>());
+    leveldb_ = new LevelDBStore<K, V>(sc, alloc, lc);
   }
 
   ~DramLevelDBStore() override {
-    MultiTierStorage<K, V>::ReleaseValues(
-        {std::make_pair(dram_kv_, alloc_)});
-    if (dram_policy_ != nullptr) delete dram_policy_;
-    if (leveldb_policy_ != nullptr) delete leveldb_policy_;
+    MultiTierStorage<K, V>::DeleteFromEvictionManager();
+    delete dram_;
+    delete leveldb_;
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(DramLevelDBStore);
 
   Status Get(K key, ValuePtr<V>** value_ptr) override {
-    Status s = dram_kv_->Lookup(key, value_ptr);
+    Status s = dram_->Get(key, value_ptr);
     if (!s.ok()) {
-      s = leveldb_->Lookup(key, value_ptr);
+      s = leveldb_->Get(key, value_ptr);
     }
     return s;
   }
@@ -89,48 +59,38 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   void Insert(K key, ValuePtr<V>** value_ptr,
-              int64 alloc_len) override {
-    do {
-      *value_ptr = layout_creator_->Create(alloc_, alloc_len);
-      Status s = dram_kv_->Insert(key, *value_ptr);
-      if (s.ok()) {
-        break;
-      } else {
-        (*value_ptr)->Destroy(alloc_);
-        delete *value_ptr;
-      }
-    } while (!(dram_kv_->Lookup(key, value_ptr)).ok());
+              size_t alloc_len) override {
+    dram_->Insert(key, value_ptr, alloc_len);
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size, CopyBackFlag &need_copyback) override {
-    need_copyback = NOT_COPYBACK;
-    return GetOrCreate(key, value_ptr, size);
+    LOG(FATAL)<<"GetOrCreate(K key, ValuePtr<V>** value_ptr, "
+              <<"size_t size, CopyBackFlag &need_copyback) "
+              <<"in DramLevelDBStore can not be called.";
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) override {
-    Status s = dram_kv_->Lookup(key, value_ptr);
+    Status s = dram_->Get(key, value_ptr);
     if (s.ok()) {
       return s;
     }
-    s = leveldb_->Lookup(key, value_ptr);
-    if (!s.ok()) {
-      *value_ptr = layout_creator_->Create(alloc_, size);
-    }
-
-    s = dram_kv_->Insert(key, *value_ptr);
+    s = leveldb_->Get(key, value_ptr);
     if (s.ok()) {
-      return s;
+      s = dram_->TryInsert(key, *value_ptr);
+      if (s.ok()) {
+        return s;
+      }
+      leveldb_->DestroyValuePtr(*value_ptr);
+      return dram_->Get(key, value_ptr);
     }
-    // Insert Failed, key already exist
-    (*value_ptr)->Destroy(alloc_);
-    delete *value_ptr;
-    return dram_kv_->Lookup(key, value_ptr);
+    dram_->Insert(key, value_ptr, size);
+    return Status::OK();
   }
  
   Status Remove(K key) override {
-    dram_kv_->Remove(key);
+    dram_->Remove(key);
     leveldb_->Remove(key);
     return Status::OK();
   }
@@ -150,28 +110,110 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   void iterator_mutex_lock() override {
-    leveldb_mu_.lock();
+    leveldb_->get_mutex()->lock();
   }
 
   void iterator_mutex_unlock() override {
-    leveldb_mu_.unlock();
+    leveldb_->get_mutex()->unlock();
   }
 
   int64 Size() const override {
-    int64 total_size = dram_kv_->Size();
+    int64 total_size = dram_->Size();
     total_size += leveldb_->Size();
     return total_size;
+  }
+
+  int64 Size(int level) const override {
+    if (level == 0) {
+      return dram_->Size();
+    } else if (level == 1) {
+      return leveldb_->Size();
+    } else {
+      return -1;
+    }
+  }
+
+  int LookupTier(K key) const override {
+    Status s = dram_->Contains(key);
+    if (s.ok())
+      return 0;
+    s = leveldb_->Contains(key);
+    if (s.ok())
+      return 1;
+    return -1;
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>*>* value_ptr_list) override {
     {
-      mutex_lock l(dram_mu_);
-      TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
+      mutex_lock l(*(dram_->get_mutex()));
+      TF_CHECK_OK(dram_->GetSnapshot(key_list, value_ptr_list));
     }
     {
-      mutex_lock l(leveldb_mu_);
+      mutex_lock l(*(leveldb_->get_mutex()));
       TF_CHECK_OK(leveldb_->GetSnapshot(key_list, value_ptr_list));
+    }
+    return Status::OK();
+  }
+
+  Status Shrink(int64 value_len) override {
+    dram_->Shrink(value_len);
+    leveldb_->Shrink(value_len);
+    return Status::OK();
+  }
+
+  Status Shrink(int64 global_step, int64 steps_to_live) override {
+    dram_->Shrink(global_step, steps_to_live);
+    leveldb_->Shrink(global_step, steps_to_live);
+    return Status::OK();
+  }
+
+  int64 GetSnapshot(std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
+      embedding::Iterator** it) override {
+    {
+      mutex_lock l(*(dram_->get_mutex()));
+      std::vector<ValuePtr<V>*> value_ptr_list;
+      std::vector<K> key_list_tmp;
+      TF_CHECK_OK(dram_->GetSnapshot(&key_list_tmp, &value_ptr_list));
+      MultiTierStorage<K, V>::SetListsForCheckpoint(
+          key_list_tmp, value_ptr_list, emb_config,
+          key_list, value_list, version_list, freq_list);
+    }
+    {
+      mutex_lock l(*(leveldb_->get_mutex()));
+      *it = leveldb_->GetIterator();
+    }
+    return key_list->size();
+  }
+
+  Status Eviction(K* evict_ids, int64 evict_size) override {
+    ValuePtr<V>* value_ptr;
+    for (int64 i = 0; i < evict_size; ++i) {
+      if (dram_->Get(evict_ids[i], &value_ptr).ok()) {
+        TF_CHECK_OK(leveldb_->Commit(evict_ids[i], value_ptr));
+        TF_CHECK_OK(dram_->Remove(evict_ids[i]));
+        dram_->DestroyValuePtr(value_ptr);
+      }
+    }
+    return Status::OK();
+  }
+
+  Status EvictionWithDelayedDestroy(K* evict_ids, int64 evict_size) override {
+    mutex_lock l(*(dram_->get_mutex()));
+    mutex_lock l1(*(leveldb_->get_mutex()));
+    MultiTierStorage<K, V>::ReleaseInvalidValuePtr(dram_->alloc_);
+    ValuePtr<V>* value_ptr = nullptr;
+    for (int64 i = 0; i < evict_size; ++i) {
+      if (dram_->Get(evict_ids[i], &value_ptr).ok()) {
+        TF_CHECK_OK(leveldb_->Commit(evict_ids[i], value_ptr));
+        TF_CHECK_OK(dram_->Remove(evict_ids[i]));
+        MultiTierStorage<K, V>::KeepInvalidValuePtr(value_ptr);
+      }
     }
     return Status::OK();
   }
@@ -182,14 +224,8 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
  private:
-  KVInterface<K, V>* dram_kv_;
-  KVInterface<K, V>* leveldb_;
-  Allocator* alloc_;
-  ShrinkPolicy<K, V>* dram_policy_;
-  ShrinkPolicy<K, V>* leveldb_policy_;
-  LayoutCreator<V>* layout_creator_;
-  mutex dram_mu_; //must be locked before leveldb_mu_ is locked
-  mutex leveldb_mu_;
+  DramStorage<K, V>* dram_;
+  LevelDBStore<K, V>* leveldb_;
 };
 } // embedding
 } // tensorflow

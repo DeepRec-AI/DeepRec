@@ -76,15 +76,21 @@ struct ArrowEnumToDataType {
   typedef uint8 Type;
 };
 
-#define MATCH_TYPE_AND_ARROW_ENUM(TYPE, ENUM)          \
+#define MATCH_TYPE_TO_ARROW_ENUM(TYPE, ENUM)           \
   template <>                                          \
   struct DataTypeToArrowEnum<TYPE> {                   \
     static constexpr ::arrow::Type::type value = ENUM; \
-  };                                                   \
+  };
+
+#define MATCH_ARROW_ENUM_TO_TYPE(ENUM, TYPE)           \
   template <>                                          \
   struct ArrowEnumToDataType<ENUM> {                   \
     typedef TYPE Type;                                 \
-  }
+  };
+
+#define MATCH_TYPE_AND_ARROW_ENUM(TYPE, ENUM)          \
+  MATCH_TYPE_TO_ARROW_ENUM(TYPE, ENUM)                 \
+  MATCH_ARROW_ENUM_TO_TYPE(ENUM, TYPE)
 
 MATCH_TYPE_AND_ARROW_ENUM(int8, ::arrow::Type::INT8);
 MATCH_TYPE_AND_ARROW_ENUM(uint8, ::arrow::Type::UINT8);
@@ -96,6 +102,8 @@ MATCH_TYPE_AND_ARROW_ENUM(Eigen::half, ::arrow::Type::HALF_FLOAT);
 MATCH_TYPE_AND_ARROW_ENUM(float, ::arrow::Type::FLOAT);
 MATCH_TYPE_AND_ARROW_ENUM(double, ::arrow::Type::DOUBLE);
 MATCH_TYPE_AND_ARROW_ENUM(string, ::arrow::Type::STRING);
+// We also map the arrow binary type to string type.
+MATCH_ARROW_ENUM_TO_TYPE(::arrow::Type::BINARY, string);
 
 Status MakeDataTypeAndRaggedRankFromArrowDataType(
     const std::shared_ptr<::arrow::DataType>& arrow_dtype, DataType* dtype,

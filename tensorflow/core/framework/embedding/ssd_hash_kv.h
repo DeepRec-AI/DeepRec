@@ -210,25 +210,17 @@ template <class K, class V>
 class SSDHashKV : public KVInterface<K, V> {
  public:
   explicit SSDHashKV(const std::string& path, Allocator* alloc)
-  : current_version_(0),
-    evict_version_(0),
-    compaction_version_(0),
-    current_offset_(0),
-    buffer_cur_(0),
-    alloc_(alloc),
-    total_app_count_(0),
-    val_len_(-1),
-    compaction_thread_(nullptr) {
+  : alloc_(alloc) {
     path_ = io::JoinPath(
         path, "ssd_kv_" + std::to_string(Env::Default()->NowMicros()) + "_");
     hash_map_.max_load_factor(0.8);
-    hash_map_.set_empty_key_and_value(-1, nullptr);
+    hash_map_.set_empty_key_and_value(EMPTY_KEY, nullptr);
     hash_map_.set_counternum(16);
-    hash_map_.set_deleted_key(-2);
+    hash_map_.set_deleted_key(DELETED_KEY);
     evict_file_set_.max_load_factor(0.8);
-    evict_file_set_.set_empty_key_and_value(-1, -1);
+    evict_file_set_.set_empty_key_and_value(EMPTY_KEY, -1);
     evict_file_set_.set_counternum(16);
-    evict_file_set_.set_deleted_key(-2);
+    evict_file_set_.set_deleted_key(DELETED_KEY);
 
     new_value_ptr_fn_ = [this](size_t size) {
       return new NormalContiguousValuePtr<V>(alloc_, size);
@@ -347,6 +339,7 @@ class SSDHashKV : public KVInterface<K, V> {
       }
       delete it;
     }
+    DeallocateEmbPositions();
     delete[] write_buffer_;
     delete[] key_buffer_;
   }
@@ -826,21 +819,36 @@ class SSDHashKV : public KVInterface<K, V> {
                            ", evict_version: ", evict_version_,
                            ", compaction_version: ", compaction_version_);
   }
+ private:
+  void DeallocateEmbPositions() {
+    std::pair<const K, EmbPosition*> *hash_map_dump;
+    int64 bucket_count;
+    auto it = hash_map_.GetSnapshot();
+    hash_map_dump = it.first;
+    bucket_count = it.second;
+    for (int64 j = 0; j < bucket_count; j++) {
+      if (hash_map_dump[j].first != SSDHashKV<K, V>::EMPTY_KEY
+           && hash_map_dump[j].first != SSDHashKV<K, V>::DELETED_KEY) {
+        delete hash_map_dump[j].second;
+      }
+    }
+    free(hash_map_dump);
+  }
 
  private:
-  size_t val_len_;
-  volatile size_t current_version_;
-  volatile size_t evict_version_;
-  volatile size_t compaction_version_;
-  volatile size_t current_offset_;
-  volatile size_t buffer_cur_;
-  size_t total_app_count_;
+  size_t val_len_ = -1;
+  volatile size_t current_version_ = 0;
+  volatile size_t evict_version_ = 0;
+  volatile size_t compaction_version_ = 0;
+  volatile size_t current_offset_ = 0;
+  volatile size_t buffer_cur_ = 0;
+  size_t total_app_count_ = 0;
   size_t max_app_count_;
 
-  char* write_buffer_;
-  K* key_buffer_;
+  char* write_buffer_ = nullptr;
+  K* key_buffer_ = nullptr;
   bool is_async_compaction_;
-  Allocator* alloc_;
+  Allocator* alloc_ = nullptr;
 
   int total_dims_;
   std::string path_;
@@ -852,11 +860,11 @@ class SSDHashKV : public KVInterface<K, V> {
   mutex shutdown_mu_;
   mutex compact_save_mu_;
 
-
-  static constexpr int EMPTY_KEY = -1;
-  static constexpr int CAP_INVALID_POS = 200000;
-  static constexpr int CAP_INVALID_ID = 10000000;
-  static constexpr size_t BUFFER_SIZE = 1 << 27;
+  static const int EMPTY_KEY;
+  static const int DELETED_KEY;
+  static const int CAP_INVALID_POS;
+  static const int CAP_INVALID_ID;
+  static const size_t BUFFER_SIZE;
 
   std::vector<EmbFile*> emb_files_;
   std::deque<EmbPosition*> pos_out_of_date_;
@@ -865,7 +873,7 @@ class SSDHashKV : public KVInterface<K, V> {
   LocklessHashSet evict_file_set_;
   std::map<int64, std::vector<std::pair<K, EmbPosition*>>> evict_file_map_;
 
-  Thread* compaction_thread_;
+  Thread* compaction_thread_ = nullptr;
   volatile bool shutdown_ = false;
   volatile bool done_ = false;
   // std::atomic_flag flag_ = ATOMIC_FLAG_INIT; unused
@@ -873,8 +881,18 @@ class SSDHashKV : public KVInterface<K, V> {
   std::function<void()> compaction_fn_;
   std::function<void()> check_buffer_fn_;
   std::function<void(K, const ValuePtr<V>*, bool)> save_kv_fn_;
-  EmbFileCreator* emb_file_creator_;
+  EmbFileCreator* emb_file_creator_ = nullptr;
 };
+template <class K, class V>
+const int SSDHashKV<K, V>::EMPTY_KEY = -1;
+template <class K, class V>
+const int SSDHashKV<K, V>::DELETED_KEY = -2;
+template <class K, class V>
+const int SSDHashKV<K, V>::CAP_INVALID_POS = 200000;
+template <class K, class V>
+const int SSDHashKV<K, V>::CAP_INVALID_ID = 10000000;
+template <class K, class V>
+const size_t SSDHashKV<K, V>::BUFFER_SIZE = 1 << 27;
 
 }  // namespace embedding
 }  // namespace tensorflow

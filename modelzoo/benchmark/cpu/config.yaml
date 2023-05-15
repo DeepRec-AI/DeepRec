@@ -22,21 +22,21 @@ test_model:
   
 #batchsize map<model,batchsize>
 model_batchsize:
-  wide_and_deep: 512
-  dlrm: 512
-  deepfm: 512
-  dssm: 4096
-  dien: 512
-  din: 512
-  esmm: 512
-  dbmtl: 512
-  mmoe: 512
-  simple_multitask: 512
-  bst: 512
-  masknet: 512
-  dcnv2: 512
-  dcn: 512
-  ple: 512
+  wide_and_deep: 2048
+  dlrm: 2048
+  deepfm: 2048
+  dssm: 2048
+  dien: 2048
+  din: 2048
+  esmm: 2048
+  dbmtl: 2048
+  mmoe: 2048
+  simple_multitask: 2048
+  bst: 2048
+  masknet: 2048
+  dcnv2: 2048
+  dcn: 2048
+  ple: 2048
   
 #args for deeprec
 #like --emb_fusion true

@@ -180,69 +180,94 @@ def _internal_input_layer(features,
                           cols_to_output_tensors=None,
                           from_template=False,
                           adaptive_mask_tensors=None):
-  """See input_layer. `scope` is a name or variable scope to use."""
+    """See input_layer. `scope` is a name or variable scope to use."""
 
-  feature_columns = _normalize_feature_columns(feature_columns)
-  for column in feature_columns:
-    if not isinstance(column, _DenseColumn):
-      raise ValueError(
-          'Items of feature_columns must be a _DenseColumn. '
-          'You can wrap a categorical column with an '
-          'embedding_column or indicator_column. Given: {}'.format(column))
-  weight_collections = list(weight_collections or [])
-  if ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections:
-    weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
-  if ops.GraphKeys.MODEL_VARIABLES not in weight_collections:
-    weight_collections.append(ops.GraphKeys.MODEL_VARIABLES)
+    feature_columns = _normalize_feature_columns(feature_columns)
+    for column in feature_columns:
+        if not isinstance(column, _DenseColumn):
+            raise ValueError(
+                "Items of feature_columns must be a _DenseColumn. "
+                "You can wrap a categorical column with an "
+                "embedding_column or indicator_column. Given: {}".format(column)
+            )
+    weight_collections = list(weight_collections or [])
+    if ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections:
+        weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
+    if ops.GraphKeys.MODEL_VARIABLES not in weight_collections:
+        weight_collections.append(ops.GraphKeys.MODEL_VARIABLES)
 
-  
+    def _get_logits():  # pylint: disable=missing-docstring
+        builder = _LazyBuilder(features, adaptive_mask_tensors)
+        output_tensors = []
+        ordered_columns = []
+        group_name_set = set()
+        group_embedding_list = []
+        embedding_columns = []
+        for index, column in enumerate(sorted(feature_columns, key=lambda x: x.name)):
+            group_name = getattr(column, "group_name", "")
+            ordered_columns.append(column)
+            with variable_scope.variable_scope(
+                None, default_name=column._var_scope_name
+            ):  # pylint: disable=protected-access
+                if group_name != "":
+                    group_name_set.add(group_name)
+                    output_tensor = None
+                    output_tensors.append(output_tensor)  # placeholder
+                    group_embedding_list.append(index)  # for later gather
+                    embedding_columns.append(column)
+                else:
+                    tensor = (
+                        column._get_dense_tensor(  # pylint: disable=protected-access
+                            builder,
+                            weight_collections=weight_collections,
+                            trainable=trainable,
+                        )
+                    )
+                    output_shape = column._output_shape(
+                        tensor
+                    )  # pylint: disable=protected-access
+                    batch_size = array_ops.shape(tensor)[0]
+                    output_tensor = array_ops.reshape(tensor, shape=output_shape)
+                    output_tensors.append(output_tensor)
+                    if cols_to_output_tensors is not None:
+                        cols_to_output_tensors[column] = output_tensor
+                    ops.add_to_collections(
+                        ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor
+                    )
 
-  def _get_logits():  # pylint: disable=missing-docstring
-    builder = _LazyBuilder(features, adaptive_mask_tensors)
-    output_tensors = []
-    ordered_columns = []
-    group_embedding_tensor = gec._get_global_group_embedding_scope(builder, weight_collections, trainable)
+                if cols_to_vars is not None:
+                    # Retrieve any variables created (some _DenseColumn's don't create
+                    # variables, in which case an empty list is returned).
+                    cols_to_vars[column] = ops.get_collection(
+                        ops.GraphKeys.GLOBAL_VARIABLES,
+                        scope=variable_scope.get_variable_scope().name,
+                    )
 
-    for column in sorted(feature_columns, key=lambda x: x.name):
-      group_name = getattr(column, 'group_name', '')
-      ordered_columns.append(column)
-      with variable_scope.variable_scope(
-          None, default_name=column._var_scope_name):  # pylint: disable=protected-access
-        if group_name != '':
-          output_tensor = group_embedding_tensor[column]
-          output_tensors.append(output_tensor)
-        else:
-          tensor = column._get_dense_tensor(  # pylint: disable=protected-access
-              builder,
-              weight_collections=weight_collections,
-              trainable=trainable)
-          output_shape = column._output_shape(tensor)  # pylint: disable=protected-access
-          batch_size = array_ops.shape(tensor)[0]
-          output_tensor = array_ops.reshape(
-              tensor, shape=output_shape)
-          output_tensors.append(output_tensor)
-        if cols_to_vars is not None:
-          # Retrieve any variables created (some _DenseColumn's don't create
-          # variables, in which case an empty list is returned).
-          cols_to_vars[column] = ops.get_collection(
-              ops.GraphKeys.GLOBAL_VARIABLES,
-              scope=variable_scope.get_variable_scope().name)
-        if cols_to_output_tensors is not None:
-          cols_to_output_tensors[column] = output_tensor
-        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
-        
-    _verify_static_batch_size_equality(output_tensors, ordered_columns)
-    return array_ops.concat(output_tensors, -1)
-    
-  # If we're constructing from the `make_template`, that by default adds a
-  # variable scope with the name of the layer. In that case, we dont want to
-  # add another `variable_scope` as that would break checkpoints.
-  if from_template:
-    return _get_logits()
-  else:
-    with variable_scope.variable_scope(
-        scope, default_name='input_layer', values=features.values()):
-      return _get_logits()
+        group_embedding_tensor = gec._get_global_group_embedding_scope(
+            group_name_set, builder, weight_collections, trainable
+        )
+        for ind, column in zip(group_embedding_list, embedding_columns):
+            output_tensor, _ = group_embedding_tensor[column]
+            output_tensors[ind] = output_tensor
+            if cols_to_output_tensors is not None:
+                cols_to_output_tensors[column] = output_tensor
+            ops.add_to_collections(
+                ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor
+            )
+
+        _verify_static_batch_size_equality(output_tensors, ordered_columns)
+        return array_ops.concat(output_tensors, -1)
+
+    # If we're constructing from the `make_template`, that by default adds a
+    # variable scope with the name of the layer. In that case, we dont want to
+    # add another `variable_scope` as that would break checkpoints.
+    if from_template:
+        return _get_logits()
+    else:
+        with variable_scope.variable_scope(
+            scope, default_name="input_layer", values=features.values()
+        ):
+            return _get_logits()
 
 @tf_export(v1=['feature_column.input_layer'])
 def input_layer(features,
@@ -2602,7 +2627,7 @@ class _SharedEmbeddingColumn(
         '_SharedEmbeddingColumn',
         ('categorical_column', 'dimension', 'combiner', 'initializer',
          'shared_embedding_collection_name', 'ckpt_to_load_from',
-         'tensor_name_in_ckpt', 'max_norm', 'trainable', 'do_fusion'))):
+         'tensor_name_in_ckpt', 'max_norm', 'trainable', 'do_fusion', 'group_name'))):
   """See `embedding_column`."""
 
   @property
@@ -2628,20 +2653,14 @@ class _SharedEmbeddingColumn(
       self._shape = tensor_shape.TensorShape([self.dimension])
     return self._shape
 
-  def _get_dense_tensor_internal(self,
-                                 inputs,
-                                 weight_collections=None,
-                                 trainable=None):
+  def create_embedding(self,
+                       weight_collections=None,
+                       trainable=None):
     """Private method that follows the signature of _get_dense_tensor."""
     # This method is called from a variable_scope with name _var_scope_name,
     # which is shared among all shared embeddings. Open a name_scope here, so
     # that the ops for different columns have distinct names.
     with ops.name_scope(None, default_name=self.name):
-      # Get sparse IDs and weights.
-      sparse_tensors = self.categorical_column._get_sparse_tensors(  # pylint: disable=protected-access
-          inputs, weight_collections=weight_collections, trainable=trainable)
-      sparse_ids = sparse_tensors.id_tensor
-      sparse_weights = sparse_tensors.weight_tensor
 
       embedding_shape = (self.categorical_column._num_buckets, self.dimension)  # pylint: disable=protected-access
       shared_embedding_collection = ops.get_collection(
@@ -2663,8 +2682,8 @@ class _SharedEmbeddingColumn(
               'Suggested fix B: Do not add any variables to this collection. '
               'The feature_column library already adds a variable under the '
               'hood.'.format(self.shared_embedding_collection_name,
-                             embedding_weights.name,
-                             embedding_weights.get_shape(), embedding_shape))
+                            embedding_weights.name,
+                            embedding_weights.get_shape(), embedding_shape))
       else:
         from tensorflow.python.feature_column import feature_column_v2 as fc_new
         if isinstance(self.categorical_column, fc_new.EmbeddingCategoricalColumn):
@@ -2696,6 +2715,14 @@ class _SharedEmbeddingColumn(
               collections=weight_collections)
         ops.add_to_collection(self.shared_embedding_collection_name,
                               embedding_weights)
+      return embedding_weights
+
+  def _get_dense_tensor_internal(self,
+                                 sparse_tensors,
+                                 embedding_weights):
+      sparse_ids = sparse_tensors.id_tensor
+      sparse_weights = sparse_tensors.weight_tensor
+
       if self.ckpt_to_load_from is not None:
         to_restore = embedding_weights
         if isinstance(to_restore, variables.PartitionedVariable):
@@ -2733,10 +2760,13 @@ class _SharedEmbeddingColumn(
           'sequence_input_layer instead of input_layer. '
           'Given (type {}): {}'.format(self.name, type(self.categorical_column),
                                        self.categorical_column))
+    # Get sparse IDs and weights.
+    sparse_tensors = self.categorical_column._get_sparse_tensors(  # pylint: disable=protected-access
+        inputs, weight_collections=weight_collections, trainable=trainable)
+    embedding_weights = self.create_embedding(weight_collections, trainable)
     return self._get_dense_tensor_internal(
-        inputs=inputs,
-        weight_collections=weight_collections,
-        trainable=trainable)
+        sparse_tensors=sparse_tensors,
+        embedding_weights=embedding_weights)
 
   def _get_sequence_dense_tensor(self,
                                  inputs,
@@ -2750,11 +2780,12 @@ class _SharedEmbeddingColumn(
           'Suggested fix: Use one of sequence_categorical_column_with_*. '
           'Given (type {}): {}'.format(self.name, type(self.categorical_column),
                                        self.categorical_column))
+    sparse_tensors = self.categorical_column._get_sparse_tensors(  # pylint: disable=protected-access
+        inputs, weight_collections=weight_collections, trainable=trainable)
+    embedding_weights = self.create_embedding(weight_collections, trainable)
     dense_tensor = self._get_dense_tensor_internal(  # pylint: disable=protected-access
-        inputs=inputs,
-        weight_collections=weight_collections,
-        trainable=trainable)
-    sparse_tensors = self.categorical_column._get_sparse_tensors(inputs)  # pylint: disable=protected-access
+        sparse_tensors=sparse_tensors,
+        embedding_weights=embedding_weights)
     sequence_length = fc_utils.sequence_length_from_sparse_tensor(
         sparse_tensors.id_tensor)
     return _SequenceDenseColumn.TensorSequenceLengthPair(

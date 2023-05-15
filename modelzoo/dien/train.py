@@ -1004,7 +1004,7 @@ def get_arg_parser():
     parser.add_argument('--batch_size',
                         help='Batch size to train. Default is 512',
                         type=int,
-                        default=512)
+                        default=2048)
     parser.add_argument('--output_dir',
                         help='Full path to model output directory. \
                             Default to ./result. Covered by --checkpoint. ',

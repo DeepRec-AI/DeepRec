@@ -42,6 +42,23 @@ template <class K>
 struct SsdRecordDescriptor;
 
 namespace embedding {
+template<class K, class V>
+class DramSsdHashStorage;
+
+template<class K, class V>
+class DramPmemStorage;
+
+template<class K, class V>
+class DramLevelDBStore;
+
+#if GOOGLE_CUDA
+template<class K, class V>
+class HbmDramStorage;
+
+template<class K, class V>
+class HbmDramSsdStorage;
+#endif
+
 template<typename K, typename V>
 class SingleTierStorage : public Storage<K, V> {
  public:
@@ -72,7 +89,7 @@ class SingleTierStorage : public Storage<K, V> {
     for (auto value_ptr : value_ptr_list) {
       value_ptr->Destroy(alloc_);
       delete value_ptr;
-    }  
+    }
     delete kv_;
     if (shrink_policy_ != nullptr) delete shrink_policy_;
   }
@@ -83,8 +100,12 @@ class SingleTierStorage : public Storage<K, V> {
     return kv_->Lookup(key, value_ptr);
   }
 
-  void Insert(K key, ValuePtr<V>** value_ptr,
-              int64 alloc_len) override {
+  Status Contains(K key) override {
+    return kv_->Contains(key);
+  }
+
+  virtual void Insert(K key, ValuePtr<V>** value_ptr,
+              size_t alloc_len) override {
     do {
       *value_ptr = layout_creator_->Create(alloc_, alloc_len);
       Status s = kv_->Insert(key, *value_ptr);
@@ -97,7 +118,7 @@ class SingleTierStorage : public Storage<K, V> {
     } while (!(kv_->Lookup(key, value_ptr)).ok());
   }
 
-  void Insert(K key, ValuePtr<V>* value_ptr) override {
+  virtual void Insert(K key, ValuePtr<V>* value_ptr) override {
     LOG(FATAL)<<"Unsupport Insert(K, ValuePtr<V>*) in SingleTireStorage.";
   }
 
@@ -176,10 +197,16 @@ class SingleTierStorage : public Storage<K, V> {
     LOG(FATAL) << "Unsupport InitCache in SingleTierStorage.";
   }
 
-  Status BatchCommit(const std::vector<K>& keys,
+  virtual Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) override {
-    LOG(FATAL) << "Unsupport BatchCommit in Storage:"
+    LOG(FATAL) << "Unsupport BatchCommit in Storage: "
                << typeid(this).name();
+    return Status::OK();
+  }
+
+  virtual Status Commit(K keys, const ValuePtr<V>* value_ptr) {
+     LOG(FATAL) << "Unsupport Commit in Storage: "
+                << typeid(this).name();
     return Status::OK();
   }
 
@@ -267,6 +294,11 @@ class SingleTierStorage : public Storage<K, V> {
     return -1;
   }
 
+  virtual embedding::Iterator* GetIterator() override {
+    LOG(FATAL)<<"GetIterator isn't support by "<<typeid(this).name();
+    return nullptr;
+  }
+
   void RestoreSsdHashmap(
       K* key_list, int64* key_file_id_list,
       int64* key_offset_list, int64 num_of_keys,
@@ -342,6 +374,15 @@ class SingleTierStorage : public Storage<K, V> {
  protected:
   virtual void SetTotalDims(int64 total_dims) = 0;
 
+  virtual ValuePtr<V>* CreateValuePtr(int64 size) {
+    return layout_creator_->Create(alloc_, size);
+  }
+
+  virtual void DestroyValuePtr(ValuePtr<V>* value_ptr) {
+    value_ptr->Destroy(alloc_);
+    delete value_ptr;
+  }
+
  protected:
   KVInterface<K, V>* kv_;
   ShrinkPolicy<K, V>* shrink_policy_;
@@ -353,15 +394,38 @@ template<typename K, typename V>
 class DramStorage : public SingleTierStorage<K, V> {
  public:
   DramStorage(const StorageConfig& sc, Allocator* alloc,
-      LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
-          sc, alloc, new LocklessHashMap<K, V>(), lc) {
-  }
+      LayoutCreator<V>* lc,
+      KVInterface<K, V>* kv)
+      : SingleTierStorage<K, V>(sc, alloc, kv, lc) {}
+
   ~DramStorage() override {}
+
+  Status BatchCommit(const std::vector<K>& keys,
+      const std::vector<ValuePtr<V>*>& value_ptrs) {
+    return SingleTierStorage<K, V>::kv_->BatchCommit(keys, value_ptrs);
+  }
+
+  Status TryInsert(K key, ValuePtr<V>* value_ptr) {
+    return SingleTierStorage<K, V>::kv_->Insert(key, value_ptr);
+  }
+
+  Status Commit(K keys, const ValuePtr<V>* value_ptr) override{
+    return SingleTierStorage<K, V>::kv_->Commit(keys, value_ptr);
+  }
  
   TF_DISALLOW_COPY_AND_ASSIGN(DramStorage);
-
+ public:
+  friend class DramSsdHashStorage<K, V>;
+  friend class DramPmemStorage<K, V>;
+  friend class DramLevelDBStore<K, V>;
+#if GOOGLE_CUDA
+  friend class HbmDramStorage<K, V>;
+  friend class HbmDramSsdStorage<K, V>;
+#endif
  protected:
-  void SetTotalDims(int64 total_dims) override {}
+  void SetTotalDims(int64 total_dims) override {
+    SingleTierStorage<K, V>::kv_->SetTotalDims(total_dims);
+  }
 };
 
 #if GOOGLE_CUDA
@@ -425,6 +489,42 @@ class HbmStorage : public SingleTierStorage<K, V> {
  protected:
   void SetTotalDims(int64 total_dims) override {}
 };
+
+template<typename K, typename V>
+class HbmStorageWithCpuKv: public SingleTierStorage<K, V> {
+ public:
+  HbmStorageWithCpuKv(const StorageConfig& sc, Allocator* alloc,
+      LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
+          sc, alloc, new LocklessHashMap<K, V>(), lc) {
+  }
+
+  ~HbmStorageWithCpuKv() override {}
+
+  void Insert(K key, ValuePtr<V>* value_ptr) override {
+    do {
+      Status s = SingleTierStorage<K, V>::kv_->Insert(key, value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        value_ptr->Destroy(SingleTierStorage<K, V>::alloc_);
+        delete value_ptr;
+      }
+    } while (!(SingleTierStorage<K, V>::kv_->Lookup(key, &value_ptr)).ok());
+  }
+
+  void Insert(K key, ValuePtr<V>** value_ptr, size_t alloc_len) override {
+    SingleTierStorage<K, V>::Insert(key, value_ptr, alloc_len);
+  }
+
+  Status TryInsert(K key, ValuePtr<V>* value_ptr) {
+    return SingleTierStorage<K, V>::kv_->Insert(key, value_ptr);
+  }
+ public:
+  friend class HbmDramStorage<K, V>;
+  friend class HbmDramSsdStorage<K, V>;
+ protected:
+  void SetTotalDims(int64 total_dims) override {}
+};
 #endif // GOOGLE_CUDA
 
 template<typename K, typename V>
@@ -451,9 +551,14 @@ class PmemLibpmemStorage : public SingleTierStorage<K, V> {
   }
   ~PmemLibpmemStorage() override {}
 
+  Status Commit(K keys, const ValuePtr<V>* value_ptr) {
+    return SingleTierStorage<K, V>::kv_->Commit(keys, value_ptr);
+  }
+
   TF_DISALLOW_COPY_AND_ASSIGN(PmemLibpmemStorage);
  
  protected:
+  friend class DramPmemStorage<K, V>;
   void SetTotalDims(int64 total_dims) override {}
 };
 
@@ -468,10 +573,17 @@ class LevelDBStore : public SingleTierStorage<K, V> {
 
   TF_DISALLOW_COPY_AND_ASSIGN(LevelDBStore);
 
-  Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) override {
-    return SingleTierStorage<K, V>::kv_->BatchCommit(keys, value_ptrs);
+  Status Commit(K keys, const ValuePtr<V>* value_ptr) {
+    return SingleTierStorage<K, V>::kv_->Commit(keys, value_ptr);
   }
+
+  embedding::Iterator* GetIterator() override {
+    LevelDBKV<K, V>* leveldb_kv =
+        reinterpret_cast<LevelDBKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+    return leveldb_kv->GetIterator();
+  }
+ public:
+  friend class DramLevelDBStore<K, V>;
 
  protected:
   void SetTotalDims(int64 total_dims) override {
@@ -490,10 +602,50 @@ class SsdHashStorage : public SingleTierStorage<K, V> {
 
   TF_DISALLOW_COPY_AND_ASSIGN(SsdHashStorage);
 
-  Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) override {
-    return SingleTierStorage<K, V>::kv_->BatchCommit(keys, value_ptrs);
+  Status Commit(K keys, const ValuePtr<V>* value_ptr) {
+    return SingleTierStorage<K, V>::kv_->Commit(keys, value_ptr);
   }
+
+  embedding::Iterator* GetIterator() override {
+    SSDHashKV<K, V>* ssd_kv =
+        reinterpret_cast<SSDHashKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+    return ssd_kv->GetIterator();
+  }
+
+  void Import(K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      std::map<int64, int64>& file_id_map) {
+    SSDHashKV<K, V>* ssd_kv =
+        reinterpret_cast<SSDHashKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+
+    ssd_kv->Import(key_list, key_file_id_list,
+                   key_offset_list, num_of_keys,
+                   file_id_map);
+  }
+
+  void CopyEmbFilesFromCkpt(
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) {
+    SSDHashKV<K, V>* ssd_kv =
+        reinterpret_cast<SSDHashKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+
+    ssd_kv->CopyEmbFilesFromCkpt(
+        file_list, invalid_record_count_list,
+        record_count_list, num_of_files,
+        ssd_emb_file_name);
+  }
+
+  void SetSsdRecordDescriptor(SsdRecordDescriptor<K>* ssd_rec_desc) {
+    SSDHashKV<K, V>* ssd_kv =
+        reinterpret_cast<SSDHashKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+    ssd_kv->SetSsdRecordDescriptor(ssd_rec_desc);
+  }
+ public:
+  friend class DramSsdHashStorage<K, V>;
+#if GOOGLE_CUDA
+  friend class HbmDramSsdStorage<K, V>;
+#endif
 
  protected:
   void SetTotalDims(int64 total_dims) override {

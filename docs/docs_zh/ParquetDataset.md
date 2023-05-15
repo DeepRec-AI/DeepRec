@@ -7,7 +7,7 @@
 
 ## 接口介绍
 
-### API说明
+### 环境变量介绍
 
 ```python
 # If ARROW_NUM_THREADS > 0, specified number of threads will be used.
@@ -16,6 +16,7 @@
 os.environ['ARROW_NUM_THREADS'] = '2'
 ```
 
+### ParquetDataset接口介绍
 ```python
 class ParquetDataset(dataset_ops.DatasetV2):
   def __init__(
@@ -39,25 +40,91 @@ def read_parquet(
     num_sequential_reads=1):
 ```
 
-### 参数说明
+#### 参数说明
 
-- filenames: A 0-D or 1-D `tf.string` tensor, `string`, list or tuple of `string`, `DataSet` containing one or more filenames.
+- `filenames`: 文件名，可以接收以下类型的参数。
+    - 0-D 或者 1-D 的 `tf.string` 类型 `Tensor`
+    - `string` 类型
+    - `string` 类型的 `list` 或 `tuple`
+    - 包含一个或多个文件名的 `Dataset`
 
-- batch_size: (Optional.) Maxium number of samples in an output batch.
+- `batch_size`: *(可选)* 一个输出batch中最大样本数量。
 
-- fields: (Optional.) List of DataFrame fields.
+- `fields`: *(可选)* 需要读取的column。
 
-- partition_count: (Optional.) Count of row group partitions.
+    | filenames 参数类型                     | fields 参数要求               | fields 参数类型要求                                                                             |
+    |---------------------------------------|-----------------------------|-----------------------------------------------------------------------------------------------|
+    | `Tensor`/`Dataset`                    | 必须传入                      | `DataFrame.Field`/`DataFrame.Field` 类型的`list`或`tuple`                                      |
+    | `string`/`string`类型的`list`或`tuple` | 可选, 不传入时默认读取所有column | `DataFrame.Field`/`DataFrame.Field` 类型的`list`或`tuple`/`string`/`string`类型的`list`或`tuple` |
 
-- partition_index: (Optional.) Index of row group partitions.
 
-- drop_remainder: (Optional.) If True, only keep batches with exactly `batch_size` samples.
+- `partition_count`: *(可选)* row group partitions的数量。
 
-- num_parallel_reads: (Optional.) A `tf.int64` scalar representing the number of files to read in parallel. Defaults to reading files sequentially.
+- `partition_index`: *(可选)* row group partitions的索引。
 
-- num_sequential_reads: (Optional.) A `tf.int64` scalar representing the number of batches to read in sequential. Defaults to 1.
+- `drop_remainder`: *(可选)* 如果为`True`, ParquetDataset只会返回大小为`batch_size`的batch，小于`batch_size`的batch将会被丢弃。
 
-> 注：当filenames参数的类型为Tensor或DataSet时，必须传入fields，且fileds参数必须是DataFrame类型的list或tuple。而当filenames的类型为string，或者string类型的list或tuple时，fields可以传入string类型的list或tuple。
+- `num_parallel_reads`: *(可选)* `tf.int64`类型的标量，用于设定同时读取的parquet file文件数量。默认逐个依次读取。
+
+- `num_sequential_reads`: *(可选)* `tf.int64`类型的标量，代表按顺序读取的batch数量，默认是1。
+
+### DataFrame介绍
+
+DataFrame是一个包含多个命名的column的表。每一个命名的column都具有一种逻辑类型和一种存储类型。
+
+#### DataFrame支持的逻辑类型
+
+| 逻辑类型                                  | 输出类型                             |
+|-----------------------------------------|-------------------------------------|
+| 标量(Scalar)                             | `tf.Tensor`/`DataFrame.Value`       |
+| 定长List(Fixed-Length List)              | `tf.Tensor`/`DataFrame.Value`       |
+| 变长List(Variable-Length List)           | `tf.SparseTensor`/`DataFrame.Value` |
+| 变长嵌套List(Variable-Length Nested List) | `tf.SparseTensor`/`DataFrame.Value` |
+
+#### DataFrame支持的存储类型
+
+| 数据分类  | 存储类型                                          |
+|---------|--------------------------------------------------|
+| 整数     | `int64` `uint64` `int32` `uint32` `int8` `uint8` |
+| 浮点数   | `float64` `float32` `float16`                    |
+| 文本     | `string`                                         |
+
+#### API 说明
+
+```python
+class DataFrame(object):
+    class Field(object):
+        def __init__(self, name,
+            type=None,
+            ragged_rank=None,
+            shape=None):
+
+    class Value(collections.namedtuple(
+        'DataFrameValue', ['values', 'nested_row_splits'])):
+        def to_sparse(self, name=None):
+
+# Convert values to tensors or sparse tensors from input dataset.
+def to_sparse(num_parallel_calls=None):
+```
+
+##### DataFrame.Field参数说明
+- `name`: column 名称
+- `type`: 指定元素数据类型，如`tf.int64`
+- `ragged_rank`: *(可选)* column为list类型时，用于指定嵌套层数
+- `shape`: *(可选)* column为固定shape的list时，用于指定column的shape
+> 注：对于固定shape的list (Fix-Length List)，只需要指定shape即可，无需指定ragged_rank。
+
+##### DataFrame.Value转换API (根据实际情况选择使用)
+由于ParquetDataset的输出中可能会存在DataFrame.Value, 无法直接接入模型，需要将DataFrame.Value转换为SparseTensor。使用dataset.apply调用to_sparse接口即可完成转换。
+```python
+import tensorflow as tf
+from tensorflow.python.data.experimental.ops import parquet_dataset_ops
+from tensorflow.python.data.experimental.ops import dataframe
+
+ds = parquet_dataset_ops.ParquetDataset(...)
+ds.apply(dataframe.to_sparse())
+...
+```
 
 ## 使用示例
 

@@ -24,6 +24,7 @@ def group_embedding_var_lookup(params,
                              batch_size,
                              dimensions,
                              ignore_weights,
+                             is_sequence = False,
                              ev_init_value = None):
   if ev_init_value is not None:
     default_value = ev_init_value
@@ -43,7 +44,8 @@ def group_embedding_var_lookup(params,
                                                         combiners,
                                                         dimensions,
                                                         ignore_weights,
-                                                        is_use_default_value_tensor)
+                                                        is_use_default_value_tensor,
+                                                        is_sequence=is_sequence)
 
 @ops.RegisterGradient("GroupEmbeddingVarLookup")
 def _GroupGatherGrad(op, *grads):
@@ -72,7 +74,7 @@ def _GroupGatherGrad(op, *grads):
     indice = unique_values[i]
     grad = nnz_grads[i]
     return_grads.append(ops.IndexedSlices(grad, indice, params_shape))
-  return return_grads + [None for _ in range(ev_num*3 + 2)]
+  return return_grads + [None for _ in range(ev_num*4 + 1)]
   
 #for GPU EV group_lookup
 def group_variable_lookup(params,
@@ -83,6 +85,7 @@ def group_variable_lookup(params,
                           batch_size,
                           dimensions,
                           ignore_weights,
+                          is_sequence = False,
                           default_id=None):
   if default_id is not None:
     default_value = default_id
@@ -104,7 +107,8 @@ def group_variable_lookup(params,
                                                   combiners,
                                                   dimensions,
                                                   ignore_weights=ignore_weights,
-                                                  is_use_default_value_tensor=is_use_default_value_tensor)
+                                                  is_use_default_value_tensor=is_use_default_value_tensor,
+                                                  is_sequence=is_sequence)
 
 @ops.RegisterGradient("GroupVariableLookup")
 def _GroupEmbeddingLookup(op, *grads):
@@ -132,7 +136,7 @@ def _GroupEmbeddingLookup(op, *grads):
     grad = nnz_grads[i]
     indices = unique_values[i]
     return_grads.append(ops.IndexedSlices(grad, indices, params_shape))
-  return return_grads + [None for _ in range(ev_num*3 + 2)]
+  return return_grads + [None for _ in range(ev_num*4 + 1)]
 
 #for GPU EV group_lookup_dense
 def group_embedding_var_lookup_dense(params,
