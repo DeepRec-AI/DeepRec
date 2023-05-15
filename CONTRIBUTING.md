@@ -6,25 +6,18 @@ Before sending your pull requests, make sure you followed this list.
 
 - Read [contributing guidelines](CONTRIBUTING.md).
 - Read [Code of Conduct](CODE_OF_CONDUCT.md).
-- Ensure you have signed the [Contributor License Agreement (CLA)](https://cla-assistant.io/alibaba/DeepRec).
+- Read [DCO](https://github.com/apps/dco).
 - Check if my changes are consistent with the [guidelines](https://github.com/alibaba/DeepRec/blob/main/CONTRIBUTING.md#general-guidelines-and-philosophy-for-contribution).
 - Changes are consistent with the [Coding Style](https://github.com/alibaba/DeepRec/blob/main/CONTRIBUTING.md#c-coding-style).
 - Run [Unit Tests](https://github.com/alibaba/DeepRec/blob/main/CONTRIBUTING.md#running-unit-tests).
 
 ## How to become a contributor and submit your own code
 
-### Contributor License Agreements
+### Developer Certificate of Origin (DCO)
 
-We'd love to accept your patches! Before we can take them, we have to jump a couple of legal hurdles.
+We'd love to accept your patches! Before we can take them, please make sure all commit messages to contain the Signed-off-by line with an email address that matches the commit author.
 
-Please fill out either the individual or corporate Contributor License Agreement (CLA).
-
-  * If you are an individual writing original source code and you're sure you own the intellectual property, then you'll need to sign an [individual CLA](https://cla-assistant.io/alibaba/DeepRec).
-  * If you work for a company that wants to allow you to contribute your work, then you'll need to sign a [corporate CLA](https://cla-assistant.io/alibaba/DeepRec).
-
-Follow either of the two links above to access the appropriate CLA and instructions for how to sign and return it. Once we receive it, we'll be able to accept your pull requests.
-
-***NOTE***: Only original source code from you and other people that have signed the CLA can be accepted into the main repository.
+The Developer Certificate of Origin (DCO) is a lightweight way for contributors to certify that they wrote or otherwise have the right to submit the code they are contributing to the project. [DCO Details](https://github.com/apps/dco)
 
 ### Contributing code
 

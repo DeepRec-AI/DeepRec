@@ -97,6 +97,7 @@ Arm-Compute-Library
 :maxdepth: 2
 :caption: Model Quantification
 
+AMX
 BFloat16
 ```
 
@@ -114,6 +115,7 @@ ParquetDataset
 :maxdepth: 2
 :caption: Compiler
 
+TensorRT
 BladeDISC
 XLA
 ```

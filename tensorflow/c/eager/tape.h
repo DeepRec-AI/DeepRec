@@ -340,7 +340,7 @@ bool GradientTape<Gradient, BackwardFunction, TapeTensor>::ShouldRecord(
     gtl::ArraySlice<int64> tensor_ids,
     gtl::ArraySlice<tensorflow::DataType> dtypes) {
   CHECK_EQ(tensor_ids.size(), dtypes.size());
-  for (int i = 0; i < tensor_ids.size(); ++i) {
+  for (size_t i = 0; i < tensor_ids.size(); ++i) {
     if (tensor_tape_.find(tensor_ids[i]) != tensor_tape_.end()) {
       if (IsDtypeTrainable(dtypes[i])) {
         return true;
@@ -682,7 +682,7 @@ Status GradientTape<Gradient, BackwardFunction, TapeTensor>::ComputeGradient(
     std::vector<Gradient*> out_gradients;
     out_gradients.reserve(trace.output_tensor_info.size());
     std::vector<int64> unneeded_gradients;
-    for (int i = 0; i < trace.input_tensor_id.size(); i++) {
+    for (size_t i = 0; i < trace.input_tensor_id.size(); i++) {
       const auto& in_tensor_id = trace.input_tensor_id[i];
       if (tensor_tape_.find(in_tensor_id) == tensor_tape_.end() &&
           sources_set.find(in_tensor_id) == sources_set.end()) {
@@ -692,7 +692,7 @@ Status GradientTape<Gradient, BackwardFunction, TapeTensor>::ComputeGradient(
 
     bool any_gradient_nonzero = false;
     std::vector<int> zero_indices;
-    for (int i = 0; i < trace.output_tensor_info.size(); ++i) {
+    for (size_t i = 0; i < trace.output_tensor_info.size(); ++i) {
       const int64 id = trace.output_tensor_info[i].GetID();
       auto grad_it = gradients.find(id);
       if (grad_it == gradients.end()) {
@@ -752,7 +752,7 @@ Status GradientTape<Gradient, BackwardFunction, TapeTensor>::ComputeGradient(
     }
     VLOG(1) << "Got " << in_gradients.size() << " in_gradients for "
             << trace.input_tensor_id.size() << " sources";
-    for (int i = 0; i < in_gradients.size(); ++i) {
+    for (size_t i = 0; i < in_gradients.size(); ++i) {
       const int64 id = trace.input_tensor_id[i];
       if (in_gradients[i] != nullptr) {
         auto& unaggregated_grads = gradients[id];
@@ -855,7 +855,7 @@ bool ForwardAccumulator<Gradient, BackwardFunction, TapeTensor>::ShouldRecord(
   if (accumulating_) {
     return false;
   }
-  for (int i = 0; i < tensor_ids.size(); ++i) {
+  for (size_t i = 0; i < tensor_ids.size(); ++i) {
     if (accumulated_gradients_.find(tensor_ids[i]) !=
         accumulated_gradients_.end()) {
       if (IsDtypeTrainable(dtypes[i])) {
@@ -991,7 +991,7 @@ Status ForwardAccumulator<Gradient, BackwardFunction, TapeTensor>::Accumulate(
   });
   std::vector<Gradient*> in_grads;
   in_grads.reserve(input_tensors.size());
-  for (int target_index = 0; target_index < input_tensors.size();
+  for (size_t target_index = 0; target_index < input_tensors.size();
        ++target_index) {
     const auto current_grad =
         accumulated_gradients_.find(input_tensors[target_index].GetID());
@@ -1026,7 +1026,7 @@ Status ForwardAccumulator<Gradient, BackwardFunction, TapeTensor>::Accumulate(
   } else {
     TF_RETURN_IF_ERROR((*forward_function)(in_grads, &forward_grads));
   }
-  for (int i = 0; i < forward_grads.size(); ++i) {
+  for (size_t i = 0; i < forward_grads.size(); ++i) {
     if (forward_grads[i] != nullptr) {
       int64 tensor_id = output_tensors[i].GetID();
       auto existing = accumulated_gradients_.find(tensor_id);

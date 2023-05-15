@@ -112,7 +112,7 @@ class DBMTL():
             raise ValueError("Dataset is not defined.")
         self._feature = input[0]
         self._label = input[1]
-        
+
         self._feature_column = feature_column
         self._bottom_dnn = bottom_dnn
         self._towers = towers
@@ -133,12 +133,12 @@ class DBMTL():
             self._create_loss()
             self._create_optimizer()
             self._create_metrics()
-    
+
     def _add_layer_summary(self, value, tag):
         tf.summary.scalar('%s/fraction_of_zero_values' % tag,
                         tf.nn.zero_fraction(value))
         tf.summary.histogram('%s/activation' % tag, value)
-    
+
     def _make_scope(self, name, bf16, part):
         if(bf16):
             return tf.variable_scope(name, partitioner=part, reuse=tf.AUTO_REUSE).keep_weights(dtype=tf.float32)
@@ -149,7 +149,7 @@ class DBMTL():
         TAG_COLUMN = ['tag_category_list', 'tag_brand_list']
         for key in TAG_COLUMN:
             self._feature[key] = tf.strings.split(self._feature[key], '|')
-        
+
         with tf.variable_scope('dnn'):
             # dnn part
             key_dict={}
@@ -201,7 +201,7 @@ class DBMTL():
 
                 if self.bf16:
                     specific_features = tf.cast(specific_features, dtype=tf.bfloat16)
-                    
+
                 for layer_id, num_hidden_units in enumerate(hidden_units):
                     with self._make_scope(f'{tower_name}_layer_{layer_id}', self.bf16, self._dense_layer_partitioner) as tower_layer_scope:
                         specific_features = tf.layers.dense(specific_features,
@@ -221,7 +221,7 @@ class DBMTL():
                 # Relation DNN
                 relation_input = tf.concat(relation_input, axis=1)
                 for layer_id, num_hidden_units in enumerate(self._relation_dnn):
-                    with self._make_scope(f'{tower_name}_relation_dnn_{layer_id}', self.bf16, self._dense_layer_partitioner) as relation_dnn_scope:                      
+                    with self._make_scope(f'{tower_name}_relation_dnn_{layer_id}', self.bf16, self._dense_layer_partitioner) as relation_dnn_scope:
                         relation_input = tf.layers.dense(relation_input,
                                                         units=num_hidden_units,
                                                         name=f'{relation_dnn_scope.name}/dense')
@@ -234,7 +234,7 @@ class DBMTL():
                                                             activation=None,
                                                             name=f'{tower_name}_output')
                         self._add_layer_summary(final_tower_predict, f'{tower_name}_output')
-                        
+
                 if self.bf16:
                     final_tower_predict = tf.cast(final_tower_predict, dtype=tf.float32)
 
@@ -243,8 +243,8 @@ class DBMTL():
             self._logits = tf.squeeze(tower_stack, [2])
             self.probability = tf.math.sigmoid(self._logits)
             self.output = tf.round(self.probability)
-            
-    
+
+
     # compute loss
     def _create_loss(self):
         self._logits = tf.squeeze(self._logits)
@@ -254,7 +254,7 @@ class DBMTL():
             scope='loss',
             reduction=tf.losses.Reduction.SUM_OVER_BATCH_SIZE)
         tf.summary.scalar('loss', self.loss)
-        
+
     # define optimizer and generate train_op
     def _create_optimizer(self):
         self.global_step = tf.train.get_or_create_global_step()
@@ -292,7 +292,7 @@ class DBMTL():
                                            scope='dnn'),
                                        global_step=self.global_step))
         self.train_op = tf.group(*train_ops)
-    
+
     def _create_metrics(self):
         self.acc, self.acc_op = tf.metrics.accuracy(labels=self._label,
                                                     predictions=self.output)
@@ -332,7 +332,7 @@ def build_model_input(filename, batch_size, num_epochs):
     '''Work Queue Feature'''
     if args.workqueue and not args.tf:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         # For multiple files：
         # work_queue = WorkQueue([filename, filename1,filename2,filename3])
         files = work_queue.input_dataset()
@@ -345,16 +345,18 @@ def build_model_input(filename, batch_size, num_epochs):
         if args.parquet_dataset_shuffle:
             dataset = dataset.shuffle(buffer_size=20000,
                                       seed=args.seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=28)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=20000,
                                   seed=args.seed)  # set seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not args.workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=28)
-        
+
     dataset = dataset.prefetch(2)
     return dataset
 
@@ -371,7 +373,7 @@ def build_feature_cols():
                         column_name,
                         hash_bucket_size=HASH_BUCKET_SIZES[column_name],
                         dtype=tf.string)
-                    
+
                     if not args.tf:
                         '''Feature Elimination of EmbeddingVariable Feature'''
                         if args.ev_elimination == 'gstep':
@@ -404,7 +406,7 @@ def build_feature_cols():
                                 column_name, dtype=tf.string, ev_option=ev_opt)
                         elif args.adaptive_emb:
                             '''                 Adaptive Embedding Feature Part 2 of 2
-                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                             'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                             For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                             tensor with shape [batch_size].
@@ -419,11 +421,11 @@ def build_feature_cols():
                             '''Dynamic-dimension Embedding Variable'''
                             print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
                             sys.exit()
-                    
+
                     if args.tf or not args.emb_fusion:
                         embedding_column = tf.feature_column.embedding_column(
-                            categorical_column, 
-                            dimension=EMBEDDING_DIM, 
+                            categorical_column,
+                            dimension=EMBEDDING_DIM,
                             combiner='mean')
                     else:
                         '''Embedding Fusion Feature'''
@@ -446,7 +448,7 @@ def build_feature_cols():
                     column_name,
                     hash_bucket_size=HASH_BUCKET_SIZES[column_name],
                     dtype=tf.string)
-                
+
                 if not args.tf:
                     '''Feature Elimination of EmbeddingVariable Feature'''
                     if args.ev_elimination == 'gstep':
@@ -479,7 +481,7 @@ def build_feature_cols():
                             column_name, dtype=tf.string, ev_option=ev_opt)
                     elif args.adaptive_emb:
                         '''                 Adaptive Embedding Feature Part 2 of 2
-                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
                         'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
                         For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
                         tensor with shape [batch_size].
@@ -494,11 +496,11 @@ def build_feature_cols():
                         '''Dynamic-dimension Embedding Variable'''
                         print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
                         sys.exit()
-                
+
                 if args.tf or not args.emb_fusion:
                     embedding_column = tf.feature_column.embedding_column(
-                        categorical_column, 
-                        dimension=EMBEDDING_DIM, 
+                        categorical_column,
+                        dimension=EMBEDDING_DIM,
                         combiner='mean')
                 else:
                     '''Embedding Fusion Feature'''
@@ -528,7 +530,7 @@ def train(sess_config,
     scaffold = tf.train.Scaffold(
         local_init_op=tf.group(tf.local_variables_initializer(), data_init_op),
         saver=tf.train.Saver(max_to_keep=args.keep_checkpoint_max))
-    
+
     stop_hook = tf.train.StopAtStepHook(last_step=steps)
     log_hook = tf.train.LoggingTensorHook(
         {
@@ -545,7 +547,7 @@ def train(sess_config,
     '''
                             Incremental_Checkpoint
     Please add `save_incremental_checkpoint_secs` in 'tf.train.MonitoredTrainingSession'
-    it's default to None, Incremental_save checkpoint time in seconds can be set 
+    it's default to None, Incremental_save checkpoint time in seconds can be set
     to use incremental checkpoint function, like `tf.train.MonitoredTrainingSession(
         save_incremental_checkpoint_secs=args.incremental_ckpt)`
     '''
@@ -553,7 +555,7 @@ def train(sess_config,
         print("Incremental_Checkpoint is not really enabled.")
         print("Please see the comments in the code.")
         sys.exit()
-    
+
     with tf.train.MonitoredTrainingSession(
             master=server.target if server else '',
             is_chief=tf_config['is_chief'] if tf_config else True,
@@ -623,7 +625,7 @@ def main(tf_config=None, server=None):
     ) if args.micro_batch and not args.tf else args.batch_size
 
     if args.steps == 0:
-        no_of_epochs = 1000
+        no_of_epochs = 100
         train_steps = math.ceil(
             (float(no_of_epochs) * no_of_training_examples) / batch_size)
     else:
@@ -669,7 +671,7 @@ def main(tf_config=None, server=None):
         max_partitions=num_ps_replicas,
         min_slice_size=args.dense_layer_partitioner <<
         10) if args.dense_layer_partitioner else None
-    
+
     # Session config
     sess_config = tf.ConfigProto()
     if tf_config:
@@ -691,7 +693,7 @@ def main(tf_config=None, server=None):
     if args.micro_batch and not args.tf:
         '''Auto Mirco Batch'''
         sess_config.graph_options.optimizer_options.micro_batch_num = args.micro_batch
-    
+
     # create model
     model = DBMTL(input=next_element,
                   feature_column=feature_cols,
@@ -704,7 +706,7 @@ def main(tf_config=None, server=None):
                   adaptive_emb=args.adaptive_emb,
                   input_layer_partitioner=input_layer_partitioner,
                   dense_layer_partitioner=dense_layer_partitioner)
-    
+
     # run model training and evaluation
     train(sess_config, hooks, model, train_init_op, train_steps,
           checkpoint_dir, tf_config, server)
@@ -731,7 +733,7 @@ def get_arg_parser():
     parser.add_argument('--batch_size',
                         help='Batch size to train',
                         type=int,
-                        default=512)
+                        default=2048)
     parser.add_argument('--output_dir',
                         help='Full path to logs & model output directory',
                         required=False,
@@ -876,7 +878,7 @@ def generate_cluster_info(TF_CONFIG):
             chief_hosts = value
     if chief_hosts:
         worker_hosts = chief_hosts + worker_hosts
-    
+
     if not ps_hosts or not worker_hosts:
         print('TF_CONFIG ERROR')
         sys.exit()
@@ -952,7 +954,7 @@ if __name__ == '__main__':
 
     if not args.tf:
         set_env_for_DeepRec()
-    
+
     TF_CONFIG = os.getenv('TF_CONFIG')
     if not TF_CONFIG:
         main()

@@ -1754,6 +1754,7 @@ def group_embedding_lookup_sparse(params,
         dim = param.shape[1].value
         group_id = tf_group_id_map[dim]
         sp_id = sp_ids[index]
+        batch_size = math_ops.cast(sp_id.dense_shape[0], dtype=dtypes.int32)
         combiner = combiners[index]
 
         tf_combiners[group_id] = combiner
@@ -1784,6 +1785,128 @@ def group_embedding_lookup_sparse(params,
             emb_vec[idx] = output
                                                                 
   elif strategy == group_embedding_ops_utils.STRATEGY.UNKNOWN:
+    raise ValueError("Unrecognized strategy, expected collective, given{}".format(strategy))
+
+  return emb_vec
+
+@tf_export("nn.group_embedding_lookup")
+def group_embedding_lookup(params,
+                           ids,
+                           partition_strategy="mod",
+                           name=None):
+  """
+    This interface is designed for fused multiple embedding lookup.
+    Args:
+      params: list, tuple
+              a list or tuple of trainable *Variable* or *EmbeddingVariable*.
+      ids: list, tuple
+              a list or tuple of tf.SparseTensor or tf.Tensor.
+              btw RaggedTensor is preferred.
+      name: The operations name
+    Returns
+    -------
+    emb_vec: list
+            a list of tf.Tensor(the results of lookup).
+  """
+
+  if params is None:
+    raise ValueError("params must be specified")
+  if not isinstance(params, list):
+    params = [params]
+
+  if len(params) != len(ids):
+    raise ValueError("len of params must be equal to len of ids")
+
+  ## Currently not doing unique
+  strategy = group_embedding_ops_utils.get_group_lookup_strategy()
+
+  if strategy == group_embedding_ops_utils.STRATEGY.LOCALIZED:  
+    
+    emb_vec = [None for _ in range(len(params))]
+
+    ev_group_id_map = {}
+    tf_group_id_map = {}
+    ev_group_id = 0
+    tf_group_id = 0
+    is_ev_list = [False for _ in range(len(params))]
+    params_idx_map = {}
+
+    for index, param in enumerate(params):
+      params_idx_map[param] = index
+
+      if isinstance(param, kv_variable_ops.EmbeddingVariable):
+        is_ev_list[index] = True
+        dim = param.shape[0].value
+        if dim not in ev_group_id_map:
+          ev_group_id_map[dim] = ev_group_id
+          ev_group_id +=1
+      else: # tensorflow variable
+        dim = param.shape[1].value
+        if dim not in tf_group_id_map:
+          tf_group_id_map[dim] = tf_group_id
+          tf_group_id +=1
+
+    if ev_group_id > 0:
+      ev_ids = [[] for _ in range(ev_group_id)]
+      ev_handlers = [[] for _ in range(ev_group_id)]
+      ev_dimensions = [0 for _ in range(ev_group_id)]
+      output_index_list = [[] for _ in range(ev_group_id)]
+
+      for index, ev_flag in enumerate(is_ev_list):
+        if not ev_flag:
+          continue
+        param = params[index]
+        dim = param.shape[0].value
+        group_id = ev_group_id_map[dim]
+        ev_id = ids[index]
+        
+        ev_dimensions[group_id] = dim
+        ev_handlers[group_id].append(param.handle)
+        ev_ids[group_id].append(array_ops.reshape(ev_id, [-1]))
+        output_index_list[group_id].append(params_idx_map[param])
+
+      for group_id in range(ev_group_id):
+        dim = ev_dimensions[group_id]
+        output_index = output_index_list[group_id]
+        with ops.name_scope(name, "localized_group_embedding_lookup_ev_dim{}".format(dim),
+                            params + ids) as name_scope:
+          outputs = group_embedding_lookup_ops.group_embedding_var_lookup_dense(ev_handlers[group_id],
+                                                                                ev_ids[group_id],
+                                                                                dim)[0]
+          for idx, output in zip(output_index, outputs):
+            emb_vec[idx] = output
+    
+    if tf_group_id > 0:
+      tf_ids = [[] for _ in range(tf_group_id)]
+      tf_handlers = [[] for _ in range(tf_group_id)]
+      tf_dimensions = [0 for _ in range(tf_group_id)]
+      output_index_list = [[] for _ in range(tf_group_id)]
+
+      for index, ev_flag in enumerate(is_ev_list):
+        if ev_flag:
+          continue
+        param = params[index]
+        dim = param.shape[1].value
+        group_id = tf_group_id_map[dim]
+        tf_id = ids[index]
+
+        tf_dimensions[group_id] = dim
+        tf_handlers[group_id].append(param)
+        tf_ids[group_id].append(array_ops.reshape(tf_id, [-1]))
+        output_index_list[group_id].append(params_idx_map[param])
+
+      for group_id in range(tf_group_id):
+        dim = tf_dimensions[group_id]
+        output_index = output_index_list[group_id]
+        with ops.name_scope(name, "localized_group_embedding_lookup_variable_dim{}".format(dim),
+                            params + ids) as name_scope:
+          outputs = group_embedding_lookup_ops.group_variable_lookup_dense(tf_handlers[group_id],
+                                                                          tf_ids[group_id],
+                                                                          dim)[0]
+          for idx, output in zip(output_index, outputs):
+            emb_vec[idx] = output
+                                                                
+  else:
     raise ValueError("Unrecognized strategy, expected collective, given{}".format(strategy))
 
   return emb_vec

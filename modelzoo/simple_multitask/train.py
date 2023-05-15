@@ -239,7 +239,7 @@ def build_model_input(filename, batch_size, num_epochs, seed, stock_tf, workqueu
     '''Work Queue Feature'''
     if not stock_tf and workqueue:
         from tensorflow.python.ops.work_queue import WorkQueue
-        work_queue = WorkQueue([filename])
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         files = work_queue.input_dataset()
     else:
         files = filename
@@ -249,13 +249,15 @@ def build_model_input(filename, batch_size, num_epochs, seed, stock_tf, workqueu
         if args.parquet_dataset_shuffle:
             dataset = dataset.shuffle(buffer_size=40000,
                                       seed=seed)  # fix seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     else:
         dataset = tf.data.TextLineDataset(files)
         dataset = dataset.shuffle(buffer_size=400000,
                                   seed=seed)  # set seed for reproducing
-        dataset = dataset.repeat(num_epochs)
+        if not workqueue:
+            dataset = dataset.repeat(num_epochs)
         dataset = dataset.batch(batch_size)
         dataset = dataset.map(parse_csv, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = dataset.prefetch(2)
@@ -525,7 +527,7 @@ def main(stock_tf, tf_config=None, server=None):
                   args.batch_size / args.micro_batch
                   ) if args.micro_batch and not stock_tf else args.batch_size
     if args.steps == 0:
-        no_epochs = 1000
+        no_epochs = 100
         train_steps = math.ceil(
             (float(no_epochs) * no_of_training_examples) / batch_size)
     else:
@@ -667,7 +669,7 @@ def get_arg_parser():
     parser.add_argument('--batch_size',
                         help='Batch size to train',
                         type=int,
-                        default=512)
+                        default=2048)
     parser.add_argument('--output_dir',
                         help='Full path to logs & model output directory',
                         default='./result')

@@ -657,6 +657,11 @@ LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
   session_options_->config.set_use_per_session_threads(config->use_per_session_threads);
   session_options_->config.set_use_per_session_stream(config->use_multi_stream);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
+  if (config->enable_device_placement_optimization) {
+    session_options_->config.mutable_graph_options()
+        ->mutable_optimizer_options()
+        ->set_device_placement_optimization(true);
+  }
   run_options_ = new RunOptions();
 }
 
@@ -730,6 +735,11 @@ RemoteSessionInstanceMgr::RemoteSessionInstanceMgr(ModelConfig* config)
   session_options_->config.set_inter_op_parallelism_threads(config->inter_threads);
   session_options_->config.set_intra_op_parallelism_threads(config->intra_threads);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
+  if (config->enable_device_placement_optimization) {
+    session_options_->config.mutable_graph_options()
+        ->mutable_optimizer_options()
+        ->set_device_placement_optimization(true);
+  }
   run_options_ = new RunOptions();
 
   std::unique_ptr<FeatureStoreMgr> tmp_storage(

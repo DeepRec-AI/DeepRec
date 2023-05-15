@@ -24,7 +24,7 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/resource_var.h"
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
-#include "tensorflow/core/kernels/group_lookup_backward_base_ops.cu.h"
+#include "tensorflow/core/kernels/group_embedding/group_embedding_lookup_sparse_backward_base_ops.cu.h"
 #include "tensorflow/core/kernels/training_op_helpers.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/stream_executor/stream_executor.h"
@@ -48,7 +48,7 @@ class GroupVariableLookupBackwardOp
       const Tensor emb_variables_tensor = ctx->input(this->num_lookups_ + i);
       const Tensor sp_values_tensor = ctx->input(2 * this->num_lookups_ + i);
       const Tensor sp_values_offset_tensor =
-          ctx->input(3 * this->num_lookups_ + i);
+          ctx->input(4 * this->num_lookups_ + i);
 
       if (i == 0) {
         batch_size = sp_values_offset_tensor.shape().dim_size(0);
@@ -112,7 +112,7 @@ class GroupEmbeddingVariableLookupBackwardOp
       core::ScopedUnref unref_me(ev);
       const Tensor sp_values_tensor = ctx->input(2 * this->num_lookups_ + i);
       const Tensor sp_values_offset_tensor =
-          ctx->input(3 * this->num_lookups_ + i);
+          ctx->input(4 * this->num_lookups_ + i);
       // int dimension = ev->ValueLen();
       if (i == 0) {
         batch_size = sp_values_offset_tensor.shape().dim_size(0);

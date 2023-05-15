@@ -479,6 +479,207 @@ collection_def {
   EXPECT_EQ(shape.dim(1).size(), 32);
 }
 
+TEST_F(GrapplerItemBuilderTest, CooSparseTest) {
+  MetaGraphDef meta_graph;
+  const char* text_proto = R"EOF(
+graph_def {
+  node {
+    name: "x"
+    op: "Placeholder"
+    attr { key: "dtype" value { type: DT_FLOAT } }
+    attr {
+      key: "shape"
+      value {
+        shape {
+          dim {
+            size: -1
+          }
+          dim {
+            size: -1
+          }
+        }
+      }
+    }
+  }
+  node {
+    name: "y_value"
+    op: "Placeholder"
+    attr { key: "dtype" value { type: DT_FLOAT } }
+    attr {
+      key: "shape"
+      value {
+        shape {
+          dim {
+            size: -1
+          }
+        }
+      }
+    }
+  }
+  node {
+    name: "y_indices"
+    op: "Placeholder"
+    attr {
+      key: "_output_shapes"
+      value {
+        list {
+          shape {
+            dim {
+              size: -1
+            }
+            dim {
+              size: 2
+            }
+          }
+        }
+      }
+    }
+    attr {
+      key: "dtype"
+      value {
+        type: DT_INT64
+      }
+    }
+    attr {
+      key: "shape"
+      value {
+        shape {
+          dim {
+            size: -1
+          }
+          dim {
+            size: 2
+          }
+        }
+      }
+    }
+  }
+  node {
+    name: "y_shape"
+    op: "Placeholder"
+    attr {
+      key: "_output_shapes"
+      value {
+        list {
+          shape {
+            dim {
+              size: 2
+            }
+          }
+        }
+      }
+    }
+    attr {
+      key: "dtype"
+      value {
+        type: DT_INT64
+      }
+    }
+    attr {
+      key: "shape"
+      value {
+        shape {
+          dim {
+            size: 2
+          }
+        }
+      }
+    }
+  }
+
+  node {
+    name: "output"
+    op: "Const"
+    attr {
+      key: "_output_shapes"
+      value {
+        list {
+          shape {
+          }
+        }
+      }
+    }
+    attr {
+      key: "dtype"
+      value {
+        type: DT_INT32
+      }
+    }
+    attr {
+      key: "value"
+      value {
+        tensor {
+          dtype: DT_INT32
+          tensor_shape {
+          }
+          int_val: 0
+        }
+      }
+    }
+  }
+  versions {
+    producer: 51
+  }
+}
+signature_def {
+  key: "prediction"
+  value {
+    inputs {
+      key: "x"
+      value {
+        name: "x:0"
+        dtype: DT_INT64
+        tensor_shape {
+          dim {
+            size: -1
+          }
+          dim {
+            size: 1
+          }
+        }
+      }
+    }
+    inputs {
+      key: "y"
+      value {
+        dtype: DT_FLOAT
+        tensor_shape {
+          dim {
+            size: -1
+          }
+          dim {
+            size: -1
+          }
+        }
+        coo_sparse {
+          values_tensor_name: "y_value:0"
+          indices_tensor_name: "y_indices:0"
+          dense_shape_tensor_name: "y_shape:0"
+        }
+      }
+    }
+    outputs {
+      key: "output"
+      value {
+        name: "output:0"
+        dtype: DT_INT32
+        tensor_shape {
+        }
+      }
+    }
+    method_name: "tensorflow/serving/predict"
+  }
+}
+  )EOF";
+
+  CHECK(protobuf::TextFormat::ParseFromString(text_proto, &meta_graph));
+  ItemConfig cfg;
+  std::unique_ptr<GrapplerItem> item =
+      GrapplerItemFromMetaGraphDef("0", meta_graph, cfg);
+
+  ASSERT_TRUE(item != nullptr);
+}
+
 }  // namespace
 }  // namespace grappler
 }  // namespace tensorflow

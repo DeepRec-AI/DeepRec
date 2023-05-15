@@ -1730,6 +1730,7 @@ cc_library(
     ]) + if_cuda([
         "//tensorflow/core/grappler/optimizers:gpu_swapping_kernels",
         "//tensorflow/core/grappler/optimizers:gpu_swapping_ops",
+        "//tensorflow/core/kernels:tensor_pack_trans_ops"
     ]) + if_nccl([
         "//tensorflow/core/kernels:nccl_kernels",
     ]) + if_tensorrt([
@@ -3206,6 +3207,7 @@ GRAPH_HDRS = [
     "graph/graph_def_builder.h",
     "graph/graph_def_builder_util.h",
     "graph/graph_partition.h",
+    "graph/graph_util.h",
     "graph/mkl_layout_pass.h",
     "graph/mkl_layout_pass_lists.h",
     "graph/mkl_tfconversion_pass.h",
@@ -3244,12 +3246,13 @@ tf_cuda_library(
         "graph/costmodel.cc",
         "graph/graph_partition.cc",
         "graph/optimizer_cse.cc",
-	"graph/optimizer_fusion_engine.cc",
-	"graph/optimizer_fusion_engine_impl.cc",
+        "graph/optimizer_fusion_engine.cc",
+        "graph/optimizer_fusion_engine_impl.cc",
         "graph/star_server_graph_partition.cc",
         "graph/subgraph.cc",
         "graph/validate.cc",
         "graph/stream_subgraph.cc",
+        "graph/graph_util.cc",
     ],
     hdrs = GRAPH_HDRS,
     deps = [
@@ -3784,6 +3787,7 @@ tf_cuda_library(
         "common_runtime/gpu/gpu_util_platform_specific.cc",
         "common_runtime/gpu/gpu_device_placement_pass.cc",
         "common_runtime/gpu/gpu_stage_multi_stream_pass.cc",
+        "common_runtime/gpu/gpu_stage_pack_trans_pass.cc",
         "common_runtime/gpu/gpu_stage_subgraph_on_cpu_pass.cc"
     ],
     hdrs = GPU_RUNTIME_HEADERS,
@@ -4463,7 +4467,7 @@ tf_cc_tests(
         "graph/graph_test.cc",
         "graph/node_builder_test.cc",
         "graph/optimizer_cse_test.cc",
-	"graph/optimizer_fusion_engine_test.cc",
+        "graph/optimizer_fusion_engine_test.cc",
         "graph/star_server_graph_partition_test.cc",
         "graph/subgraph_test.cc",
         "graph/tensor_id_test.cc",

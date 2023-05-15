@@ -154,6 +154,7 @@ class BatchMatMulMkl : public OpKernel {
     if (alpha_ != 1.0f)
       params->post_op_params.push_back({"output_scale", { alpha_ }});
 
+    MklDnnThreadPool eigen_tp(ctx);
     // Create or retrieve matmul primitive from cache.
     MklMatMulPrimitive<Scalar>* matmul_prim =
         MklMatMulPrimitiveFactory<Scalar>::Get(
@@ -202,7 +203,6 @@ class BatchMatMulMkl : public OpKernel {
 
     // Execute matmul primitive.
     std::shared_ptr<stream> cpu_stream;
-    MklDnnThreadPool eigen_tp(ctx);
     cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
     matmul_prim->Execute(lhs.flat<Scalar>().data(), weight_data,
                          out->flat<Scalar>().data(), cpu_stream);

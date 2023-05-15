@@ -439,13 +439,13 @@ inline void UpdateDevice(NodeViewDiff<GraphViewT>* diff,
 template <typename T, typename U>
 inline bool AddOrUpdateAtIndex(std::vector<T>* v, int i, const U& value,
                                const T& default_value) {
-  if (i > v->size()) {
+  if ((size_t)i > v->size()) {
     // Resize to include `value`, filling the newly introduced gap with
     // `default_value` for later checks of validity (gaps in vector).
     v->reserve(i + 1);
     v->resize(i, default_value);
     v->push_back({value});
-  } else if (i == v->size()) {
+  } else if ((size_t)i == v->size()) {
     // Vector is large enough, simply append `value` to the end.
     v->push_back({value});
   } else {

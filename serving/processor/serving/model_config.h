@@ -67,6 +67,8 @@ struct ModelConfig {
   embedding::StorageType storage_type = embedding::StorageType::DEFAULT;
   std::string storage_path;
   std::vector<int64> storage_size;
+
+  bool enable_device_placement_optimization = false;
 };
 
 class ModelConfigFactory {

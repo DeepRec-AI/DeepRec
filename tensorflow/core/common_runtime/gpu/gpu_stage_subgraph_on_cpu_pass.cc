@@ -31,7 +31,7 @@ class StageSubGraphOnCPUPass : public GraphOptimizationPass {
     if (options.session_options == nullptr) {
       return Status::OK();
     }
-    
+
     bool is_enable_stage_subgraph_on_cpu =
         options.session_options->config.graph_options()
             .optimizer_options().stage_subgraph_on_cpu();
@@ -47,7 +47,7 @@ class StageSubGraphOnCPUPass : public GraphOptimizationPass {
 
     std::unique_ptr<Graph> new_graph(new Graph(OpRegistry::Global()));
     CopyGraph(*graph, new_graph.get());
-    
+
     // Get CPU Device
     std::string cpu_device_name="";
     const DeviceSet* device_set = options.device_set;
@@ -60,7 +60,7 @@ class StageSubGraphOnCPUPass : public GraphOptimizationPass {
 
     // Place Stage SubGraph on CPU.
     PlaceStageSubGraphOnCPU(cpu_device_name, new_graph.get());
-      
+
     options.graph->swap(new_graph);
     return Status::OK();
   }
@@ -77,18 +77,18 @@ class StageSubGraphOnCPUPass : public GraphOptimizationPass {
   }
 
   void PlaceStageSubGraphOnCPU(const std::string& cpu_device_name,
-			       Graph* graph) {    
+			       Graph* graph) {
     for (Node* n : graph->op_nodes()) {
       if (n->IsStage()) {
+	std::vector<Node*> start_node;
+	for (const Edge* e : n->in_edges())
+	  start_node.emplace_back(e->src());
+
 	auto set_stage_subgraph_node_device = [cpu_device_name](Node *node) {
 	  node->set_assigned_device_name(cpu_device_name);
 	};
-        ReverseDFSFrom(*graph, {n},
-                       std::move(set_stage_subgraph_node_device), nullptr);        
-      } else if (n->IsUnstage() ||
-		 n->type_string() == "TensorBufferCancel" ||
-		 n->type_string() == "TensorBufferClose") {
-	n->set_assigned_device_name(cpu_device_name);
+        ReverseDFSFrom(*graph, start_node,
+                       std::move(set_stage_subgraph_node_device), nullptr);
       }
     }
   }
@@ -96,7 +96,7 @@ class StageSubGraphOnCPUPass : public GraphOptimizationPass {
 
 REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_PLACEMENT, 25,
                       StageSubGraphOnCPUPass);
-  
+
 } // End of namespace tensorflow
 
-#endif // End of GOOGLE_CUDA    
+#endif // End of GOOGLE_CUDA

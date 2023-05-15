@@ -51,6 +51,9 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
     OP_REQUIRES(
         ctx, transpose_a_ == false,
         errors::InvalidArgument("In[0] of MklMatMul can't be transposed."));
+    if (fused_ops_.size() == 2 && fused_ops_[1] == "LeakyRelu") {
+      OP_REQUIRES_OK(ctx, ctx->GetAttr("leakyrelu_alpha", &leakyrelu_alpha));
+    }
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -113,6 +116,8 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
         MEMORY_FORMAT::nc, this->is_weight_const_);
 
     // Extend the basic parameters for data types and fusions.
+    auto st = ExecuteSingleThreadedGemm(batch, k, channel);
+    MklDnnThreadPool eigen_tp(ctx, st ? 1 : -1);
     ExtendMklDnnMatMulFwdParams(ctx, matmul_params);
     bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled();
     MklDnnMatMulFwdPrimitive<T, T, T, T, T>* matmul_prim =
@@ -225,13 +230,11 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
       }
       std::shared_ptr<stream> cpu_stream;
       if (ExecuteSingleThreadedGemm(batch, k, channel)) {
-        MklDnnThreadPool eigen_tp(ctx, 1);
         cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
         // Execute fused matmul op.
         matmul_prim->Execute(src_data, weight_data, bias_data, dst_data,
                              cpu_stream);
       } else {
-        MklDnnThreadPool eigen_tp(ctx);
         cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
         // Execute fused matmul op.
         matmul_prim->Execute(src_data, weight_data, bias_data, dst_data,
@@ -267,6 +270,9 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
         params.post_op_params.push_back({"gelu_erf", {1.0, 0.0, 0.0}});
       } else if (post_op == "Add") {
         params.post_op_params.push_back({"sum", {1.0}});
+      } else if (post_op == "LeakyRelu") {
+        params.post_op_params.push_back(
+            {"leakyrelu", {1.0, leakyrelu_alpha, 0.0}});
       } else {
         OP_REQUIRES_OK(
             ctx, errors::InvalidArgument(
@@ -279,6 +285,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
   bool fuse_add_ = false;
   bool transpose_a_;
   bool transpose_b_;
+  float leakyrelu_alpha = 0.2;
   std::vector<string> fused_ops_;
   const int kInputIndex_Add = 3;
   const int kOutputIndex_Dst = 0;

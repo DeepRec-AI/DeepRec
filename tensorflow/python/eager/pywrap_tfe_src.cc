@@ -742,7 +742,7 @@ void TFE_Py_ExecuteCancelable(TFE_Context* ctx, const char* device_name,
   if (TF_GetCode(out_status) != TF_OK) return;
   TFE_OpSetDevice(op, device_name, out_status);
   if (TF_GetCode(out_status) == TF_OK) {
-    for (int i = 0; i < inputs->size() && TF_GetCode(out_status) == TF_OK;
+    for (size_t i = 0; i < inputs->size() && TF_GetCode(out_status) == TF_OK;
          ++i) {
       TFE_OpAddInput(op, inputs->at(i), out_status);
     }
@@ -1059,7 +1059,7 @@ class PyVSpace : public tensorflow::eager::VSpace<PyObject, PyBackwardFunction,
   PyObject* AggregateGradients(
       tensorflow::gtl::ArraySlice<PyObject*> gradient_tensors) const final {
     PyObject* list = PyList_New(gradient_tensors.size());
-    for (int i = 0; i < gradient_tensors.size(); ++i) {
+    for (size_t i = 0; i < gradient_tensors.size(); ++i) {
       // Note: stealing a reference to the gradient tensors.
       CHECK(gradient_tensors[i] != nullptr);
       CHECK(gradient_tensors[i] != Py_None);
@@ -1128,7 +1128,7 @@ class PyVSpace : public tensorflow::eager::VSpace<PyObject, PyBackwardFunction,
       tensorflow::gtl::ArraySlice<PyObject*> output_gradients,
       std::vector<PyObject*>* result) const final {
     PyObject* grads = PyTuple_New(output_gradients.size());
-    for (int i = 0; i < output_gradients.size(); ++i) {
+    for (size_t i = 0; i < output_gradients.size(); ++i) {
       if (output_gradients[i] == nullptr) {
         Py_INCREF(Py_None);
         PyTuple_SET_ITEM(grads, i, Py_None);
@@ -2064,7 +2064,7 @@ PyObject* TFE_Py_TapeGradient(PyObject* tape, PyObject* target,
   if (!result.empty()) {
     PyObject* py_result = PyList_New(result.size());
     tensorflow::gtl::FlatSet<PyObject*> seen_results(result.size());
-    for (int i = 0; i < result.size(); ++i) {
+    for (size_t i = 0; i < result.size(); ++i) {
       if (result[i] == nullptr) {
         if (unconnected_gradients_zero) {
           // generate a zeros tensor in the shape of sources[i]
@@ -2440,7 +2440,7 @@ tensorflow::Status CallForwardGradientFunction(
   }
   tensorflow::Safe_PyObjectPtr py_input_tangents(
       PyTuple_New(input_tangents.size()));
-  for (int i = 0; i < input_tangents.size(); ++i) {
+  for (size_t i = 0; i < input_tangents.size(); ++i) {
     PyObject* element;
     if (input_tangents[i] == nullptr) {
       element = Py_None;
@@ -2573,7 +2573,7 @@ PyObject* RecordGradient(PyObject* op_name, PyObject* inputs, PyObject* attrs,
               if (!unneeded_gradients.empty()) {
                 skip_input_indices.reset(
                     PyTuple_New(unneeded_gradients.size()));
-                for (int i = 0; i < unneeded_gradients.size(); i++) {
+                for (size_t i = 0; i < unneeded_gradients.size(); i++) {
                   PyTuple_SET_ITEM(
                       skip_input_indices.get(), i,
                       GetPythonObjectFromInt(unneeded_gradients[i]));
@@ -2833,7 +2833,7 @@ bool RunCallbacks(
   if (!op_exec_info.run_callbacks) return true;
 
   tensorflow::Safe_PyObjectPtr inputs(PyTuple_New(flattened_inputs->size()));
-  for (int i = 0; i < flattened_inputs->size(); i++) {
+  for (size_t i = 0; i < flattened_inputs->size(); i++) {
     PyObject* input = (*flattened_inputs)[i].get();
     Py_INCREF(input);
     PyTuple_SET_ITEM(inputs.get(), i, input);
@@ -3269,7 +3269,7 @@ struct EncodeResult {
     } else {
       PyObject* objects_tuple = PyTuple_New(objects.size());
 
-      for (int i = 0; i < objects.size(); i++) {
+      for (size_t i = 0; i < objects.size(); i++) {
         PyTuple_SET_ITEM(objects_tuple, i, objects[i]);
       }
 
@@ -3482,7 +3482,7 @@ void PrintToPythonStdout(const char* msg) {
     // we write the message in chunks small enough to not be truncated.
     int CHUNK_SIZE = 900;
     auto len = string_msg.length();
-    for (int i = 0; i < len; i += CHUNK_SIZE) {
+    for (size_t i = 0; i < len; i += CHUNK_SIZE) {
       PySys_WriteStdout("%s", string_msg.substr(i, CHUNK_SIZE).c_str());
     }
 

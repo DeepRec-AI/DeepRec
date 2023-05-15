@@ -53,10 +53,6 @@ using se::DeviceMemoryBase;
 using se::Stream;
 #endif //GOOGLE_CUDA
 
-namespace {
-const char* kInferenceMode = "INFERENCE_MODE";
-}
-
 template <typename TKey, typename TValue>
 class KvResourceLookupResourceOp : public OpKernel {
  public:

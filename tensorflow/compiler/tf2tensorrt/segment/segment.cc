@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/compiler/tf2tensorrt/segment/union_find.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/graph/graph_util.h"
 #include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -38,6 +39,27 @@ limitations under the License.
 
 namespace tensorflow {
 namespace tensorrt {
+
+namespace {
+
+void GetLabeledNodes(gtl::FlatSet<string>* node_set, Graph* g) {
+  std::unordered_set<Node*> boundary_node_set;
+  graph_util::GetComputeGraphBoundaryNodes(g, boundary_node_set);
+
+  auto label_node_func = [node_set](Node* n) {
+    node_set->insert(n->name());
+  };
+
+  std::vector<Node* > boundary_node_vec;
+  for (const auto node : boundary_node_set) {
+    boundary_node_vec.emplace_back(node);
+  }
+  ReverseDFSFrom(*g, boundary_node_vec,
+                 std::move(label_node_func), nullptr);
+}
+
+} // namespace
+
 namespace segment {
 using absl::StrAppend;
 using absl::StrCat;
@@ -438,6 +460,11 @@ Status SegmentGraph(const Graph* tf_graph,
     tftrt_node_blacklist.insert(x);
   }
 
+  // User defined special subgraphs which can not be convert to trt graph.
+  // e.g. some sparse lookup subgraphs.
+  auto labeled_node_blacklist = gtl::FlatSet<string>{};
+  GetLabeledNodes(&labeled_node_blacklist, const_cast<Graph*>(tf_graph));
+
   // Parsing each node of the graph
   std::vector<UnionFind<SimpleNode*>> node_segments;
   for (int i = 0; i < graph->num_node_ids(); ++i) {
@@ -467,6 +494,14 @@ Status SegmentGraph(const Graph* tf_graph,
                 << "(Op name: " << node->name() << "), "
                 << "(Reason: Blacklisted with the env var TF_TRT_OP_BLACKLIST)";
         unsupported_ops.emplace(node->tf_node()->type_string());
+        num_unsupported_ops++;
+        node = nullptr;
+      } else if (labeled_node_blacklist.count(node->tf_node()->name())) {
+        LOG(WARNING) << "Blacklisted as TF-TRT candidate, "
+                << "(Op name: " << node->name() << "), "
+                << "(Reason: User labeled nodes blacklist)";
+        // TODO FIXME : delete
+        unsupported_ops.emplace(node->tf_node()->name());
         num_unsupported_ops++;
         node = nullptr;
       } else {

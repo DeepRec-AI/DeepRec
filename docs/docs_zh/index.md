@@ -100,6 +100,7 @@ Arm-Compute-Library
 :maxdepth: 2
 :caption: 模型量化
 
+AMX
 BFloat16
 ```
 
@@ -117,6 +118,7 @@ ParquetDataset
 :maxdepth: 2
 :caption: 编译优化
 
+TensorRT
 JitCugraph
 BladeDISC
 XLA
