@@ -1040,42 +1040,19 @@ TEST(EmbeddingVariableTest, TestRemoveLockless) {
 
 TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   int64 value_size = 4;
-  Tensor value(DT_FLOAT, TensorShape({value_size}));
-  test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
-  float* fill_v = (float*)malloc(value_size * sizeof(float));
-  std::vector<int64> size;
-  size.emplace_back(1000);
-  auto emb_config = EmbeddingConfig(
-      /*emb_index = */0, /*primary_emb_index = */0,
-      /*block_num = */1, /*slot_num = */0,
-      /*name = */"", /*steps_to_live = */0,
-      /*filter_freq = */0, /*max_freq = */999999,
-      /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
-      /*max_element_size = */0, /*false_positive_probability = */-1.0,
-      /*counter_type = */DT_UINT64);
-  auto storage_manager =
-    new embedding::StorageManager<int64, float>(
-        "EmbeddingVar", embedding::StorageConfig(
-        embedding::LEVELDB, testing::TmpDir(), size,
-        "normal_contiguous", emb_config));
-  auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      emb_config, cpu_allocator());
-  variable->Init(value, 1);
-  std::vector<ValuePtr<float>*> value_ptr_list;
-  std::vector<int64> key_list;
+  KVInterface<int64, float>* hashmap =
+      new LevelDBKV<int64, float>(testing::TmpDir());
+  hashmap->SetTotalDims(value_size);
 
-  for(int64 i = 0; i < 6; i++) {
-    key_list.emplace_back(i);
-    ValuePtr<float>* tmp =
-      new NormalContiguousValuePtr<float>(ev_allocator(), 4);
-    value_ptr_list.emplace_back(tmp);
+  for (int64 i = 0; i < 6; ++i) {
+    const ValuePtr<float>* tmp =
+        new NormalContiguousValuePtr<float>(ev_allocator(), value_size);
+    hashmap->Commit(i, tmp);
   }
 
-  variable->BatchCommit(key_list, value_ptr_list);
   for(int64 i = 0; i < 6; i++) {
     ValuePtr<float>* tmp = nullptr;
-    Status s = variable->storage_manager()->GetOrCreate(i, &tmp, 4);
+    Status s = hashmap->Lookup(i, &tmp);
     ASSERT_EQ(s.ok(), true);
   }
 }

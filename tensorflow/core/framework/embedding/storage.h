@@ -72,7 +72,8 @@ class Storage {
   TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
-  virtual void Insert(K key, ValuePtr<V>** value_ptr, int64 alloc_len) = 0;
+  virtual Status Contains(K key) = 0;
+  virtual void Insert(K key, ValuePtr<V>** value_ptr, size_t alloc_len) = 0;
   virtual void InsertToDram(K key, ValuePtr<V>** value_ptr,
                             int64 alloc_len) = 0;
   virtual void Insert(K key, ValuePtr<V>* value_ptr) = 0;
@@ -102,6 +103,7 @@ class Storage {
       std::vector<int64>* freq_list,
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) = 0;
+  virtual embedding::Iterator* GetIterator() = 0;
   virtual void RestoreSsdHashmap(
       K* key_list, int64* key_file_id_list,
       int64* key_offset_list, int64 num_of_keys,
