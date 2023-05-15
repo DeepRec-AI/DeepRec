@@ -18,6 +18,7 @@ from __future__ import division
 from __future__ import print_function
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
+from collections import defaultdict
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
@@ -1585,6 +1586,7 @@ def group_embedding_lookup_sparse(params,
                                   combiners,
                                   sp_weights=None,
                                   partition_strategy="mod",
+                                  is_sequence=False,
                                   name=None):
   """
     This interface is designed for fused multiple embedding lookup.
@@ -1655,11 +1657,11 @@ def group_embedding_lookup_sparse(params,
     ev_group_id = 0
     tf_group_id = 0
     is_ev_list = [False for _ in range(len(params))]
-    params_idx_map = {}
+    params_idx_map = defaultdict(list) # queue
     batch_size = -1
 
     for index, param in enumerate(params):
-      params_idx_map[param] = index
+      params_idx_map[param].append(index)
       sp_id = sp_ids[index]
       if not isinstance(sp_id, sparse_tensor.SparseTensor):
         try: #assume RaggedTensor
@@ -1696,6 +1698,7 @@ def group_embedding_lookup_sparse(params,
       ev_sp_values = [[] for _ in range(ev_group_id)]
       ev_sp_indices = [[] for _ in range(ev_group_id)]
       ev_sp_weights = [[] for _ in range(ev_group_id)]
+      ev_dense_shapes = [[] for _ in range(ev_group_id)]
       ev_handlers = [[] for _ in range(ev_group_id)]
       ev_dimensions = [0 for _ in range(ev_group_id)]
       ev_combiners = ["mean" for _ in range(ev_group_id)]
@@ -1715,8 +1718,9 @@ def group_embedding_lookup_sparse(params,
         ev_dimensions[group_id] = dim
         ev_handlers[group_id].append(param.handle)
         ev_sp_values[group_id].append(sp_id.values)
-        ev_sp_indices[group_id].append(sp_id.indices[:, 0])
-        output_index_list[group_id].append(params_idx_map[param])
+        ev_sp_indices[group_id].append(sp_id.indices)
+        ev_dense_shapes[group_id].append(sp_id.dense_shape)
+        output_index_list[group_id].append(params_idx_map[param].pop(0))
 
         if not ignore_weights:
           sp_weight = sp_weights[index]
@@ -1732,9 +1736,10 @@ def group_embedding_lookup_sparse(params,
                                                                           ev_sp_indices[group_id],
                                                                           ev_sp_weights[group_id],
                                                                           ev_combiners[group_id],
-                                                                          batch_size,
+                                                                          ev_dense_shapes[group_id],
                                                                           dim,
-                                                                          ignore_weights)[0]
+                                                                          ignore_weights,
+                                                                          is_sequence)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
     
@@ -1742,6 +1747,7 @@ def group_embedding_lookup_sparse(params,
       tf_sp_values = [[] for _ in range(tf_group_id)]
       tf_sp_indices = [[] for _ in range(tf_group_id)]
       tf_sp_weights = [[] for _ in range(tf_group_id)]
+      tf_dense_shape = [[] for _ in range(tf_group_id)]
       tf_handlers = [[] for _ in range(tf_group_id)]
       tf_dimensions = [0 for _ in range(tf_group_id)]
       tf_combiners = ["mean" for _ in range(tf_group_id)]
@@ -1754,15 +1760,15 @@ def group_embedding_lookup_sparse(params,
         dim = param.shape[1].value
         group_id = tf_group_id_map[dim]
         sp_id = sp_ids[index]
-        batch_size = math_ops.cast(sp_id.dense_shape[0], dtype=dtypes.int32)
         combiner = combiners[index]
 
         tf_combiners[group_id] = combiner
         tf_dimensions[group_id] = dim
         tf_handlers[group_id].append(param)
         tf_sp_values[group_id].append(sp_id.values)
-        tf_sp_indices[group_id].append(sp_id.indices[:, 0])
-        output_index_list[group_id].append(params_idx_map[param])
+        tf_sp_indices[group_id].append(sp_id.indices)
+        tf_dense_shape[group_id].append(sp_id.dense_shape)
+        output_index_list[group_id].append(params_idx_map[param].pop(0))
 
         if not ignore_weights:
           sp_weight = sp_weights[index]
@@ -1778,9 +1784,10 @@ def group_embedding_lookup_sparse(params,
                                                                       tf_sp_indices[group_id],
                                                                       tf_sp_weights[group_id],
                                                                       tf_combiners[group_id],
-                                                                      batch_size,
+                                                                      tf_dense_shape[group_id],
                                                                       dim,
-                                                                      ignore_weights)[0]
+                                                                      ignore_weights,
+                                                                      is_sequence)[0]
           for idx, output in zip(output_index, outputs):
             emb_vec[idx] = output
                                                                 

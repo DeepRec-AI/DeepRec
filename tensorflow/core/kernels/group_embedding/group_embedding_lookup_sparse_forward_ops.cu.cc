@@ -67,10 +67,7 @@ class GroupEmbeddingVarLookupOp
     EmbeddingVar<TFKey, TValue>* ev = nullptr;
     const auto& device = ctx->eigen_device<GPUDevice>();
     TValue* default_v = nullptr;
-
-    const Tensor& dense_shape_tensor = ctx->input(this->num_lookups_ * 4);
-    auto dense_shape = dense_shape_tensor.flat<int>().data();
-    int batch_size = dense_shape[0];
+    int64 batch_size = -1;
 
     for (int i = 0; i < this->num_lookups_; ++i) {
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
@@ -80,6 +77,10 @@ class GroupEmbeddingVarLookupOp
       const Tensor& sp_indices_tensor = ctx->input(this->num_lookups_ * 2 + i);
       auto sp_indices = sp_indices_tensor.flat<int64>().data();
       int nnz = sp_indices_tensor.shape().dim_size(0);
+      const Tensor& dense_shape_tensor = ctx->input(this->num_lookups_ * 4 + i);
+      auto dense_shape = dense_shape_tensor.flat<int64>().data();
+      int dense_shape_num = dense_shape_tensor.NumElements();
+      batch_size = dense_shape[0];
 
       OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, i), &ev));
       core::ScopedUnref unref_me(ev);
@@ -214,21 +215,30 @@ class GroupEmbeddingVarLookupOp
         }
       }
 
+      TensorShape emb_vectors_tensor_shape;
+      // Special case for sequence categorical column output
+      if (this->is_sequence_) {
+        emb_vectors_tensor_shape = TensorShape(
+            std::vector<int64>({batch_size, dense_shape[1], dimension}));
+      } else {
+        emb_vectors_tensor_shape =
+            TensorShape(std::vector<int64>({batch_size, dimension}));
+      }
+
       Tensor* op_output_tensor = nullptr;
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(i, {batch_size, dimension},
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(i, emb_vectors_tensor_shape,
                                                &op_output_tensor));
       auto op_output = op_output_tensor->flat<TValue>().data();
 
       // allocate offset tensor
       TensorShape values_offset_tensor_shape =
-          TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
+          TensorShape(std::vector<int64>({batch_size}));
 
       // Fake Output
       Tensor* unique_keys_tensor = nullptr;
-      OP_REQUIRES_OK(ctx,
-                     ctx->forward_input_or_allocate_output(
-                        {this->num_lookups_ + i}, this->num_lookups_ + i,
-                        sp_values_tensor.shape(), &unique_keys_tensor));
+      OP_REQUIRES_OK(ctx, ctx->forward_input_or_allocate_output(
+                              {this->num_lookups_ + i}, this->num_lookups_ + i,
+                              sp_values_tensor.shape(), &unique_keys_tensor));
 
       Tensor* unique_idx_tensor = nullptr;
       OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 2 + i,
@@ -242,7 +252,7 @@ class GroupEmbeddingVarLookupOp
       auto values_offset = values_offset_tensor->flat<int>().data();
 
       launch_cal_per_element_row_offset(
-          batch_size, nnz, reinterpret_cast<const int64_t*>(sp_indices),
+          batch_size, nnz, dense_shape_num, reinterpret_cast<const int64_t*>(sp_indices),
           values_offset, device.stream());
 
       TValue* sp_weights = nullptr;
@@ -302,10 +312,7 @@ class GroupVariableLookupOp
 
   void Compute(OpKernelContext* ctx) override {
     const cudaStream_t stream = ctx->eigen_device<GPUDevice>().stream();
-    const Tensor& dense_shape_tensor = ctx->input(this->num_lookups_ * 4);
-    auto dense_shape = dense_shape_tensor.flat<int>().data();
-    int batch_size = dense_shape[0];
-
+    int64 batch_size = -1;
     for (int i = 0; i < this->num_lookups_; ++i) {
       const Tensor& emb_variable_tensor = ctx->input(i);
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
@@ -315,9 +322,20 @@ class GroupVariableLookupOp
       const Tensor& sp_indices_tensor = ctx->input(this->num_lookups_ * 2 + i);
       auto sp_indices = sp_indices_tensor.flat<int64>().data();
       int nnz = sp_indices_tensor.shape().dim_size(0);
+      const Tensor& dense_shape_tensor = ctx->input(this->num_lookups_ * 4 + i);
+      auto dense_shape = dense_shape_tensor.flat<int64>().data();
+      int dense_shape_num = dense_shape_tensor.NumElements();
+      batch_size = dense_shape[0];
 
-      TensorShape emb_vectors_tensor_shape = TensorShape(std::vector<int64>(
-          {static_cast<long long>(batch_size), emb_vec_size}));
+      TensorShape emb_vectors_tensor_shape;
+      // Special case for sequence categorical column output
+      if (this->is_sequence_) {
+        emb_vectors_tensor_shape = TensorShape(
+            std::vector<int64>({batch_size, dense_shape[1], emb_vec_size}));
+      } else {
+        emb_vectors_tensor_shape =
+            TensorShape(std::vector<int64>({batch_size, emb_vec_size}));
+      }
       Tensor* emb_vectors_tensor = nullptr;
       // allocate output
       OP_REQUIRES_OK(ctx, ctx->allocate_output(i, emb_vectors_tensor_shape,
@@ -326,13 +344,12 @@ class GroupVariableLookupOp
 
       // allocate offset tensor
       TensorShape values_offset_tensor_shape =
-          TensorShape(std::vector<int64>({static_cast<long long>(batch_size)}));
+          TensorShape(std::vector<int64>({batch_size}));
       // Fake Output
       Tensor* unique_keys_tensor = nullptr;
-      OP_REQUIRES_OK(ctx,
-                     ctx->forward_input_or_allocate_output(
-                        {this->num_lookups_ + i}, this->num_lookups_ + i,
-                        sp_values_tensor.shape(), &unique_keys_tensor));
+      OP_REQUIRES_OK(ctx, ctx->forward_input_or_allocate_output(
+                              {this->num_lookups_ + i}, this->num_lookups_ + i,
+                              sp_values_tensor.shape(), &unique_keys_tensor));
 
       Tensor* unique_idx_tensor = nullptr;
       OP_REQUIRES_OK(ctx, ctx->allocate_output(this->num_lookups_ * 2 + i,
@@ -344,7 +361,7 @@ class GroupVariableLookupOp
                                                &values_offset_tensor));
       auto values_offset = values_offset_tensor->flat<int>().data();
       launch_cal_per_element_row_offset(
-          batch_size, nnz, reinterpret_cast<const int64_t*>(sp_indices),
+          batch_size, nnz, dense_shape_num, reinterpret_cast<const int64_t*>(sp_indices),
           values_offset, stream);
 
       TValue* sp_weights = nullptr;

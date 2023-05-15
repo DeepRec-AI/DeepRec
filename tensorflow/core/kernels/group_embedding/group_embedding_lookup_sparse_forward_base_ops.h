@@ -27,7 +27,7 @@ class GroupLookupBaseCpuOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("dimension", &m_dimension));
     // OP_REQUIRES_OK(c, c->GetAttr("max_norm", &max_norm_));
     OP_REQUIRES_OK(c, c->GetAttr("ignore_weights", &m_ignore_weights));
-
+    OP_REQUIRES_OK(c, c->GetAttr("is_sequence", &m_is_sequence));
     OP_REQUIRES_OK(c, ReadInt64FromEnvVar(kUniqueOpPartitionSizeEnv,
                                           kPartitionSize, &partition_size_));
     OP_REQUIRES(
@@ -52,6 +52,7 @@ class GroupLookupBaseCpuOp : public OpKernel {
   int m_dimension;
   bool m_is_use_default_value_tensor;
   bool m_ignore_weights;
+  bool m_is_sequence;
   std::string m_combiner;
   bool serial_ = false;
   int64 partition_size_ = 0;
