@@ -26,7 +26,7 @@ limitations under the License.
 namespace tensorflow {
 namespace embedding{
 template <class K, class V>
-class StorageManager;
+class Storage;
 }
 
 class FilterFactory {
@@ -34,18 +34,18 @@ class FilterFactory {
   template<typename K, typename V, typename EV>
   static FilterPolicy<K, V, EV>* CreateFilter(
       const EmbeddingConfig& config, EV* ev,
-      embedding::StorageManager<K, V>* storage_manager) {
+      embedding::Storage<K, V>* storage) {
     if (config.filter_freq > 0) {
       if (config.kHashFunc != 0) {
         return new BloomFilterPolicy<K, V, EV>(
-            config, ev, storage_manager);
+            config, ev);
       } else {
         return new CounterFilterPolicy<K, V, EV>(
-            config, ev, storage_manager);
+            config, ev);
       }
     } else {
       return new NullableFilterPolicy<K, V, EV>(
-          config, ev, storage_manager);
+          config, ev, storage);
     }
   }
 };

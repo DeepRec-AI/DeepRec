@@ -52,10 +52,10 @@ template<class K, class V>
 class TestableEmbeddingVar : public EmbeddingVar<K, V> {
  public:
   TestableEmbeddingVar(const string& name,
-                       embedding::StorageManager<K, V>* storage_manager,
+                       embedding::Storage<K, V>* storage,
                        EmbeddingConfig emb_cfg = EmbeddingConfig(),
                        Allocator* alloc = nullptr) : EmbeddingVar<K, V>(
-                         name, storage_manager, emb_cfg, alloc) {}
+                         name, storage, emb_cfg, alloc) {}
 
   using EmbeddingVar<K, V>::GetFilter;
 };
@@ -126,15 +126,16 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
   //float* fill_v = (float*)malloc(value_size * sizeof(float));
   EmbeddingConfig emb_config = 
       EmbeddingConfig(0, 0, 1, 1, "", 0, 0, 99999, 14.0);
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "name",
-                 embedding::StorageConfig(
-                     StorageType::DRAM,
-                     "", {1024, 1024, 1024, 1024},
-                     "light",
-                     emb_config));
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "light",
+          emb_config),
+      cpu_allocator(),
+      "name");
   auto emb_var = new EmbeddingVar<int64, float>("name",
-        storage_manager, emb_config,
+        storage, emb_config,
         cpu_allocator());
   emb_var ->Init(value, 1);
   
@@ -163,15 +164,16 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
 
   int steps_to_live = 5;
   EmbeddingConfig emb_config = EmbeddingConfig(0, 0, 1, 1, "", steps_to_live);
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "name",
-                  embedding::StorageConfig(
-                     StorageType::DRAM,
-                     "", {1024, 1024, 1024, 1024},
-                     "normal",
-                     emb_config));
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(
+          StorageType::DRAM,
+          "", {1024, 1024, 1024, 1024},
+          "normal",
+          emb_config),
+      cpu_allocator(),
+      "name");
   auto emb_var = new EmbeddingVar<int64, float>("name",
-      storage_manager, emb_config,
+      storage, emb_config,
       cpu_allocator());
   emb_var ->Init(value, 1);
   LOG(INFO) << "size:" << emb_var->Size();
@@ -198,10 +200,10 @@ TEST(EmbeddingVariableTest, TestEmptyEV) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   {
-    auto storage_manager = new embedding::StorageManager<int64, float>(
-        "EmbeddingVar", embedding::StorageConfig());
+    auto storage = embedding::StorageFactory::Create<int64, float>(
+        embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
     auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-        storage_manager, EmbeddingConfig(), cpu_allocator());
+        storage, EmbeddingConfig(), cpu_allocator());
     variable->Init(value, 1);
 
     LOG(INFO) << "size:" << variable->Size();
@@ -264,10 +266,10 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
   int64 value_size = 8;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddigVar");
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(0, 0, 1, 1, "", 5),
+      storage, EmbeddingConfig(0, 0, 1, 1, "", 5),
       cpu_allocator());
   variable->Init(value, 1);
 
@@ -340,10 +342,10 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(0, 0, 1, 1, "", 5),
+      storage, EmbeddingConfig(0, 0, 1, 1, "", 5),
       cpu_allocator());
   variable->Init(value, 1);
 
@@ -424,10 +426,10 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(), cpu_allocator());
+      storage, EmbeddingConfig(), cpu_allocator());
 
   variable->Init(value, 1);
 
@@ -473,10 +475,10 @@ TEST(EmbeddingVariableTest, TestBloomFilter) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01),
       cpu_allocator());
 
@@ -505,10 +507,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
           "normal", 10, 0.01, DT_UINT64), cpu_allocator());
 
@@ -577,10 +579,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
           "normal", 10, 0.01, DT_UINT32), cpu_allocator());
 
@@ -649,10 +651,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
           "normal_contiguous", 10, 0.01, DT_UINT16), cpu_allocator());
 
@@ -722,10 +724,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
 
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
           "normal_contiguous", 10, 0.01, DT_UINT8), cpu_allocator());
 
@@ -793,11 +795,10 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
   int64 value_size = 128;
   Tensor value(DT_INT64, TensorShape({value_size}));
   test::FillValues<int64>(&value, std::vector<int64>(value_size, 10));
- // float* fill_v = (int64*)malloc(value_size * sizeof(int64));
-  auto storage_manager = new embedding::StorageManager<int64, int64>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, int64>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto variable = new EmbeddingVar<int64, int64>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(), cpu_allocator());
+      storage, EmbeddingConfig(), cpu_allocator());
 
   variable->Init(value, 1);
 
@@ -847,10 +848,10 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float)); 
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(0, 0, 1, 1, "", 5, 7),
       cpu_allocator());
 
@@ -873,10 +874,10 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
 EmbeddingVar<int64, float>* InitEV_Lockless(int64 value_size) {
   Tensor value(DT_INT64, TensorShape({value_size}));
   test::FillValues<int64>(&value, std::vector<int64>(value_size, 10));
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, EmbeddingConfig(), cpu_allocator());
+      storage, EmbeddingConfig(), cpu_allocator());
 
   variable->Init(value, 1);
   return variable;
@@ -996,10 +997,10 @@ TEST(EmbeddingVariableTest, TestEVStorageType_DRAM) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       EmbeddingConfig(/*emb_index = */0, /*primary_emb_index = */0,
                       /*block_num = */1, /*slot_num = */1,
                       /*name = */"", /*steps_to_live = */0,
@@ -1335,14 +1336,15 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
       /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
       /*max_element_size = */0, /*false_positive_probability = */-1.0,
       /*counter_type = */DT_UINT64);
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar",
+  auto storage= embedding::StorageFactory::Create<int64, float>(
       embedding::StorageConfig(embedding::DRAM_SSDHASH,
       testing::TmpDir(),
       size, "normal_contiguous",
-      emb_config));
+      emb_config),
+      cpu_allocator(),
+      "EmbeddingVar");
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager, emb_config, cpu_allocator());
+      storage, emb_config, cpu_allocator());
   variable->Init(value, 1);
   variable->InitCache(CacheStrategy::LFU);
   RestoreBuffer buf;
@@ -1357,9 +1359,9 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
   }
   variable->Import(buf, 6, 1, 0, 1, false, nullptr);
 
-  ASSERT_EQ(variable->storage_manager()->Size(0), 4);
-  ASSERT_EQ(variable->storage_manager()->Size(1), 2);
-  delete storage_manager;
+  ASSERT_EQ(variable->storage()->Size(0), 4);
+  ASSERT_EQ(variable->storage()->Size(1), 2);
+  delete storage;
 }
 
 void t1_gpu(KVInterface<int64, float>* hashmap) {
@@ -1771,7 +1773,7 @@ void InsertKey(EmbeddingVar<int64, float>* variable, int value_size) {
 void RemoveKey(EmbeddingVar<int64, float>* variable) {
   for (int64 i = 0; i < 10; i++) {
     sleep(1);
-    variable->storage_manager()->Remove(20);
+    variable->storage()->Remove(20);
   }
   LOG(INFO)<<"Remove thread finish";
 }
@@ -1788,10 +1790,10 @@ TEST(EmbeddingVariableTest, TestLookupRemoveConcurrency) {
       /*l2_weight_threshold = */-1.0, /*layout = */"normal",
       /*max_element_size = */0, /*false_positive_probability = */-1.0,
       /*counter_type = */DT_UINT64);
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-      "EmbeddingVar", embedding::StorageConfig());
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
   auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
+      storage,
       emb_config,
       cpu_allocator());
 

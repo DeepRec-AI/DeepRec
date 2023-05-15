@@ -207,7 +207,7 @@ class GroupEmbeddingVarLookupOp
         delete[] memcpy_address;
 
         if (ev->IsMultiLevel()) {
-          ev->storage_manager()->Schedule([ev, indices_host, N]() {
+          ev->storage()->Schedule([ev, indices_host, N]() {
             embedding::BatchCache<TFKey>* cache = ev->Cache();
             cache->add_to_rank(indices_host, N);
             delete[] indices_host;

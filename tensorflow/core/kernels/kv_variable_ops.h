@@ -324,7 +324,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   int64 filter_iterator_size = 0;
   if (it != nullptr) {
     it->SwitchToAdmitFeatures();
-    ev->storage_manager()->iterator_mutex_lock();
+    ev->storage()->iterator_mutex_lock();
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       ++iterator_size;
     }
@@ -513,7 +513,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer,
       bytes_limit, &ev_value_dump_iter,
       TensorShape({partitioned_tot_key_list.size() + iterator_size, ev->ValueLen()}),
-      it, ev->storage_manager()->GetOffset(ev->GetEmbeddingIndex()));
+      it, ev->storage()->GetOffset(ev->GetEmbeddingIndex()));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -576,7 +576,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   free(dump_buffer);
 
   if (it != nullptr) {
-    ev->storage_manager()->iterator_mutex_unlock();
+    ev->storage()->iterator_mutex_unlock();
     delete it;
   }
 
@@ -600,7 +600,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
   bool filter_flag = true;
   embedding::BatchCache<K>* cache_for_restore_hbm = nullptr;
   if (ev->IsMultiLevel() && ev->IsUseHbm()) {
-    auto cache_strategy = ev->storage_manager()->CacheStrategy();
+    auto cache_strategy = ev->storage()->CacheStrategy();
     cache_for_restore_hbm = embedding::CacheFactory::Create<K>(
         cache_strategy, "hbm_restore_cache for " + name_string);
   }
@@ -778,7 +778,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     cache_for_restore_hbm->get_cached_ids(
         hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
     ev->ImportToHbm(hbm_ids, num_of_hbm_ids);
-    ev->storage_manager()->Schedule([ev, hbm_ids, num_of_hbm_ids,
+    ev->storage()->Schedule([ev, hbm_ids, num_of_hbm_ids,
                                      hbm_versions, hbm_freqs]() {
       embedding::BatchCache<K>* cache = ev->Cache();
       cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
@@ -887,7 +887,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
   }
   embedding::BatchCache<K>* cache_for_restore_hbm = nullptr;
   if (ev->IsMultiLevel() && ev->IsUseHbm()) {
-    auto cache_strategy = ev->storage_manager()->CacheStrategy();
+    auto cache_strategy = ev->storage()->CacheStrategy();
     cache_for_restore_hbm = embedding::CacheFactory::Create<K>(
         cache_strategy, "hbm_restore_cache for " + tensor_key);
   }
@@ -1040,7 +1040,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     cache_for_restore_hbm->get_cached_ids(
         hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
     ev->ImportToHbm(hbm_ids, num_of_hbm_ids);
-    ev->storage_manager()->Schedule([ev, hbm_ids, num_of_hbm_ids,
+    ev->storage()->Schedule([ev, hbm_ids, num_of_hbm_ids,
                                      hbm_versions, hbm_freqs]() {
       embedding::BatchCache<K>* cache = ev->Cache();
       cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
@@ -1159,7 +1159,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
 
     embedding::BatchCache<K>* cache_for_restore_hbm = nullptr;
     if (ev->IsMultiLevel() && ev->IsUseHbm()) {
-      auto cache_strategy = ev->storage_manager()->CacheStrategy();
+      auto cache_strategy = ev->storage()->CacheStrategy();
       cache_for_restore_hbm = embedding::CacheFactory::Create<K>(
           cache_strategy, "hbm_restore_cache for " + name_string);
     }
@@ -1501,7 +1501,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
       cache_for_restore_hbm->get_cached_ids(
           hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
       ev->ImportToHbm(hbm_ids, num_of_hbm_ids);
-      ev->storage_manager()->Schedule([ev, hbm_ids, num_of_hbm_ids,
+      ev->storage()->Schedule([ev, hbm_ids, num_of_hbm_ids,
                                        hbm_versions, hbm_freqs]() {
         embedding::BatchCache<K>* cache = ev->Cache();
         cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);

@@ -759,13 +759,14 @@ class GroupEmbeddingVariableForWardOpTest : public OpsTestBase {
       Allocator* gpu_allocator = device_->GetAllocator(AllocatorAttributes());
       auto embedding_config =
           EmbeddingConfig(0, 0, 1, 1, "", 0, 0, 99999, 14.0);
-      auto storage_manager = new embedding::StorageManager<TKey, TValue>(
-          "EV" + std::to_string(i),
+      auto storage = embedding::StorageFactory::Create<TKey, TValue>(
           embedding::StorageConfig(embedding::StorageType::DRAM, "",
                                    {1024, 1024, 1024, 1024}, "normal",
-                                   embedding_config));
+                                   embedding_config),
+          gpu_allocator,
+          "EV" + std::to_string(i));
       embedding_var = new EmbeddingVar<TKey, TValue>(
-          "EV" + std::to_string(i), storage_manager, embedding_config,
+          "EV" + std::to_string(i), storage, embedding_config,
           gpu_allocator);
       Tensor value(DT_FLOAT, TensorShape({emb_vector_dim}));
       test::FillValues<TValue>(&value,
@@ -942,13 +943,14 @@ class GroupEmbeddingVariableBackWardOpTest : public OpsTestBase {
       Allocator* gpu_allocator = device_->GetAllocator(AllocatorAttributes());
       auto embedding_config =
           EmbeddingConfig(0, 0, 1, 1, "", 0, 0, 99999, 14.0);
-      auto storage_manager = new embedding::StorageManager<TKey, TValue>(
-          "EV" + std::to_string(i),
+      auto storage = embedding::StorageFactory::Create<TKey, TValue>(
           embedding::StorageConfig(embedding::StorageType::DRAM, "",
                                    {1024, 1024, 1024, 1024}, "normal",
-                                   embedding_config));
+                                   embedding_config),
+          gpu_allocator,
+          "EV" + std::to_string(i));
       embedding_var = new EmbeddingVar<TKey, TValue>(
-          "EV" + std::to_string(i), storage_manager, embedding_config,
+          "EV" + std::to_string(i), storage, embedding_config,
           gpu_allocator);
       Tensor value(DT_FLOAT, TensorShape({emb_vector_dim}));
       test::FillValues<TValue>(&value,
