@@ -10,8 +10,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 =======================================================================*/
 
-#include <inttypes.h>
-
 #define EIGEN_USE_THREADS
 
 #if GOOGLE_CUDA
@@ -34,8 +32,6 @@ limitations under the License.
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
-
-namespace {
 
 template <typename TFKey, typename TKey, typename TValue>
 class GroupEmbeddingVarLookupOp
@@ -67,8 +63,12 @@ class GroupEmbeddingVarLookupOp
     auto dense_shape = dense_shape_tensor.flat<int>().data();
     int batch_size = dense_shape[0];
 
-    std::vector<Tensor> tensor_list;
-    tensor_list.reserve(this->num_lookups_);
+    Allocator* gpu_allocator =
+        ctx->device()->GetAllocator(AllocatorAttributes());
+    GroupEmbeddingLookupForWard<TKey, TValue> lookuper(
+        this->num_lookups_, this->dimension_, this->max_norm_, gpu_allocator);
+
+    std::vector<Tensor> tensor_list_;
 
     for (size_t i = 0; i < this->num_lookups_; ++i) {
       EmbeddingVar<TFKey, TValue>* ev = nullptr;
@@ -100,9 +100,10 @@ class GroupEmbeddingVarLookupOp
 
       if (ev->IsSingleHbm()) {
         if (is_use_default_value_tensor_) {
-          auto default_value_num = default_v->NumElements() / dimension;
+          Tensor default_values(ctx->input(5 * this->num_lookups_));
+          auto default_value_num = default_values.NumElements() / dimension;
           auto default_values_matrix =
-              default_v->shaped<TValue, 2>({default_value_num, dimension});
+              default_values.shaped<TValue, 2>({default_value_num, dimension});
           TValue* default_v_base = &default_values_matrix(0, 0);
           ev->LookupOrCreate(key_base, out_base, default_v_base,
                              default_value_num, is_use_default_value_tensor_, N,
@@ -241,18 +242,22 @@ class GroupEmbeddingVarLookupOp
             const_cast<TValue*>(sp_weights_tensor.flat<TValue>().data());
       }
 
-      this->lookuper_.set(i, out_base, op_output, values_offset, nnz,
-                          sp_weights);
+      GroupEmbeddingForWardArgs<TKey, TValue> group_embedding_args(
+          out_base, sp_weights, op_output,
+          const_cast<TKey*>(reinterpret_cast<const TKey*>(key_base)),
+          values_offset, nnz);
 
-      tensor_list.emplace_back(out_tensor);
+      lookuper.set(group_embedding_args);
+      tensor_list_.emplace_back(out_tensor);
     }
 
     if (this->combiner_ == "sum") {
-      this->template compute<true, Sum>(batch_size, device.stream());
+      this->template compute<true, Sum>(lookuper, batch_size, device.stream());
     } else if (this->combiner_ == "mean") {
-      this->template compute<true, Mean>(batch_size, device.stream());
+      this->template compute<true, Mean>(lookuper, batch_size, device.stream());
     } else {
-      this->template compute<true, Sqrtn>(batch_size, device.stream());
+      this->template compute<true, Sqrtn>(lookuper, batch_size,
+                                          device.stream());
     }
   }
 
@@ -291,10 +296,14 @@ class GroupVariableLookupOp
     auto dense_shape = dense_shape_tensor.flat<int>().data();
     int batch_size = dense_shape[0];
 
+    Allocator* gpu_allocator =
+        ctx->device()->GetAllocator(AllocatorAttributes());
+    GroupEmbeddingLookupForWard<TKey, TValue> lookuper(
+        this->num_lookups_, this->dimension_, this->max_norm_, gpu_allocator);
+
     for (size_t i = 0; i < this->num_lookups_; ++i) {
       const Tensor& emb_variable_tensor = ctx->input(i);
       const Tensor& sp_values_tensor = ctx->input(this->num_lookups_ + i);
-      int64 emb_row_size = emb_variable_tensor.shape().dim_size(0);
       int64 emb_vec_size = emb_variable_tensor.shape().dim_size(1);
 
       const Tensor& sp_indices_tensor = ctx->input(this->num_lookups_ * 2 + i);
@@ -328,22 +337,21 @@ class GroupVariableLookupOp
         sp_weights =
             const_cast<TValue*>(sp_weights_tensor.flat<TValue>().data());
       }
-
-      this->lookuper_.set(i,
-                          const_cast<TValue*>(reinterpret_cast<const TValue*>(
-                              emb_variable_tensor.flat<TValue>().data())),
-                          emb_vectors, values_offset, nnz, sp_weights,
-                          const_cast<TKey*>(reinterpret_cast<const TKey*>(
-                              sp_values_tensor.flat<TFKey>().data())),
-                          emb_row_size);
+      GroupEmbeddingForWardArgs<TKey, TValue> group_embedding_args(
+          const_cast<TValue*>(emb_variable_tensor.flat<TValue>().data()),
+          sp_weights, emb_vectors,
+          const_cast<TKey*>(reinterpret_cast<const TKey*>(
+              sp_values_tensor.flat<TFKey>().data())),
+          values_offset, nnz);
+      lookuper.set(group_embedding_args);
     }
 
     if (this->combiner_ == "sum") {
-      this->template compute<false, Sum>(batch_size, stream);
+      this->template compute<false, Sum>(lookuper, batch_size, stream);
     } else if (this->combiner_ == "mean") {
-      this->template compute<false, Mean>(batch_size, stream);
+      this->template compute<false, Mean>(lookuper, batch_size, stream);
     } else {
-      this->template compute<false, Sqrtn>(batch_size, stream);
+      this->template compute<false, Sqrtn>(lookuper, batch_size, stream);
     }
   }
 };
@@ -359,7 +367,7 @@ class GroupVariableLookupOp
 REGISTER_GPU_KERNELS(int64, int64_t, float, float);
 REGISTER_GPU_KERNELS(int32, int32_t, float, float);
 #undef REGISTER_GPU_KERNELS
-}  // namespace
+
 }  // namespace tensorflow
 
 #endif  // GOOGLE_CUDA

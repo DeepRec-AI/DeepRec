@@ -27,6 +27,12 @@ namespace {
 
 template <typename TKey, typename TValue>
 struct GroupEmbeddingBackWardArgs {
+  GroupEmbeddingBackWardArgs() = default;
+  GroupEmbeddingBackWardArgs(TValue *grads, TKey *sp_values,
+                             TValue *emb_variable, TValue *grads_output,
+                             int *offset_indices, int nnz)
+      : grads_(grads), sp_values_(sp_values),emb_variable_(emb_variable),
+        grads_output_(grads_output), offset_indices_(offset_indices), nnz_(nnz)  {}
   TValue *grads_;
   TKey *sp_values_;
   TValue *emb_variable_;
@@ -79,7 +85,8 @@ __global__ void ComputeEVGradFn(
               grad_i *= max_norm / l2_norm;
             }
           }
-          args[idx].grads_output_[(value_offset + j) * dimension + tid] = grad_i;
+          args[idx].grads_output_[(value_offset + j) * dimension + tid] =
+              grad_i;
         }
       }
     }
@@ -115,7 +122,8 @@ __global__ void ComputeSparseGradFn(
         float grad_i = grad;
         if (max_norm > 0.0f) {
           int64_t indices = int(args[idx].sp_values_[value_offset + i]);
-          float emb_element = args[idx].emb_variable_[indices * dimension + tid];
+          float emb_element =
+              args[idx].emb_variable_[indices * dimension + tid];
           if (tid == 0) {
             l2_sum = 0.0f;
           }
@@ -175,7 +183,8 @@ __global__ void NormalComputeEVGradFn(
               grad_i *= max_norm / l2_norm;
             }
           }
-          args[idx].grads_output_[(value_offset + j) * dimension + tid] = grad_i;
+          args[idx].grads_output_[(value_offset + j) * dimension + tid] =
+              grad_i;
         }
       }
     }
@@ -210,7 +219,8 @@ __global__ void NormalComputeSparseGradFn(
         float grad_i = grad;
         if (max_norm > 0.0f) {
           int64_t indices = int(args[idx].sp_values_[value_offset + i]);
-          float emb_element = args[idx].emb_variable_[indices * dimension + tid];
+          float emb_element =
+              args[idx].emb_variable_[indices * dimension + tid];
           if (tid == 0) {
             l2_sum[0] = 0.0f;
           }
@@ -233,48 +243,44 @@ __global__ void NormalComputeSparseGradFn(
 template <typename TKey, typename TValue>
 class GroupEmbeddingLookupBackWard {
  public:
-  void initialize(int dimension, int num_lookups, float max_norm) {
-    CK_CUDA_THROW_(cudaMalloc(
-        &d_args_,
-        sizeof(GroupEmbeddingBackWardArgs<TKey, TValue>) * num_lookups));
-    args_.resize(num_lookups);
+  explicit GroupEmbeddingLookupBackWard(int dimension, int num_lookups,
+                                        float max_norm,
+                                        Allocator *gpu_allocator = nullptr)
+      : alloc_(gpu_allocator) {
+    d_args_ =
+        TypedAllocator::Allocate<GroupEmbeddingBackWardArgs<TKey, TValue>>(
+            gpu_allocator, num_lookups, AllocationAttributes());
+    h_args_.reserve(num_lookups);
     max_norm_ = max_norm;
     nums_ = num_lookups;
     dimension_ = dimension;
   }
 
-  void set(int idx, TValue *grads, TValue *grads_output, int *offset_indices,
-           TKey *sp_values, TValue *emb_variable, int nnz) {
-    args_[idx].grads_ = grads;
-    args_[idx].grads_output_ = grads_output;
-    args_[idx].offset_indices_ = offset_indices;
-    args_[idx].sp_values_ = sp_values;
-    args_[idx].emb_variable_ = emb_variable;
-    args_[idx].nnz_ = nnz;
+  void set(GroupEmbeddingBackWardArgs<TKey, TValue> &arg) {
+    h_args_.emplace_back(arg);
   }
 
   ~GroupEmbeddingLookupBackWard() {
-    if (d_args_) {
-      CK_CUDA_THROW_(cudaFree(d_args_));
-    }
+    TypedAllocator::Deallocate(alloc_, d_args_, nums_);
   }
 
   template <typename GradFn>
-  void Backward(GradFn fn, int batch_size, int tile_size, cudaStream_t stream) {
+  inline void Backward(GradFn fn, int batch_size, int tile_size,
+                       cudaStream_t stream) {
     CK_CUDA_THROW_(cudaMemcpyAsync(
-        d_args_, args_.data(),
-        args_.size() * sizeof(GroupEmbeddingBackWardArgs<TKey, TValue>),
+        d_args_, h_args_.data(),
+        h_args_.size() * sizeof(GroupEmbeddingBackWardArgs<TKey, TValue>),
         cudaMemcpyHostToDevice, stream));
 
     {
       if (tile_size <= 32) {
-        const int block_size = batch_size  / 64 * tile_size + 1;
+        const int block_size = batch_size / 64 * tile_size + 1;
 
         fn<<<block_size, 64, 0, stream>>>(batch_size, max_norm_, nums_,
                                           dimension_, d_args_);
       } else {
         fn<<<batch_size, tile_size, 0, stream>>>(batch_size, max_norm_, nums_,
-                                          dimension_, d_args_);
+                                                 dimension_, d_args_);
       }
     }
 
@@ -282,8 +288,9 @@ class GroupEmbeddingLookupBackWard {
   }
 
  protected:
-  std::vector<GroupEmbeddingBackWardArgs<TKey, TValue>> args_;
+  std::vector<GroupEmbeddingBackWardArgs<TKey, TValue>> h_args_;
   GroupEmbeddingBackWardArgs<TKey, TValue> *d_args_;
+  Allocator *alloc_;
   float max_norm_;
   int nums_;
   int dimension_;
@@ -297,56 +304,55 @@ class GroupLookupBackWardBaseOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("max_norm", &max_norm_));
     OP_REQUIRES_OK(c, c->GetAttr("num_lookups", &num_lookups_));
     OP_REQUIRES_OK(c, c->GetAttr("dimension", &dimension_));
-    lookuper_.initialize(dimension_, num_lookups_, max_norm_);
   }
 
   template <bool Isev = false, Combiner combiner>
-  inline void compute(const int batch_size, cudaStream_t stream) {
+  inline void compute(GroupEmbeddingLookupBackWard<TKey, TValue> &lookuper,
+                      const int batch_size, cudaStream_t stream) {
     if (Isev) {
       if (dimension_ <= 2) {
-        lookuper_.Backward(ComputeEVGradFn<TKey, TValue, combiner, 2>,
-                           batch_size, 2, stream);
+        lookuper.Backward(ComputeEVGradFn<TKey, TValue, combiner, 2>,
+                          batch_size, 2, stream);
       } else if (dimension_ <= 4) {
-        lookuper_.Backward(ComputeEVGradFn<TKey, TValue, combiner, 4>,
-                           batch_size, 4, stream);
+        lookuper.Backward(ComputeEVGradFn<TKey, TValue, combiner, 4>,
+                          batch_size, 4, stream);
       } else if (dimension_ <= 8) {
-        lookuper_.Backward(ComputeEVGradFn<TKey, TValue, combiner, 8>,
-                           batch_size, 8, stream);
+        lookuper.Backward(ComputeEVGradFn<TKey, TValue, combiner, 8>,
+                          batch_size, 8, stream);
       } else if (dimension_ <= 16) {
-        lookuper_.Backward(ComputeEVGradFn<TKey, TValue, combiner, 16>,
-                           batch_size, 16, stream);
+        lookuper.Backward(ComputeEVGradFn<TKey, TValue, combiner, 16>,
+                          batch_size, 16, stream);
       } else if (dimension_ <= 32) {
-        lookuper_.Backward(ComputeEVGradFn<TKey, TValue, combiner, 32>,
-                           batch_size, 32, stream);
+        lookuper.Backward(ComputeEVGradFn<TKey, TValue, combiner, 32>,
+                          batch_size, 32, stream);
       } else {
-        lookuper_.Backward(NormalComputeEVGradFn<TKey, TValue, combiner>,
-                           batch_size, dimension_, stream);
+        lookuper.Backward(NormalComputeEVGradFn<TKey, TValue, combiner>,
+                          batch_size, dimension_, stream);
       }
     } else {
       if (dimension_ <= 2) {
-        lookuper_.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 2>,
-                           batch_size, 2, stream);
+        lookuper.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 2>,
+                          batch_size, 2, stream);
       } else if (dimension_ <= 4) {
-        lookuper_.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 4>,
-                           batch_size, 4, stream);
+        lookuper.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 4>,
+                          batch_size, 4, stream);
       } else if (dimension_ <= 8) {
-        lookuper_.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 8>,
-                           batch_size, 8, stream);
+        lookuper.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 8>,
+                          batch_size, 8, stream);
       } else if (dimension_ <= 16) {
-        lookuper_.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 16>,
-                           batch_size, 16, stream);
+        lookuper.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 16>,
+                          batch_size, 16, stream);
       } else if (dimension_ <= 32) {
-        lookuper_.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 32>,
-                           batch_size, 32, stream);
+        lookuper.Backward(ComputeSparseGradFn<TKey, TValue, combiner, 32>,
+                          batch_size, 32, stream);
       } else {
-        lookuper_.Backward(NormalComputeSparseGradFn<TKey, TValue, combiner>,
-                           batch_size, dimension_, stream);
+        lookuper.Backward(NormalComputeSparseGradFn<TKey, TValue, combiner>,
+                          batch_size, dimension_, stream);
       }
     }
   }
 
  protected:
-  GroupEmbeddingLookupBackWard<TKey, TValue> lookuper_;
   std::string combiner_;
   float max_norm_;
   int num_lookups_;
