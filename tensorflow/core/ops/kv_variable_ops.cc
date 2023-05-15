@@ -359,10 +359,11 @@ REGISTER_OP("GroupEmbeddingVarLookup")
     .Input("sp_values: num_lookups * Tkeys")
     .Input("sp_indices: num_lookups * int64")
     .Input("sp_weights: num_lookups * dtype")
-    .Input("dense_shape: int32")
+    .Input("dense_shape: num_lookups * int64")
     .Input("default_value: dtype")
     .Attr("ignore_weights: bool = false")
     .Attr("is_use_default_value_tensor: bool = false")
+    .Attr("is_sequence: bool = false")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("dimension: int")
     .Output("output: num_lookups * dtype")
@@ -386,7 +387,7 @@ REGISTER_OP("GroupEmbeddingVarLookup")
         ShapeHandle unused;
         TF_RETURN_IF_ERROR(
             c->WithRankAtLeast(handle_shape_and_type.shape, 1, &unused));
-        TF_RETURN_IF_ERROR(c->WithRank(c->input(num_lookups*2+i), 1, &unused));
+        TF_RETURN_IF_ERROR(c->WithRank(c->input(num_lookups*2+i), 2, &unused));
         // TF_RETURN_IF_ERROR(c->WithRank(c->input(num_lookups*3+i), 1, &unused));
         ShapeHandle params_subshape;
         params_subshape = handle_shape_and_type.shape;
@@ -432,7 +433,7 @@ REGISTER_OP("GroupVariableLookup")
     .Input("sp_values: num_lookups * Tkeys")
     .Input("sp_indices: num_lookups * int64")
     .Input("sp_weights: num_lookups * dtype")
-    .Input("dense_shape: int32")
+    .Input("dense_shape: num_lookups * int64")
     .Input("default_value: dtype")
     .Output("output: num_lookups * dtype")
     .Output("unique_keys: num_lookups * Tkeys")
@@ -446,14 +447,18 @@ REGISTER_OP("GroupVariableLookup")
     .Attr("num_lookups: int >= 1")
     .Attr("ignore_weights: bool = false")
     .Attr("is_use_default_value_tensor: bool = false")
+    .Attr("is_sequence: bool = false")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_lookups;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_lookups", &num_lookups));
       
+      bool is_sequence;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("is_sequence", &is_sequence));
+
       for (int i = 0; i < num_lookups; ++i) {
         ShapeHandle temp;
         TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(num_lookups+i), 1, &temp));
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2*num_lookups+i), 1, &temp));
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2*num_lookups+i), 2, &temp));
         // TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(3*num_lookups+i), 1, &temp));
         ShapeHandle unused;
         TF_RETURN_IF_ERROR(ctx->WithRankAtLeast(ctx->input(i), 1, &unused));
@@ -461,8 +466,13 @@ REGISTER_OP("GroupVariableLookup")
         TF_RETURN_IF_ERROR(ctx->Subshape(ctx->input(i), 1, &params_subshape));
         DimensionHandle emb_vec_size_dim = ctx->Dim(params_subshape, 0);
         DimensionHandle batch_dim = ctx->UnknownDim();
-        ShapeHandle output_shape = ctx->MakeShape({batch_dim, emb_vec_size_dim});
-        ctx->set_output(i, output_shape);
+        if (is_sequence) {
+          ShapeHandle output_shape = ctx->MakeShape({batch_dim, batch_dim, emb_vec_size_dim});
+          ctx->set_output(i, output_shape);
+        } else {
+          ShapeHandle output_shape = ctx->MakeShape({batch_dim, emb_vec_size_dim});
+          ctx->set_output(i, output_shape);
+        }
         ctx->set_output(num_lookups + i, ctx->Vector(InferenceContext::kUnknownDim));
         ctx->set_output(num_lookups * 2 + i, ctx->input(num_lookups+i));
         ctx->set_output(num_lookups * 3 + i, ctx->Vector(InferenceContext::kUnknownDim));
@@ -488,7 +498,7 @@ REGISTER_OP("GroupVariableLookupGrad")
       int num_lookups = ctx->num_outputs();
       for (int i = 0; i < num_lookups; ++i) {
         ShapeHandle top_grad_shape;
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &top_grad_shape));
+        TF_RETURN_IF_ERROR(ctx->WithRankAtLeast(ctx->input(i), 2, &top_grad_shape));
         DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
         ctx->set_output(i, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
       }

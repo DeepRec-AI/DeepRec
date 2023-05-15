@@ -14,16 +14,25 @@ def _current_group_embedding_scope():
     global _global_fusion_embedding_scope
     return None if len(_global_fusion_embedding_scope) == 0 else _global_fusion_embedding_scope[-1]
 
-def _get_global_group_embedding_scope(builder=None,
+def _get_global_group_embedding_scope(group_names,
+                                      builder=None,
                                       weight_collections=None,
                                       trainable=True):
     global _group_embedding_tensor
     global _global_fusion_embedding_scope
+    filter_ec, admitted_ec = [], []
     for fused_scope in _global_fusion_embedding_scope:
-        fused_output = fused_scope._get_dense_tensor(
-            builder, weight_collections, trainable)
-        for ec, output in zip(fused_scope.embedding_columns, fused_output): #Ordered
-            _group_embedding_tensor[ec] = output
+        if fused_scope.name in group_names:
+            for ec in fused_scope.embedding_columns:
+                if ec in _group_embedding_tensor:
+                    filter_ec.append(ec)
+                else:
+                    admitted_ec.append(ec)
+            fused_output, sequence_lengths = fused_scope._get_dense_tensor(
+                filter_ec, builder, weight_collections, trainable)
+            
+            for ec, output, sequence_length in zip(admitted_ec, fused_output, sequence_lengths): #Ordered
+                _group_embedding_tensor[ec] = (output, sequence_length)
     return _group_embedding_tensor
 
 def _current_group_id():
@@ -39,7 +48,7 @@ class GroupEmbeddingScopeBase(object):
         raise NotImplementedError("Valid EmbeddingColumn should be "
                                   "specified by successor.")
 
-    def _get_dense_tensor(self, inputs, weight_collections=None, trainable=None):
+    def _get_dense_tensor(self, filter_ec, inputs, weight_collections=None, trainable=None, is_sequence=False):
         raise NotImplementedError("should be implement in successor.")
 
     def get_dense_tensor(self, transformation_cache, state_manager):

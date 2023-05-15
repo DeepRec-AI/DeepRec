@@ -1181,9 +1181,10 @@ def shared_embedding_columns(categorical_columns,
     shared_embedding_collection_name += '_shared_embedding'
 
   result = []
+  fused_scope = group_embedding_column._current_group_embedding_scope()
+  group_name = fused_scope.name if fused_scope is not None else ''
   for column in categorical_columns:
-    result.append(
-        fc_old._SharedEmbeddingColumn(  # pylint: disable=protected-access
+    result_column = fc_old._SharedEmbeddingColumn(  # pylint: disable=protected-access
             categorical_column=column,
             initializer=initializer,
             dimension=dimension,
@@ -1193,7 +1194,11 @@ def shared_embedding_columns(categorical_columns,
             tensor_name_in_ckpt=tensor_name_in_ckpt,
             max_norm=max_norm,
             trainable=trainable,
-            do_fusion=do_fusion))
+            do_fusion=do_fusion,
+            group_name=group_name)
+    result.append(result_column)
+    if fused_scope:
+      fused_scope.add_column(result_column)
 
   return result
 
@@ -4248,32 +4253,43 @@ class GroupEmbeddingScope(group_embedding_column.GroupEmbeddingScopeBase):
 
   def add_column(self, embedding_column):
     VALID_EMBEDDING_COLUMN_TYPES = (
-      EmbeddingColumn, SharedEmbeddingColumn, SharedEmbeddingColumnV2,
+      EmbeddingColumn, 
+      SharedEmbeddingColumn, 
+      SharedEmbeddingColumnV2, 
+      fc_old._SharedEmbeddingColumn,
     )
     if not isinstance(embedding_column, VALID_EMBEDDING_COLUMN_TYPES):
       raise ValueError("column must be one of EmbeddingColumns, ",
                       "given {}".format(embedding_column))
     self.embedding_columns.append(embedding_column)
   
-  def _get_dense_tensor(self, inputs, weight_collections=None, trainable=None):
-    # with ops.name_scope(self.name):
+  def _get_dense_tensor(self, filter_ec, inputs, 
+      weight_collections=None, trainable=None):
     embedding_weights = []
     sp_ids = []
     combiners = []
     output_tensors = []
-    for index, ec in enumerate(self.embedding_columns):
+    sequence_lengths = [0 for _ in range(len(self.embedding_columns))]
+    is_sequence = False
+    for index, ec in enumerate(self.embedding_columns): 
+      if ec in filter_ec:
+        continue
       sp_id = ec.categorical_column._get_sparse_tensors(
           inputs, weight_collections, trainable).id_tensor
+      #Special logic for sequence feature_column
+      if isinstance(ec.categorical_column, fc_old._SequenceCategoricalColumn):
+        sequence_lengths[index] = fc_utils.sequence_length_from_sparse_tensor(
+            sp_id)
+        is_sequence = True
       sp_ids.append(sp_id)
       combiners.append(ec.combiner)
-      with variable_scope.variable_scope(
-                None, default_name=ec._var_scope_name):
+      with variable_scope.variable_scope(ec._var_scope_name):
         embedding_weight = ec.create_embedding(weight_collections, trainable)
-      embedding_weights.append(embedding_weight)
+        embedding_weights.append(embedding_weight)
 
     output_tensors.extend(embedding_ops.group_embedding_lookup_sparse(
-                              embedding_weights, sp_ids, combiners))
-    return output_tensors
+                              embedding_weights, sp_ids, combiners, is_sequence=is_sequence))
+    return output_tensors, sequence_lengths
 
 class EmbeddingColumn(
     DenseColumn,

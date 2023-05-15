@@ -32,108 +32,133 @@ from tensorflow.python.ops import check_ops
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variable_scope
+from tensorflow.python.feature_column import group_embedding_column as gec
 
 # pylint: disable=protected-access
 
 
 def sequence_input_layer(
-    features,
-    feature_columns,
-    weight_collections=None,
-    trainable=True):
-  """"Builds input layer for sequence input.
+    features, feature_columns, weight_collections=None, trainable=True):
+    """ "Builds input layer for sequence input.
 
-  All `feature_columns` must be sequence dense columns with the same
-  `sequence_length`. The output of this method can be fed into sequence
-  networks, such as RNN.
+    All `feature_columns` must be sequence dense columns with the same
+    `sequence_length`. The output of this method can be fed into sequence
+    networks, such as RNN.
 
-  The output of this method is a 3D `Tensor` of shape `[batch_size, T, D]`.
-  `T` is the maximum sequence length for this batch, which could differ from
-  batch to batch.
+    The output of this method is a 3D `Tensor` of shape `[batch_size, T, D]`.
+    `T` is the maximum sequence length for this batch, which could differ from
+    batch to batch.
 
-  If multiple `feature_columns` are given with `Di` `num_elements` each, their
-  outputs are concatenated. So, the final `Tensor` has shape
-  `[batch_size, T, D0 + D1 + ... + Dn]`.
+    If multiple `feature_columns` are given with `Di` `num_elements` each, their
+    outputs are concatenated. So, the final `Tensor` has shape
+    `[batch_size, T, D0 + D1 + ... + Dn]`.
 
-  Example:
+    Example:
 
-  ```python
-  rating = sequence_numeric_column('rating')
-  watches = sequence_categorical_column_with_identity(
-      'watches', num_buckets=1000)
-  watches_embedding = embedding_column(watches, dimension=10)
-  columns = [rating, watches]
+    ```python
+    rating = sequence_numeric_column('rating')
+    watches = sequence_categorical_column_with_identity(
+        'watches', num_buckets=1000)
+    watches_embedding = embedding_column(watches, dimension=10)
+    columns = [rating, watches]
 
-  features = tf.io.parse_example(..., features=make_parse_example_spec(columns))
-  input_layer, sequence_length = sequence_input_layer(features, columns)
+    features = tf.io.parse_example(..., features=make_parse_example_spec(columns))
+    input_layer, sequence_length = sequence_input_layer(features, columns)
 
-  rnn_cell = tf.compat.v1.nn.rnn_cell.BasicRNNCell(hidden_size)
-  outputs, state = tf.compat.v1.nn.dynamic_rnn(
-      rnn_cell, inputs=input_layer, sequence_length=sequence_length)
-  ```
+    rnn_cell = tf.compat.v1.nn.rnn_cell.BasicRNNCell(hidden_size)
+    outputs, state = tf.compat.v1.nn.dynamic_rnn(
+        rnn_cell, inputs=input_layer, sequence_length=sequence_length)
+    ```
 
-  Args:
-    features: A dict mapping keys to tensors.
-    feature_columns: An iterable of dense sequence columns. Valid columns are
-      - `embedding_column` that wraps a `sequence_categorical_column_with_*`
-      - `sequence_numeric_column`.
-    weight_collections: A list of collection names to which the Variable will be
-      added. Note that variables will also be added to collections
-      `tf.GraphKeys.GLOBAL_VARIABLES` and `ops.GraphKeys.MODEL_VARIABLES`.
-    trainable: If `True` also add the variable to the graph collection
-      `GraphKeys.TRAINABLE_VARIABLES`.
+    Args:
+      features: A dict mapping keys to tensors.
+      feature_columns: An iterable of dense sequence columns. Valid columns are
+        - `embedding_column` that wraps a `sequence_categorical_column_with_*`
+        - `sequence_numeric_column`.
+      weight_collections: A list of collection names to which the Variable will be
+        added. Note that variables will also be added to collections
+        `tf.GraphKeys.GLOBAL_VARIABLES` and `ops.GraphKeys.MODEL_VARIABLES`.
+      trainable: If `True` also add the variable to the graph collection
+        `GraphKeys.TRAINABLE_VARIABLES`.
 
-  Returns:
-    An `(input_layer, sequence_length)` tuple where:
-    - input_layer: A float `Tensor` of shape `[batch_size, T, D]`.
-        `T` is the maximum sequence length for this batch, which could differ
-        from batch to batch. `D` is the sum of `num_elements` for all
-        `feature_columns`.
-    - sequence_length: An int `Tensor` of shape `[batch_size]`. The sequence
-        length for each example.
+    Returns:
+      An `(input_layer, sequence_length)` tuple where:
+      - input_layer: A float `Tensor` of shape `[batch_size, T, D]`.
+          `T` is the maximum sequence length for this batch, which could differ
+          from batch to batch. `D` is the sum of `num_elements` for all
+          `feature_columns`.
+      - sequence_length: An int `Tensor` of shape `[batch_size]`. The sequence
+          length for each example.
 
-  Raises:
-    ValueError: If any of the `feature_columns` is the wrong type.
-  """
-  feature_columns = fc._normalize_feature_columns(feature_columns)
-  for c in feature_columns:
-    if not isinstance(c, fc._SequenceDenseColumn):
-      raise ValueError(
-          'All feature_columns must be of type _SequenceDenseColumn. '
-          'You can wrap a sequence_categorical_column with an embedding_column '
-          'or indicator_column. '
-          'Given (type {}): {}'.format(type(c), c))
+    Raises:
+      ValueError: If any of the `feature_columns` is the wrong type.
+    """
+    feature_columns = fc._normalize_feature_columns(feature_columns)
+    for c in feature_columns:
+        if not isinstance(c, fc._SequenceDenseColumn):
+            raise ValueError(
+                "All feature_columns must be of type _SequenceDenseColumn. "
+                "You can wrap a sequence_categorical_column with an embedding_column "
+                "or indicator_column. "
+                "Given (type {}): {}".format(type(c), c)
+            )
 
-  with variable_scope.variable_scope(
-      None, default_name='sequence_input_layer', values=features.values()):
-    builder = fc._LazyBuilder(features)
-    output_tensors = []
-    sequence_lengths = []
-    ordered_columns = []
+    with variable_scope.variable_scope(
+        None, default_name="sequence_input_layer", values=features.values()
+    ):
+        builder = fc._LazyBuilder(features)
+        output_tensors = []
+        sequence_lengths = []
+        ordered_columns = []
+        group_name_set = set()
+        group_embedding_list = []
+        embedding_columns = []
 
-    for column in sorted(feature_columns, key=lambda x: x.name):
-      ordered_columns.append(column)
-      with variable_scope.variable_scope(
-          None, default_name=column._var_scope_name):
-        dense_tensor, sequence_length = column._get_sequence_dense_tensor(
-            builder,
-            weight_collections=weight_collections,
-            trainable=trainable)
-        # Flattens the final dimension to produce a 3D Tensor.
-        num_elements = column._variable_shape.num_elements()
-        shape = array_ops.shape(dense_tensor)
-        target_shape = [shape[0], shape[1], num_elements]
-        output_tensors.append(
-            array_ops.reshape(dense_tensor, shape=target_shape))
-        sequence_lengths.append(sequence_length)
+        for index, column in enumerate(sorted(feature_columns, key=lambda x: x.name)):
+            group_name = getattr(column, "group_name", "")
+            ordered_columns.append(column)
+            with variable_scope.variable_scope(
+                None, default_name=column._var_scope_name
+            ):
+                if group_name != "":
+                    group_name_set.add(group_name)
+                    output_tensor = None
+                    output_tensors.append(output_tensor)  # placeholder
+                    group_embedding_list.append(index)
+                    embedding_columns.append(column)
+                    sequence_lengths.append(None)
+                else:
+                    dense_tensor, sequence_length = column._get_sequence_dense_tensor(
+                        builder,
+                        weight_collections=weight_collections,
+                        trainable=trainable,
+                    )
+                    # Flattens the final dimension to produce a 3D Tensor.
+                    num_elements = column._variable_shape.num_elements()
+                    shape = array_ops.shape(dense_tensor)
+                    target_shape = [shape[0], shape[1], num_elements]
+                    output_tensors.append(
+                        array_ops.reshape(dense_tensor, shape=target_shape)
+                    )
+                    sequence_lengths.append(sequence_length)
 
-    fc._verify_static_batch_size_equality(output_tensors, ordered_columns)
-    fc._verify_static_batch_size_equality(sequence_lengths, ordered_columns)
-    sequence_length = _assert_all_equal_and_return(sequence_lengths)
+        group_embedding_tensor = gec._get_global_group_embedding_scope(
+            group_name_set, builder, weight_collections, trainable
+        )
+        for ind, column in zip(group_embedding_list, embedding_columns):
+            output_tensor, sequence_length = group_embedding_tensor[column]
+            output_tensors[ind] = output_tensor
+            sequence_lengths[ind] = sequence_length
 
-    concat_result = array_ops.concat(output_tensors, -1)
-    ops.add_to_collection(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, concat_result)
-    return concat_result, sequence_length
+        fc._verify_static_batch_size_equality(output_tensors, ordered_columns)
+        fc._verify_static_batch_size_equality(sequence_lengths, ordered_columns)
+        sequence_length = _assert_all_equal_and_return(sequence_lengths)
+
+        concat_result = array_ops.concat(output_tensors, -1)
+        ops.add_to_collection(
+            ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, concat_result
+        )
+        return concat_result, sequence_length
 
 
 def concatenate_context_input(context_input, sequence_input):

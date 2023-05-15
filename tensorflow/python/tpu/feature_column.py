@@ -469,7 +469,8 @@ class _TPUSharedEmbeddingColumn(_TPUBaseEmbeddingColumn,
               trainable=True,
               max_sequence_length=0,
               learning_rate_fn=None,
-              do_fusion=False):
+              do_fusion=False,
+              group_name=''):
     return fc._SharedEmbeddingColumn.__new__(
         cls,
         categorical_column,
@@ -481,7 +482,8 @@ class _TPUSharedEmbeddingColumn(_TPUBaseEmbeddingColumn,
         tensor_name_in_ckpt=tensor_name_in_ckpt,
         max_norm=max_norm,
         trainable=trainable,
-        do_fusion=do_fusion)
+        do_fusion=do_fusion,
+        group_name=group_name)
 
   def __init__(self,
                categorical_column,
@@ -495,7 +497,8 @@ class _TPUSharedEmbeddingColumn(_TPUBaseEmbeddingColumn,
                trainable=True,
                max_sequence_length=0,
                learning_rate_fn=None,
-               do_fusion=False):
+               do_fusion=False,
+               group_name=''):
 
     _TPUBaseEmbeddingColumn.__init__(
         self,
