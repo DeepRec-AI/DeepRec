@@ -692,7 +692,7 @@ def main(tf_config=None, server=None):
     ) if args.micro_batch and not args.tf else args.batch_size
 
     if args.steps == 0:
-        no_of_epochs = 1000
+        no_of_epochs = 100
         train_steps = math.ceil(
             (float(no_of_epochs) * no_of_training_examples) / batch_size)
     else:
@@ -798,7 +798,7 @@ def get_arg_parser():
     parser.add_argument('--batch_size',
                         help='Batch size to train',
                         type=int,
-                        default=512)
+                        default=2048)
     parser.add_argument('--output_dir',
                         help='Full path to logs & model output directory',
                         required=False,
