@@ -46,11 +46,7 @@ class MultiTierStorage : public Storage<K, V> {
   MultiTierStorage(const StorageConfig& sc, const std::string& name)
       : Storage<K, V>(sc), name_(name) {}
 
-  ~MultiTierStorage() override {
-    eviction_manager_->DeleteStorage(this);
-    for (auto kv : kvs_) {
-      delete kv.kv_;
-    }
+  virtual ~MultiTierStorage() {
     delete cache_;
   }
 
@@ -92,6 +88,17 @@ class MultiTierStorage : public Storage<K, V> {
     eviction_manager_ = EvictionManagerCreator::Create<K, V>();
     eviction_manager_->AddStorage(this);
     cache_thread_pool_ = CacheThreadPoolCreator::Create();
+  }
+
+  Status BatchCommit(const std::vector<K>& keys,
+      const std::vector<ValuePtr<V>*>& value_ptrs) override {
+    LOG(FATAL)<<"BatchCommit isn't supported by MultiTierStorage.";
+    return Status::OK();
+  }
+
+  embedding::Iterator* GetIterator() {
+    LOG(FATAL)<<"GetIterator isn't support by MultiTierStorage.";
+    return nullptr;
   }
 
   void CopyEmbeddingsFromCPUToGPU(
@@ -148,29 +155,6 @@ class MultiTierStorage : public Storage<K, V> {
     }
   }
 
-  int64 GetSnapshot(std::vector<K>* key_list,
-      std::vector<V* >* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
-      const EmbeddingConfig& emb_config,
-      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
-      embedding::Iterator** it) override {
-    for (auto kv : kvs_) {
-      mutex_lock l(kv.mu_);
-      std::vector<ValuePtr<V>* > value_ptr_list;
-      std::vector<K> key_list_tmp;
-      TF_CHECK_OK(kv.kv_->GetSnapshot(&key_list_tmp, &value_ptr_list));
-      if (key_list_tmp.empty()) {
-        *it = kv.kv_->GetIterator();
-        continue;
-      }
-      SetListsForCheckpoint(
-          key_list_tmp, value_ptr_list, emb_config,
-          key_list, value_list, version_list, freq_list);
-    }
-    return key_list->size();
-  }
-
   virtual int64 GetSnapshotWithoutFetchPersistentEmb(
       std::vector<K>* key_list,
       std::vector<V* >* value_list,
@@ -182,6 +166,19 @@ class MultiTierStorage : public Storage<K, V> {
               <<" or this storage hasn't suppported"
               <<" GetSnapshotWithoutFetchPersistentEmb yet";
     return -1;
+  }
+
+  Status Contains(K key) override {
+    LOG(FATAL)<<"Contains is not support in MultiTierStorage.";
+    return Status::OK();
+  }
+
+  void iterator_mutex_lock() override {
+    return;
+  }
+
+  void iterator_mutex_unlock() override {
+    return;
   }
 
   void RestoreSsdHashmap(
@@ -198,61 +195,6 @@ class MultiTierStorage : public Storage<K, V> {
   void ImportToHbm(
       K* ids, int64 size, int64 value_len, int64 emb_index) override {
     LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
-  }
-
-  Status Shrink(int64 value_len) override {
-    for (auto kv : kvs_) {
-      mutex_lock l(kv.mu_);
-      L2WeightShrinkPolicy<K, V>* l2_weight_shrink =
-          reinterpret_cast<L2WeightShrinkPolicy<K, V>*>(kv.shrink_policy_);
-      l2_weight_shrink->Shrink(value_len);
-    }
-    return Status::OK();
-  }
-
-  Status Shrink(int64 global_step, int64 steps_to_live) override {
-    for (auto kv : kvs_) {
-      mutex_lock l(kv.mu_);
-      GlobalStepShrinkPolicy<K, V>* global_step_shrink =
-          reinterpret_cast<GlobalStepShrinkPolicy<K, V>*>(kv.shrink_policy_);
-      global_step_shrink->Shrink(global_step, steps_to_live);
-    }
-    return Status::OK();
-  }
-
-  Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) override {
-    for (auto kv : kvs_) {
-      TF_CHECK_OK(kv.kv_->BatchCommit(keys, value_ptrs));
-    }
-    return Status::OK();
-  }
-
-  Status Eviction(K* evict_ids, int64 evict_size) override {
-    ValuePtr<V>* value_ptr;
-    for (int64 i = 0; i < evict_size; ++i) {
-      if (kvs_[0].kv_->Lookup(evict_ids[i], &value_ptr).ok()) {
-        TF_CHECK_OK(kvs_[1].kv_->Commit(evict_ids[i], value_ptr));
-        TF_CHECK_OK(kvs_[0].kv_->Remove(evict_ids[i]));
-        value_ptr->Destroy(kvs_[0].allocator_);
-        delete value_ptr;
-      }
-    }
-    return Status::OK();
-  }
-
-  int64 Size(int level) const override {
-    return kvs_[level].kv_->Size();
-  }
-
-  int LookupTier(K key) const override {
-    for (int i = 0; i < kvs_.size(); ++i) {
-      Status s = kvs_[i].kv_->Contains(key);
-      if (s.ok()) {
-        return i;
-      }
-    }
-    return -1;
   }
 
   bool IsMultiLevel() override {
@@ -281,61 +223,31 @@ class MultiTierStorage : public Storage<K, V> {
     cache_thread_pool_->Schedule(std::move(fn));
   }
 
+  virtual Status Eviction(K* evict_ids, int64 evict_size) override {
+    LOG(FATAL)<<"Eviction isn't support by "<<typeid(this).name();
+    return Status::OK();
+  }
+
   virtual void BatchEviction() {
     constexpr int EvictionSize = 10000;
     K evic_ids[EvictionSize];
     if (!ready_eviction_)
       return;
-    mutex_lock l(kvs_[0].mu_);
-    mutex_lock l1(kvs_[1].mu_);
-    //Release the memory of invlid valuetprs
-    ReleaseInvalidValuePtr();
-
     int cache_count = cache_->size();
     if (cache_count > cache_capacity_) {
       // eviction
       int k_size = cache_count - cache_capacity_;
       k_size = std::min(k_size, EvictionSize);
       size_t true_size = cache_->get_evic_ids(evic_ids, k_size);
-      ValuePtr<V>* value_ptr;
-      if (Storage<K, V>::storage_config_.type == StorageType::HBM_DRAM) {
-        std::vector<K> keys;
-        std::vector<ValuePtr<V>*> value_ptrs;
-
-        for (int64 i = 0; i < true_size; ++i) {
-          if (kvs_[0].kv_->Lookup(evic_ids[i], &value_ptr).ok()) {
-            TF_CHECK_OK(kvs_[0].kv_->Remove(evic_ids[i]));
-            keys.emplace_back(evic_ids[i]);
-            value_ptrs.emplace_back(value_ptr);
-          }
-        }
-        BatchCommit(keys, value_ptrs);
-      } else {
-        for (int64 i = 0; i < true_size; ++i) {
-          if (kvs_[0].kv_->Lookup(evic_ids[i], &value_ptr).ok()) {
-            TF_CHECK_OK(kvs_[1].kv_->Commit(evic_ids[i], value_ptr));
-            TF_CHECK_OK(kvs_[0].kv_->Remove(evic_ids[i]));
-            value_ptr_out_of_date_.emplace_back(value_ptr);
-          }
-        }
-      }
+      EvictionWithDelayedDestroy(evic_ids, true_size);
     }
   }
 
  protected:
   virtual void SetTotalDims(int64 total_dims) = 0;
 
-  void ReleaseValues(
-      const std::vector<std::pair<KVInterface<K, V>*, Allocator*>>& kvs) {
-    for (auto kv : kvs_) {
-      std::vector<K> key_list;
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      kv.kv_->GetSnapshot(&key_list, &value_ptr_list);
-      for (auto value_ptr : value_ptr_list) {
-        value_ptr->Destroy(kv.allocator_);
-        delete value_ptr;
-      } 
-    }
+  void DeleteFromEvictionManager() {
+    eviction_manager_->DeleteStorage(this);
   }
 
   void ReleaseValuePtrs(std::deque<ValuePtr<V>*>& value_ptrs,
@@ -353,12 +265,17 @@ class MultiTierStorage : public Storage<K, V> {
     }
   }
 
-  void ReleaseInvalidValuePtr() {
-    ReleaseValuePtrs(value_ptr_out_of_date_, kvs_[0].allocator_);
+  void ReleaseInvalidValuePtr(Allocator* allocator) {
+    ReleaseValuePtrs(value_ptr_out_of_date_, allocator);
   }
 
+  void KeepInvalidValuePtr(ValuePtr<V>* value_ptr) {
+    value_ptr_out_of_date_.emplace_back(value_ptr);
+  }
+ private:
+  virtual Status EvictionWithDelayedDestroy(K* evict_ids, int64 evict_size) {}
+
  protected:
-  std::vector<KVInterfaceDescriptor<K, V>> kvs_;
   std::deque<ValuePtr<V>*> value_ptr_out_of_date_;
   BatchCache<K>* cache_ = nullptr;
 
