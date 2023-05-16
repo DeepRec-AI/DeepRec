@@ -25,11 +25,11 @@ class CacheFactory {
   static BatchCache<K>* Create(CacheStrategy cache_strategy, std::string name) {
     switch (cache_strategy) {
       case CacheStrategy::LRU:
-        LOG(INFO) << " Use StorageManager::LRU in multi-tier EmbeddingVariable "
+        LOG(INFO) << " Use Storage::LRU in multi-tier EmbeddingVariable "
                 << name;
         return new LRUCache<K>();
       case CacheStrategy::LFU:
-        LOG(INFO) << " Use StorageManager::LFU in multi-tier EmbeddingVariable "
+        LOG(INFO) << " Use Storage::LFU in multi-tier EmbeddingVariable "
                 << name;
         return new LFUCache<K>();
       default:

@@ -20,10 +20,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/filter_policy.h"
 
 namespace tensorflow {
-namespace embedding{
-template <class K, class V>
-class StorageManager;
-}
 
 namespace {
 const static std::vector<int64> default_seeds = {
@@ -35,9 +31,8 @@ const static std::vector<int64> default_seeds = {
 template<typename K, typename V, typename EV>
 class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
  public:
-  BloomFilterPolicy(const EmbeddingConfig& config, EV* ev,
-      embedding::StorageManager<K, V>* storage_manager) :
-      config_(config), ev_(ev), storage_manager_(storage_manager) {
+  BloomFilterPolicy(const EmbeddingConfig& config, EV* ev)
+      : config_(config), ev_(ev) {
     switch (config_.counter_type){
       case DT_UINT64:
         VLOG(2) << "The type of bloom counter is uint64";
@@ -349,7 +344,6 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
   EmbeddingConfig config_;
   EV* ev_;
   std::vector<int64> seeds_;
-  embedding::StorageManager<K, V>* storage_manager_;
 };
 } // tensorflow
 

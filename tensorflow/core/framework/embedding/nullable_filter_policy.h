@@ -23,15 +23,15 @@ limitations under the License.
 namespace tensorflow {
 namespace embedding{
 template <class K, class V>
-class StorageManager;
+class Storage;
 }
 
 template<typename K, typename V, typename EV>
 class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
  public:
   NullableFilterPolicy(const EmbeddingConfig& config,
-      EV* ev, embedding::StorageManager<K, V>* storage_manager)
-       : config_(config), ev_(ev), storage_manager_(storage_manager) {
+      EV* ev, embedding::Storage<K, V>* storage)
+       : config_(config), ev_(ev), storage_(storage) {
   }
 
   Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
@@ -63,7 +63,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
   }
 
   int64 GetFreq(K key, ValuePtr<V>* value_ptr) override {
-    if (storage_manager_->GetLayoutType() != LayoutType::LIGHT) {
+    if (storage_->GetLayoutType() != LayoutType::LIGHT) {
       return value_ptr->GetFreq();
     }else {
       return 0;
@@ -71,7 +71,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
   }
 
   int64 GetFreq(K key) override {
-    if (storage_manager_->GetLayoutType() != LayoutType::LIGHT) {
+    if (storage_->GetLayoutType() != LayoutType::LIGHT) {
       ValuePtr<V>* value_ptr = nullptr;
       TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
       return value_ptr->GetFreq();
@@ -163,7 +163,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
 
  private:
   EmbeddingConfig config_;
-  embedding::StorageManager<K, V>* storage_manager_;
+  embedding::Storage<K, V>* storage_;
   EV* ev_;
 };
 

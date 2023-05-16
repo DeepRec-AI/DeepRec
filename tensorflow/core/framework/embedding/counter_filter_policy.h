@@ -20,17 +20,12 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/filter_policy.h"
 
 namespace tensorflow {
-namespace embedding{
-template <class K, class V>
-class StorageManager;
-}
 
 template<typename K, typename V, typename EV>
 class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
  public:
-  CounterFilterPolicy(const EmbeddingConfig& config,
-      EV* ev, embedding::StorageManager<K, V>* storage_manager)
-       : config_(config), ev_(ev), storage_manager_(storage_manager) {
+  CounterFilterPolicy(const EmbeddingConfig& config, EV* ev)
+      : config_(config), ev_(ev){
   }
 
   Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
@@ -165,7 +160,6 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
 
  private:
   EmbeddingConfig config_;
-  embedding::StorageManager<K, V>* storage_manager_;
   EV* ev_;
 };
 

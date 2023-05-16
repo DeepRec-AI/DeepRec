@@ -173,7 +173,7 @@ class GroupEmbeddingVariableLookupCpuOp
 
       if (embedding_var->IsMultiLevel()) {
         embedding::BatchCache<TKey> *cache = embedding_var->Cache();
-        embedding_var->storage_manager()->Schedule(
+        embedding_var->storage()->Schedule(
             [embedding_var, sp_values_tensor] {
               embedding::BatchCache<TKey> *cache = embedding_var->Cache();
               cache->add_to_rank(sp_values_tensor);

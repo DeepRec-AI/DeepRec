@@ -66,7 +66,7 @@ void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
           reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
       value_address[i] =
           *((V**)((char*)(value_ptr->GetPtr()) + sizeof(FixedLengthHeader))) +
-          storage_manager_->GetOffset(emb_config_.emb_index);
+          storage_->GetOffset(emb_config_.emb_index);
       default_value_address[i] = get_default_v_fn(
           default_values, keys[*it], *it, GetDefaultValueDim(), ValueLen());
     }
@@ -86,7 +86,7 @@ void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
       value_ptr->SetInitialized(emb_config_.emb_index);
       memcpy_address[*it] = value_ptr->GetValue(
           emb_config_.emb_index,
-          storage_manager_->GetOffset(emb_config_.emb_index));
+          storage_->GetOffset(emb_config_.emb_index));
     }
     TypedAllocator::Deallocate(alloc_, dev_value_address, total * 2);
     TypedAllocator::Deallocate(cpu_allocator(), value_address, total * 2);
@@ -148,12 +148,12 @@ void EmbeddingVar<K, V>::CopyEmbeddingsFromCPUToGPU(
     int64* output_value_ptrs) {
   if (copyback_cursor.size() > 0) {
     int64 total = copyback_cursor.size();
-    size_t value_len = emb_config_.total_num(storage_manager_->GetAllocLen());
+    size_t value_len = emb_config_.total_num(storage_->GetAllocLen());
     V* memcpy_buffer_gpu = nullptr;
     ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>*[total];
     memcpy_buffer_gpu = (V*)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
                                                 total * value_len * sizeof(V));
-    storage_manager_->CopyEmbeddingsFromCPUToGPU(
+    storage_->CopyEmbeddingsFromCPUToGPU(
         total, keys, copyback_cursor, memcpy_address, value_len, gpu_value_ptrs,
         memcpy_buffer_gpu, compute_stream, event_mgr, worker_threads);
 
@@ -185,7 +185,7 @@ void EmbeddingVar<K, V>::CopyEmbeddingsFromCPUToGPU(
     auto do_insert = [this, copyback_keys, gpu_value_ptrs, value_len](
                          int64 start, int64 limit) {
       for (int64 i = start; i < limit; i++)
-        storage_manager_->Insert(copyback_keys[i], gpu_value_ptrs[i]);
+        storage_->Insert(copyback_keys[i], gpu_value_ptrs[i]);
     };
     Shard(worker_threads->num_threads, worker_threads->workers,
           copyback_keys.size(), 100000, do_insert);

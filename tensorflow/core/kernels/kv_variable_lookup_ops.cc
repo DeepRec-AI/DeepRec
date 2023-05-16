@@ -131,7 +131,7 @@ class KvResourceLookupIDOp : public OpKernel {
           100, do_work);
 
       if (ev->IsMultiLevel()) {
-        ev->storage_manager()->Schedule([ev, indices]() {
+        ev->storage()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           if (cache) {
             cache->add_to_prefetch_list(indices);
@@ -288,7 +288,7 @@ class KvResourceLookupIDGPUOp : public OpKernel {
           worker_threads, out_base);
 
       if (ev->IsMultiLevel()) {
-        ev->storage_manager()->Schedule([ev, indices]() {
+        ev->storage()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           if (cache) {
             cache->add_to_prefetch_list(indices);
@@ -425,7 +425,7 @@ class KvResourceCollectEmbeddingOp : public OpKernel {
             worker_threads->workers, indices_size,
             slice_bytes, do_work);
       if (ev->IsMultiLevel()) {
-        ev->storage_manager()->Schedule([ev, indices]() {
+        ev->storage()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           if (cache) {
             cache->add_to_cache(indices);
@@ -573,7 +573,7 @@ class KvResourceCollectEmbeddingGPUOp : public OpKernel {
 
       delete[] memcpy_address;
       if (ev->IsMultiLevel()) {
-        ev->storage_manager()->Schedule([ev, indices]() {
+        ev->storage()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           if (cache) {
             cache->add_to_cache(indices);
@@ -718,7 +718,7 @@ class KvResourceGatherOp : public OpKernel {
 
       if (ev->IsMultiLevel()) {
         embedding::BatchCache<TKey>* cache = ev->Cache();
-        ev->storage_manager()->Schedule([ev, indices]() {
+        ev->storage()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           cache->add_to_rank(indices);
         });
@@ -952,7 +952,7 @@ class KvResourceGatherGPUOp : public OpKernel {
         delete []memcpy_address;
 
         if (ev->IsMultiLevel()) {
-          ev->storage_manager()->Schedule([ev, indices_host, N]() {
+          ev->storage()->Schedule([ev, indices_host, N]() {
             embedding::BatchCache<TKey>* cache = ev->Cache();
             cache->add_to_rank(indices_host, N);
             delete []indices_host;
@@ -1099,7 +1099,7 @@ class KvResourceLookupTierOp : public OpKernel {
     OP_REQUIRES_OK(ctx,
         ctx->allocate_output(0, {indices.NumElements()}, &output));
     for (int i = 0; i < indices.NumElements(); ++i) {
-      int v = ev->storage_manager()->LookupTier(indices_flat(i));
+      int v = ev->storage()->LookupTier(indices_flat(i));
       output->flat<int>()(i) = v;
     }
   }
