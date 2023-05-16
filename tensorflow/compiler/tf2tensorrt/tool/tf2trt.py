@@ -63,7 +63,7 @@ def GetConversionParams(run_params):
       rewriter_config_template=None,
       max_workspace_size_bytes=1 << 25, 
       precision_mode=run_params['precision_mode'],
-      minimum_segment_size=2,
+      minimum_segment_size=run_params['minimum_segment_size'],
       is_dynamic_op=run_params['dynamic_engine'],
       maximum_cached_engines=1,
       use_calibration=run_params['use_calibration'],
@@ -96,6 +96,7 @@ if __name__ == "__main__":
     'use_calibration': False,
     'max_batch_size': 1024,
     'convert_online': False,
+    'minimum_segment_size': 4,
     'use_ev': True,
   }
 
