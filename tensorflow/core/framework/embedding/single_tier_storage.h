@@ -469,7 +469,7 @@ class HbmStorage : public SingleTierStorage<K, V> {
       embedding::Iterator** it) override {
     GPUHashMapKV<K, V>* gpu_kv =
         dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
-    gpu_kv->GetSnapshot(key_list, value_list, emb_config.emb_index);
+    gpu_kv->GetSnapshot(key_list, value_list, emb_config);
     return key_list->size();
   }
 
