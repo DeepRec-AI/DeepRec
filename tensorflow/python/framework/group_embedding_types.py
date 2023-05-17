@@ -21,22 +21,22 @@ from __future__ import print_function
 from enum import Enum, unique
 
 @unique
-class STRATEGY(Enum):
+class DistStrategy(Enum):
   COLLECTIVE = "collective"
   DISTRIBUTED = "ps"
   LOCALIZED = "localized"
   UNKNOWN = "unknown"
 
-_group_lookup_strategy = STRATEGY.LOCALIZED
+_group_lookup_strategy = DistStrategy.LOCALIZED
 
 def set_group_lookup_strategy(strategy):
   def str_to_strategy(strategy):
     if strategy == "collective":
-      return STRATEGY.COLLECTIVE
+      return DistStrategy.COLLECTIVE
     elif strategy == "ps":
-      return STRATEGY.DISTRIBUTED
+      return DistStrategy.DISTRIBUTED
     elif strategy == "localized":
-      return STRATEGY.LOCALIZED
+      return DistStrategy.LOCALIZED
 
   global _group_lookup_strategy
   _group_lookup_strategy = str_to_strategy(strategy)
