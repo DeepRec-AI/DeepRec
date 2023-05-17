@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/dump_graph.h"
 #include "tensorflow/core/util/port.h"
 
@@ -228,6 +229,29 @@ Status Placer::Run() {
     TF_RETURN_IF_ERROR(AssignAndLog(assigned_device, node, &colocation_graph,
                                     log_device_placement_));
     colocation_graph.AssignGpuStreamIdx(node);    
+  }
+
+  bool place_trtop_on_gpu_only = false;
+  TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar(
+      "PLACE_TRT_OP_ON_GPU_ONLY", false, &place_trtop_on_gpu_only));
+  // Keep TRTEngineOp On GPU Only
+  if (place_trtop_on_gpu_only) {
+    std::string cpu_name, gpu_name;
+    for (auto d : devices_->devices()) {
+      if (d->name().find("device:CPU:") != std::string::npos) {
+        cpu_name = d->name();
+      } else if (d->name().find("device:GPU:") != std::string::npos) {
+        gpu_name = d->name();
+      }
+    }
+
+    for (Node* n : graph_->op_nodes()) {
+      if (n->type_string() == "TRTEngineOp") {
+        n->set_assigned_device_name(gpu_name);
+      } else {
+        n->set_assigned_device_name(cpu_name);
+      }
+    }
   }
 
   if (VLOG_IS_ON(3)) {
