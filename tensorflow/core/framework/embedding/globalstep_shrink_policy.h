@@ -26,37 +26,44 @@ namespace embedding {
 template<typename K, typename V>
 class GlobalStepShrinkPolicy : public ShrinkPolicy<K, V> {
  public:
-  GlobalStepShrinkPolicy(
-      KVInterface<K, V>* kv,
-      Allocator* alloc,
-      int slot_num)
-      : ShrinkPolicy<K, V>(kv, alloc, slot_num) {}
+  GlobalStepShrinkPolicy(int64 steps_to_live,
+                         Allocator* alloc,
+                         KVInterface<K, V>* kv)
+      : steps_to_live_(steps_to_live),
+        kv_(kv),
+        ShrinkPolicy<K, V>(alloc) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(GlobalStepShrinkPolicy);
 
-  void Shrink(int64 global_step, int64 steps_to_live) {
-    ShrinkPolicy<K, V>::ReleaseDeleteValues();
-    ShrinkPolicy<K, V>::GetSnapshot();
-    FilterToDelete(global_step, steps_to_live);
+  void Shrink(const ShrinkArgs& shrink_args) override {
+    ShrinkPolicy<K, V>::ReleaseValuePtrs();
+    std::vector<K> key_list;
+    std::vector<ValuePtr<V>*> value_list;
+    kv_->GetSnapshot(&key_list, &value_list);
+    FilterToDelete(shrink_args.global_step,
+        key_list, value_list);
   }
 
  private:
-  void FilterToDelete(int64 global_step, int64 steps_to_live) {
-    for (int64 i = 0; i < ShrinkPolicy<K, V>::key_list_.size(); ++i) {
-      int64 version = ShrinkPolicy<K, V>::value_list_[i]->GetStep();
+  void FilterToDelete(int64 global_step,
+                      const std::vector<K>& key_list,
+                      const std::vector<ValuePtr<V>*>& value_list) {
+    for (int64 i = 0; i < key_list.size(); ++i) {
+      int64 version = value_list[i]->GetStep();
       if (version == -1) {
-        ShrinkPolicy<K, V>::value_list_[i]->SetStep(global_step);
+        value_list[i]->SetStep(global_step);
       } else {
-        if (global_step - version > steps_to_live) {
-          ShrinkPolicy<K, V>::kv_->Remove(ShrinkPolicy<K, V>::key_list_[i]);
-          ShrinkPolicy<K, V>::to_delete_.emplace_back(
-              ShrinkPolicy<K, V>::value_list_[i]);
+        if (global_step - version > steps_to_live_) {
+          kv_->Remove(key_list[i]);
+          ShrinkPolicy<K, V>::EmplacePointer(value_list[i]);
         }
       }
     }
-    ShrinkPolicy<K, V>::key_list_.clear();
-    ShrinkPolicy<K, V>::value_list_.clear();
   }
+
+ private:
+  int64 steps_to_live_;
+  KVInterface<K, V>* kv_;
 };
 } // embedding
 } // tensorflow

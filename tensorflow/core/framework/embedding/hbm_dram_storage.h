@@ -352,15 +352,9 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return temp_hbm_key_list.size() + temp_dram_key_list.size();
   }
 
-  Status Shrink(int64 value_len) override {
-    hbm_->Shrink(value_len);
-    dram_->Shrink(value_len);
-    return Status::OK();
-  }
-
-  Status Shrink(int64 global_step, int64 steps_to_live) override {
-    hbm_->Shrink(global_step, steps_to_live);
-    dram_->Shrink(global_step, steps_to_live);
+  Status Shrink(const ShrinkArgs& shrink_args) override {
+    hbm_->Shrink(shrink_args);
+    dram_->Shrink(shrink_args);
     return Status::OK();
   }
 

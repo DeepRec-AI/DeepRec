@@ -132,10 +132,9 @@ class SaveV2 : public OpKernel {
                            &part_offset_tensor);
     TGlobalStep global_step_scalar = global_step.scalar<TGlobalStep>()();
     core::ScopedUnref s(variable);
-    if(variable->GetL2WeightThreshold() != -1.0)
-      OP_REQUIRES_OK(context, variable->Shrink());
-    else
-      OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+    embedding::ShrinkArgs shrink_args;
+    shrink_args.global_step = global_step_scalar;
+    OP_REQUIRES_OK(context, variable->Shrink(shrink_args));
     const Tensor& prefix = context->input(0);
     const string& prefix_string = prefix.scalar<tstring>()();
     OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,
@@ -311,10 +310,9 @@ class SaveV3 : public OpKernel {
                            &part_offset_tensor);
     TGlobalStep global_step_scalar = global_step.scalar<TGlobalStep>()();
     core::ScopedUnref s(variable);
-    if(variable->GetL2WeightThreshold() != -1.0)
-      OP_REQUIRES_OK(context, variable->Shrink());
-    else
-      OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+    embedding::ShrinkArgs shrink_args;
+    shrink_args.global_step = global_step_scalar;
+    OP_REQUIRES_OK(context, variable->Shrink(shrink_args));
     const Tensor& prefix = context->input(0);
     const string& prefix_string = prefix.scalar<tstring>()();
     OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,

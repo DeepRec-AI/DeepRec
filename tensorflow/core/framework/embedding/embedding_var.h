@@ -373,10 +373,6 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.steps_to_live;
   }
 
-  float GetL2WeightThreshold() {
-    return emb_config_.l2_weight_threshold;
-  }
-
   bool IsMultiLevel() {
     return storage_->IsMultiLevel();
   }
@@ -553,13 +549,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_;
   }
 
-  Status Shrink() {
-    return storage_->Shrink(value_len_);
-  }
-
-  Status Shrink(int64 gs) {
-    if (emb_config_.steps_to_live > 0) {
-      return storage_->Shrink(gs, emb_config_.steps_to_live);
+  Status Shrink(embedding::ShrinkArgs& shrink_args) {
+    if (emb_config_.is_primary()) {
+      shrink_args.value_len = value_len_;
+      return storage_->Shrink(shrink_args);
     } else {
       return Status::OK();
     }

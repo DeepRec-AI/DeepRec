@@ -46,24 +46,6 @@ class GPUHashTable;
 namespace embedding {
 
 template<typename K, typename V>
-struct KVInterfaceDescriptor {
-  KVInterfaceDescriptor(KVInterface<K, V>* kv,
-                    Allocator* allocator,
-                    mutex& mu,
-                    ShrinkPolicy<K, V>* shrink_policy)
-                    : kv_(kv),
-                      allocator_(allocator),
-                      mu_(mu),
-                      shrink_policy_(shrink_policy) {}
-  ~KVInterfaceDescriptor() {}
-
-  KVInterface<K, V>* kv_;
-  Allocator* allocator_;
-  ShrinkPolicy<K, V>* shrink_policy_;
-  mutex& mu_;
-};
-
-template<typename K, typename V>
 class Storage {
  public:
   explicit Storage(const StorageConfig& storage_config)
@@ -110,8 +92,7 @@ class Storage {
       int64* file_list, int64* invalid_record_count_list,
       int64* record_count_list, int64 num_of_files,
       const std::string& ssd_emb_file_name) = 0;
-  virtual Status Shrink(int64 value_len) = 0;
-  virtual Status Shrink(int64 gs, int64 steps_to_live) = 0;
+  virtual Status Shrink(const ShrinkArgs& shrink_args) = 0;
 
   virtual Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) = 0;

@@ -154,15 +154,9 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
     return Status::OK();
   }
 
-  Status Shrink(int64 value_len) override {
-    dram_->Shrink(value_len);
-    pmem_->Shrink(value_len);
-    return Status::OK();
-  }
-
-  Status Shrink(int64 global_step, int64 steps_to_live) override {
-    dram_->Shrink(global_step, steps_to_live);
-    pmem_->Shrink(global_step, steps_to_live);
+  Status Shrink(const ShrinkArgs& shrink_args) override {
+    dram_->Shrink(shrink_args);
+    pmem_->Shrink(shrink_args);
     return Status::OK();
   }
 
