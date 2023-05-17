@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import sys
+
 _global_fusion_embedding_scope = []
 _group_id = 0
 _group_embedding_tensor = dict()
@@ -40,8 +42,9 @@ def _current_group_id():
     return _group_id
 
 class GroupEmbeddingScopeBase(object):
-    def __init__(self, name=None):
+    def __init__(self, name=None, params_num_per_group=sys.maxsize):
         self.name = name
+        self.params_num_per_group = params_num_per_group
         self.embedding_columns = []
 
     def add_column(self, embedding_column):

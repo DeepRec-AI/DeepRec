@@ -21,7 +21,7 @@ from __future__ import print_function
 from tensorflow.python.eager import context
 from tensorflow.python import _pywrap_tensor_float_32_execution
 from tensorflow.python.util.tf_export import tf_export
-from tensorflow.python.framework import group_embedding_ops_utils
+from tensorflow.python.framework import group_embedding_types
 
 @tf_export('config.experimental.tensor_float_32_execution_enabled')
 def tensor_float_32_execution_enabled():
@@ -646,7 +646,7 @@ def enable_distributed_strategy(strategy="collective"):
     try:
       from sparse_operation_kit import experiment as sok
       sok.init()
-      group_embedding_ops_utils.set_group_lookup_strategy(strategy)
+      group_embedding_types.set_group_lookup_strategy(strategy)
     except:
       raise ImportError("While param `strategy` in enable_distributed_strategy"
                         "is given `collective`, sok module initialize error,"

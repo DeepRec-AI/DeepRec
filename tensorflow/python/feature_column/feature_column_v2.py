@@ -131,6 +131,7 @@ import collections
 import contextlib
 import math
 
+import sys
 import numpy as np
 import six
 import json
@@ -4235,7 +4236,7 @@ class CutoffCategoricalColumn(
 
 @tf_export('feature_column.group_embedding_column_scope')
 @contextlib.contextmanager
-def group_embedding_column_scope(name=''):
+def group_embedding_column_scope(name='', params_num_per_group=sys.maxsize):
   global_group_embedding_scope = group_embedding_column._global_group_embedding_scope_list()
   group_id = group_embedding_column._current_group_id()
   if name == '':
@@ -4243,13 +4244,13 @@ def group_embedding_column_scope(name=''):
     group_id +=1
   else:
      name = "group_embedding_column_scope_{}".format(name)
-  fusion_embedding_scope = GroupEmbeddingScope(name)
+  fusion_embedding_scope = GroupEmbeddingScope(name, params_num_per_group)
   global_group_embedding_scope.append(fusion_embedding_scope)
   yield global_group_embedding_scope 
 
 class GroupEmbeddingScope(group_embedding_column.GroupEmbeddingScopeBase):
-  def __init__(self, name=None):
-    super(GroupEmbeddingScope, self).__init__(name=name)
+  def __init__(self, name=None, params_num_per_group=sys.maxsize):
+    super(GroupEmbeddingScope, self).__init__(name=name, params_num_per_group=params_num_per_group)
 
   def add_column(self, embedding_column):
     VALID_EMBEDDING_COLUMN_TYPES = (
@@ -4288,7 +4289,8 @@ class GroupEmbeddingScope(group_embedding_column.GroupEmbeddingScopeBase):
         embedding_weights.append(embedding_weight)
 
     output_tensors.extend(embedding_ops.group_embedding_lookup_sparse(
-                              embedding_weights, sp_ids, combiners, is_sequence=is_sequence))
+                              embedding_weights, sp_ids, combiners, 
+                              is_sequence=is_sequence, params_num_per_group=self.params_num_per_group))
     return output_tensors, sequence_lengths
 
 class EmbeddingColumn(
