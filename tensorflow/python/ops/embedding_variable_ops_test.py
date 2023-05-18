@@ -441,6 +441,47 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         for j in range(3):
           self.assertAlmostEqual(emb_ori[i][j], emb_right[i][j])
 
+  def testEmbeddingVariableForGlobalStepEviction(self):
+    print("testEmbeddingVariableForGlobalStepEviction")
+    checkpoint_directory = self.get_temp_dir()
+    ckpt_path = os.path.join(checkpoint_directory, "model1.ckpt")
+    evict = variables.GlobalStepEvict(steps_to_live=2)
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(evict_option=evict))
+    ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
+    emb = embedding_ops.embedding_lookup(var, ids)
+    gs = training_util.get_or_create_global_step()
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, global_step=gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([train_op], feed_dict={ids:[1,2,3]})
+      sess.run([train_op], feed_dict={ids:[2,3]})
+      sess.run([train_op], feed_dict={ids:[2,3]})
+      sess.run([train_op], feed_dict={ids:[2,3]})
+      saver.save(sess, ckpt_path)
+    for name, shape in checkpoint_utils.list_variables(ckpt_path):
+      if name == "var_1-keys":
+        right_result = [2, 3]
+        self.assertEqual(shape[0], 2)
+        keys = checkpoint_utils.load_variable(ckpt_path, name)
+        for i in range(shape[0]):
+          self.assertEqual(keys[i], right_result[i])
+      elif name == "var_1-versions":
+        right_result = [3, 3]
+        self.assertEqual(shape[0], 2)
+        keys = checkpoint_utils.load_variable(ckpt_path, name)
+        for i in range(shape[0]):
+          self.assertEqual(keys[i], right_result[i])
+
   def testEmbeddingVariableForL2FeatureEviction(self):
     print("testEmbeddingVariableForL2FeatureEviction")
     checkpoint_directory = self.get_temp_dir()

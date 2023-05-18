@@ -147,15 +147,9 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return Status::OK();
   }
 
-  Status Shrink(int64 value_len) override {
-    dram_->Shrink(value_len);
-    ssd_hash_->Shrink(value_len);
-    return Status::OK();
-  }
-
-  Status Shrink(int64 global_step, int64 steps_to_live) override {
-    dram_->Shrink(global_step, steps_to_live);
-    ssd_hash_->Shrink(global_step, steps_to_live);
+  Status Shrink(const ShrinkArgs& shrink_args) override {
+    dram_->Shrink(shrink_args);
+    ssd_hash_->Shrink(shrink_args);
     return Status::OK();
   }
 

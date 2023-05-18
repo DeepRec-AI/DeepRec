@@ -147,7 +147,8 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
   }
 
   int size = emb_var->Size();
-  emb_var->Shrink();
+  embedding::ShrinkArgs shrink_args;
+  emb_var->Shrink(shrink_args);
   LOG(INFO) << "Before shrink size:" << size;
   LOG(INFO) << "After shrink size:" << emb_var->Size();
 
@@ -186,7 +187,9 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
   }
 
   int size = emb_var->Size();
-  emb_var->Shrink(insert_num);
+  embedding::ShrinkArgs shrink_args;
+  shrink_args.global_step = insert_num;
+  emb_var->Shrink(shrink_args);
 
   LOG(INFO) << "Before shrink size:" << size;
   LOG(INFO) << "After shrink size: " << emb_var->Size();
