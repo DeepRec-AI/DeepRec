@@ -1608,10 +1608,11 @@ def group_embedding_lookup_sparse(params,
       is_sequence: bool
                 return list of `Tensor` of shape `[batch_size, D]` when is False
                 return list of `Tensor` of shape `[batch_size, T, D]` when is True
-      sub_group_size: int
-                A string specifying the grouping strategy of group embedding op.["gpu", "cpu"]
-                are supported. Setting "gpu" will group all embeddings to maximize the GPU utilization.
-                "cpu" will split embeddings so as to maximize intra parallelism.
+      params_num_per_group: int
+                The number of params in GroupEmbedding op.Function will schedule len(params) // params_num_per_group + 1
+                GroupEmbedding Op. Default setting would launch one Op containing all params which is suitable for GPU scenarios
+                to maximize the GPU utilization.On the contrast, you could set value to 1 when Op
+                is placed on CPU so as to maximize inter parallelism.
       name: The operations name
     Returns
     -------
