@@ -26,16 +26,20 @@ Group Embedding功能支持同时对多个EmbeddingVariable 聚合查询，将�
 def group_embedding_lookup_sparse(params,
                                   sp_ids,
                                   combiners,
-                                  partition_strategy="mod",
                                   sp_weights=None,
+                                  partition_strategy="mod",
+                                  is_sequence=False,
+                                  params_num_per_group=sys.maxsize,
                                   name=None):
 ```
 
 - `params` : List, 该参数可以接收一个或者多个EmbeddingVariable或者是原生Tensorflow Variable
 - `sp_ids` : List | Tuple , SparseTensor ，values是用于查找的ID 长度必须和params保持一致
 - `combiners` : List | Tuple 查找完得到的embedding tensor聚合的方式，支持 `mean` 和 `sum`
-- `partition_strategy` : str 目前暂时不支持
 - `sp_weights` : List | Typle sp_ids 的 values 的权重。
+- `partition_strategy` : str 目前暂时不支持
+- `is_sequence` : bool 如果设置为True，则返回的embedding形状为（B, T, D）。
+- `params_num_per_group` : int 该参数表示每个Op内部Variable的个数，默认设置为最大值，默认值适用于GPU的场景；当使用CPU的时候建议设置越小越好
 - `name` : str group的名称
 
 **group_embedding_lookup**
@@ -55,7 +59,7 @@ def group_embedding_lookup(params,
 **group_embedding_column_scope**
 
 ```python
-def group_embedding_column_scope(name=None):
+def group_embedding_column_scope(name=None, params_num_per_group=sys.maxsize):
 ```
 
 - `name` ： scope的名称
