@@ -44,7 +44,7 @@ DeepRec provide new distributed protocols such as grpc++ and star_server, which 
 
 Source Code: [https://github.com/DeepRec-AI/estimator](https://github.com/DeepRec-AI/estimator)
 
-Develop Branch：master, Latest Release Branch: deeprec2302
+Develop Branch：master, Latest Release Branch: deeprec2304
 
 ## Estimator Build
 

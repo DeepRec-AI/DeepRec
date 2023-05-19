@@ -4,7 +4,7 @@
 --------------------------------------------------------------------------------
 
 ## **Introduction**
-DeepRec is a high-performance recommendation deep learning framework based on [TensorFlow 1.15](https://www.tensorflow.org/), [Intel-TensorFlow](https://github.com/Intel-tensorflow/tensorflow) and [NVIDIA-TensorFlow](https://github.com/NVIDIA/tensorflow).
+DeepRec is a high-performance recommendation deep learning framework based on [TensorFlow 1.15](https://www.tensorflow.org/), [Intel-TensorFlow](https://github.com/Intel-tensorflow/tensorflow) and [NVIDIA-TensorFlow](https://github.com/NVIDIA/tensorflow). It is hosted in incubation in LF AI & Data Foundation.
 
 
 ### **Background**
@@ -95,13 +95,13 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux
 #### Image for CPU
 
 ```
-alideeprec/deeprec-release:deeprec2302-cpu-py38-ubuntu20.04
+alideeprec/deeprec-release:deeprec2304-cpu-py38-ubuntu20.04
 ```
 
 #### Image for GPU CUDA11.6
 
 ```
-alideeprec/deeprec-release:deeprec2302-gpu-py38-cu116-ubuntu20.04
+alideeprec/deeprec-release:deeprec2304-gpu-py38-cu116-ubuntu20.04
 ```
 
 ***
