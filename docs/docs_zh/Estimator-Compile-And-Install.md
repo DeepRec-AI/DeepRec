@@ -44,7 +44,7 @@
 
 代码库：[https://github.com/DeepRec-AI/estimator](https://github.com/DeepRec-AI/estimator)
 
-开发分支：master，最新Release分支：deeprec2302
+开发分支：master，最新Release分支：deeprec2304
 
 ## Estimator编译
 

@@ -1,3 +1,107 @@
+# Release r1.15.5-deeprec2304
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Suport tf.int32 dtype using feature_column API `tf.feature_column.categorical_column_with_embedding`.
+- Make the rules of export frequencies and versions the same as the rule of export keys.
+- Optimize cuda kernel implementation in GroupEmbedding.
+- Support to read embedding files with mmap and madvise, and direct IO.
+- Add double check in find_wait_free of lockless dense hashmap.
+- Change Embedding init value of version in EV from 0 to -1.
+- Interface 'GetSnapshot()' backward compatibility.
+- Implement CPU GroupEmbedding lookup sparse Op.
+- Make GroupEmbedding compatible with sequence feature_column interface.
+- Fix sp_weights indices calculation error in GroupEmbedding.
+- Add group_strategy to control parallelism of group_embedding.
+
+### **Graph & Grappler Optimization**
+
+- Support SparseTensor as placeholder in Sample-awared Graph Compression.
+- Add Dice fusion grappler and ops.
+- Enable MKL Matmul + Bias + LeakyRelu fusion.
+
+### **Runtime Optimization**
+
+- Avoid unnecessary polling in EventMgr.
+- Reduce lock cost and memory usage in EventMgr when use multi-stream.
+
+### **Ops & Hardware Acceleration**
+
+- Register GPU implementation of int64 type for Prod.
+- Register GPU implementation of string type for Shape, ShapeN and ExpandDims.
+- Optimize list of GPU SegmentReductionOps.
+- Optimize zeros_like_impl by reducing calls to convert_to_tensor.
+- Implement GPU version of SparseSlice Op.
+- Delay Reshape when rank > 2 in keras.layers.Dense so that post op can be fused with MatMul.
+- Implement setting max_num_threads hint to oneDNN at compile time.
+- Implement TensorPackTransH2DOp to improve SmartStage performance on GPU.
+
+### **IO**
+
+- Add tensor shape meta-data support for ParquetDataset.
+- Add arrow BINARY type support for ParquetDataset.
+
+### **Serving**
+
+- Add Dice fusion to inference mode.
+- Enable INFERENCE_MODE in processor.
+- Support TensorRT 8.x in Inference.
+- Add configure filed to control enable TensorRT or not.
+- Add flag for device_placement_optimization.
+- Avoid to clustering feature column related nodes when enable TensorRT.
+- Optimize inference latency when load increment checkpoint.
+- Optimize performance via only place TensorRT ops to gpu device.
+
+### **Environment & Build**
+
+- Support CUDA 12.
+- Update DEFAULT_CUDA_VERSION and DEFAULT_CUDNN_VERSION in configure.py.
+- Move thirdparties from WORKSPACE to workspace.bzl.
+- Update urls corresponding to colm, ragel, aliyun-oss-sdk and uuid.
+
+### **BugFix**
+
+- Fix constant op placing bug for device placement optimization.
+- Fix Nan issue occurred in group_embedding API.
+- Fix SOK not compatible with variable issue.
+- Fix memory leak when update full model in serving.
+- Fix 'cols_to_output_tensors' not setted issue in GroupEmbedding.
+- Fix core dump issue about saving GPU EmbeddingVariable.
+- Fix cuda resource issue in KvResourceImportV3 kernel.
+- Fix loading signature_def with coo_sparse bug and add UT.
+- Fix the bug that the training ends early when the workqueue is enabled.
+- Fix the control edge connection issue in device placement optimization.
+
+### **ModelZoo**
+
+- Modify GroupEmbedding related function usage.
+- Update masknet example with layernorm.
+
+### **Tool & Documents**
+
+- Add tools for remove filtered features in checkpoint.
+- Add Arm Compute Library (ACL) user documents.
+- Update Embedding Variable document to fix initializer config example.
+- Update GroupEmbedding document.
+- Update processor documents.
+- Add user documents for intel AMX.
+- Add TensorRT usage documents.
+- Update documents for ParquetDataset.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2304-cpu-py38-ubuntu20.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2304-gpu-py38-cu116-ubuntu20.04`
+
 # Release r1.15.5-deeprec2302
 
 ## **Major Features and Improvements**
