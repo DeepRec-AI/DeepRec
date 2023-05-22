@@ -1,17 +1,18 @@
-/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-======================================================================*/
+/*
+ * Copyright (c) 2023, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include "lookup_adapter.hpp"
 
@@ -21,8 +22,8 @@ limitations under the License.
 
 namespace tensorflow {
 
-template <typename KeyType, typename DType>
-void EmbeddingVarGPUAdapter<KeyType, DType>::set(
+template <typename KeyType, typename OffsetType, typename DType>
+void EmbeddingVarGPUAdapter<KeyType, OffsetType, DType>::set(
     OpKernelContext* ctx,
     std::vector<core::RefCountPtr<EmbeddingVar<KeyType, DType>>>& vars,
     const std::vector<int>& ev_size_per_lookup, cudaStream_t stream) {
@@ -35,24 +36,24 @@ void EmbeddingVarGPUAdapter<KeyType, DType>::set(
   stream_ = stream;
 }
 
-template <typename KeyType, typename DType>
-void EmbeddingVarGPUAdapter<KeyType, DType>::lookup(
-    const ::core::Tensor& keys, size_t num_keys,
-    const ::core::Tensor& id_space_offset, size_t num_id_space_offset,
-    const ::core::Tensor& id_space, ::core::TensorList& embedding_vec) {
+template <typename KeyType, typename OffsetType, typename DType>
+void EmbeddingVarGPUAdapter<KeyType, OffsetType, DType>::lookup(
+    const core23::Tensor& keys, size_t num_keys,
+    const core23::Tensor& id_space_offset, size_t num_id_space_offset,
+    const core23::Tensor& id_space, core23::Tensor& embedding_vec) {
   id_space_offset_.resize(num_id_space_offset);
   CUDACHECK(cudaMemcpyAsync(id_space_offset_.data(),
-                            id_space_offset.get<uint32_t>(),
-                            sizeof(uint32_t) * (num_id_space_offset),
+                            id_space_offset.data(),
+                            sizeof(OffsetType) * (num_id_space_offset),
                             cudaMemcpyDeviceToHost, stream_));
   id_space_.resize(num_id_space_offset - 1);
-  CUDACHECK(cudaMemcpyAsync(id_space_.data(), id_space.get<int>(),
+  CUDACHECK(cudaMemcpyAsync(id_space_.data(), id_space.data<int>(),
                             sizeof(int) * (num_id_space_offset - 1),
                             cudaMemcpyDeviceToHost, stream_));
   CUDACHECK(cudaStreamSynchronize(stream_));
   assert(tmp_ev_list_.size() == 0);
 
-  const KeyType* input = keys.get<KeyType>();
+  const KeyType* input = keys.data<KeyType>();
   std::vector<DType*> lookup_res;
   for (int i = 0; i < num_id_space_offset - 1; ++i) {
     size_t num = id_space_offset_[i + 1] - id_space_offset_[i];
@@ -74,16 +75,18 @@ void EmbeddingVarGPUAdapter<KeyType, DType>::lookup(
       lookup_res.push_back(evs.flat<DType>().data() + i_ev * ev_size);
     }
   }
-  DType** output = embedding_vec.get<DType>();
+  DType** output = static_cast<DType**>(embedding_vec.data());
   CUDACHECK(cudaMemcpyAsync(output, lookup_res.data(),
                             sizeof(DType*) * lookup_res.size(),
                             cudaMemcpyHostToDevice, stream_));
   CUDACHECK(cudaStreamSynchronize(stream_));
 }
 
-template class EmbeddingVarGPUAdapter<int32, float>;
+template class EmbeddingVarGPUAdapter<int32, int32, float>;
+template class EmbeddingVarGPUAdapter<int32, int64, float>;
 // template class EmbeddingVarGPUAdapter<int32_t, __half>;
-template class EmbeddingVarGPUAdapter<int64, float>;
+template class EmbeddingVarGPUAdapter<int64, int32, float>;
+template class EmbeddingVarGPUAdapter<int64, int64, float>;
 // template class EmbeddingVarGPUAdapter<int64_t, __half>;
 }  // namespace tensorflow
 #endif

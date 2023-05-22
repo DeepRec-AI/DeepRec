@@ -1361,11 +1361,9 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     http_archive(
         name = "hugectr",                                     # Apache License 2.0
         build_file = "//third_party:hugectr.BUILD",
-        strip_prefix = "HugeCTR-4.3",
-        patch_args = ["-p1"],
-        patches = ["//third_party:HugeCTR.patch"],
+        strip_prefix = "HugeCTR-23.05.01",
         urls = [
-            "https://github.com/NVIDIA-Merlin/HugeCTR/archive/refs/tags/v4.3.tar.gz",
+            "https://github.com/NVIDIA-Merlin/HugeCTR/archive/refs/tags/v23.05.01.tar.gz",
         ],
     )
 

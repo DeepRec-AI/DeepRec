@@ -1,18 +1,18 @@
-# Copyright (c) 2022 Intel Corporation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
+"""
+ Copyright (c) 2023, NVIDIA CORPORATION.
+ 
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+"""
 from tensorflow.python.framework import dtypes
 import numpy as np
 from ast import arg
@@ -176,7 +176,7 @@ def transform_categorical(feature):
     if args.sok:
         hotness = [1 for _ in range(len(CATEGORICAL_COLUMNS))]
         combiners = ['sum' for _ in range(len(CATEGORICAL_COLUMNS))]
-        deep_features = sok.lookup_sparse(variables, indices, combiners)
+        deep_features = sok.lookup_sparse(variables, indices, combiners=combiners)
     else:
         deep_features = []
         for ind, var in zip(indices, variables):
