@@ -1665,7 +1665,7 @@ def group_embedding_lookup_sparse(params,
                               )
         with ops.name_scope(name, 'group_embedding_lookup', params
                             + sp_ids) as name_scope:
-            emb_vec = sok.lookup_sparse(params, sp_ids, combiners)
+            emb_vec = sok.lookup_sparse(params, sp_ids, combiners=combiners)
     elif strategy == DistStrategy.LOCALIZED:
 
       emb_vec = [None for _ in range(len(params))]
