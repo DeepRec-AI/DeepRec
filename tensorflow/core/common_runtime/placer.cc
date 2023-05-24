@@ -112,6 +112,39 @@ Status Placer::Run() {
     }
   }
 
+  std::string cpu_name, gpu_name, all_names;
+  for (auto d : devices_->devices()) {
+    all_names += d->name();
+    all_names += ";\n";
+    if (d->name().find("device:CPU:") != std::string::npos) {
+      cpu_name = d->name();
+    } else if (d->name().find("device:GPU:") != std::string::npos) {
+      gpu_name = d->name();
+    }
+  }
+
+  bool use_session_group = false;
+  TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar(
+      "USE_SESSION_GROUP", false, &use_session_group));
+  if (use_session_group) {
+    for (Node* node : graph_->op_nodes()) {
+      const std::string dname = node->requested_device();
+      if (!dname.empty()) {
+        if (dname.find("device:CPU:") != std::string::npos) {
+          node->set_requested_device(cpu_name);
+        } else if (dname.find("device:GPU:") != std::string::npos) {
+          node->set_requested_device(gpu_name);
+        } else {
+          LOG(ERROR) << "Can not find requested device in current devices set"
+                     << ", node requested device: " << dname
+                     << ", current devices set: " << all_names;
+        }
+      }
+      // we don't continue here, cause there are
+      // nodes should be assigned device below.
+    }
+  }
+
   FunctionStack stack(function_name_);
   ColocationGraph colocation_graph(graph_, stack, flib_def_, devices_,
                                    default_local_device_, allow_soft_placement_,
@@ -236,15 +269,6 @@ Status Placer::Run() {
       "PLACE_TRT_OP_ON_GPU_ONLY", false, &place_trtop_on_gpu_only));
   // Keep TRTEngineOp On GPU Only
   if (place_trtop_on_gpu_only) {
-    std::string cpu_name, gpu_name;
-    for (auto d : devices_->devices()) {
-      if (d->name().find("device:CPU:") != std::string::npos) {
-        cpu_name = d->name();
-      } else if (d->name().find("device:GPU:") != std::string::npos) {
-        gpu_name = d->name();
-      }
-    }
-
     for (Node* n : graph_->op_nodes()) {
       if (n->type_string() == "TRTEngineOp") {
         n->set_assigned_device_name(gpu_name);
