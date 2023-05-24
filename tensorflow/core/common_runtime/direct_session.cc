@@ -386,6 +386,11 @@ class DirectSessionFactory : public SessionFactory {
   Status NewSessionGroup(const SessionOptions& options,
                          SessionGroup** out_session_group,
                          const SessionGroupMetadata& metadata) {
+    // Set SessionGroup env
+    if (setenv("USE_SESSION_GROUP", "1", 1) != 0) {
+      LOG(WARNING) << "Set env USE_SESSION_GROUP failed.";
+    }
+
     int session_num = metadata.session_count;
     if (session_num < 1) {
       return errors::InvalidArgument(
