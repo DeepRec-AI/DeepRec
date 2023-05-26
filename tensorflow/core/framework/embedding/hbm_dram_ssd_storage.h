@@ -400,7 +400,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     mutex_lock l(*(ssd_->get_mutex()));
     mutex_lock l1(*(dram_->get_mutex()));
 
-    dram_cache_->add_to_rank(keys->data(), keys->size());
+    dram_cache_->update(keys->data(), keys->size());
     int64 dram_count = dram_cache_->size();
     if (dram_count > dram_capacity_) {
       int k_size = dram_count - dram_capacity_;

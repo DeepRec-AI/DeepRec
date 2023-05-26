@@ -191,24 +191,39 @@ class AdagradDecayOptimizer(optimizer.Optimizer):
         grad.indices,
         use_locking=self._use_locking)
 
-  def _resource_apply_sparse(self, grad, var, indices):
+  def _resource_apply_sparse(self, grad, var, indices, indices_counts=None):
     acc = self.get_slot(var, "accumulator")
     acc_decay_power = self.get_slot(var, "accumulator_decay_power")
     with ops.device(var.device):
       global_step = array_ops.identity(self._global_step_on_worker)
     if isinstance(var, kv_variable_ops.EmbeddingVariable):
-      return training_ops.kv_resource_sparse_apply_adagrad_decay(
-        var.handle,
-        acc.handle,
-        acc_decay_power.handle,
-        math_ops.cast(self._learning_rate_tensor, grad.dtype),
-        self._accumulator_decay_step_tensor,
-        math_ops.cast(self._accumulator_decay_rate_tensor, grad.dtype.base_dtype),
-        math_ops.cast(self._accumulator_baseline_tensor, grad.dtype.base_dtype),
-        global_step,
-        grad,
-        indices,
-        use_locking=self._use_locking)
+      if indices_counts != None:
+        return training_ops.kv_resource_sparse_apply_adagrad_decay_with_counts(
+          var.handle,
+          acc.handle,
+          acc_decay_power.handle,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          self._accumulator_decay_step_tensor,
+          math_ops.cast(self._accumulator_decay_rate_tensor, grad.dtype.base_dtype),
+          math_ops.cast(self._accumulator_baseline_tensor, grad.dtype.base_dtype),
+          global_step,
+          grad,
+          indices,
+          indices_counts,
+          use_locking=self._use_locking)
+      else:
+        return training_ops.kv_resource_sparse_apply_adagrad_decay(
+          var.handle,
+          acc.handle,
+          acc_decay_power.handle,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          self._accumulator_decay_step_tensor,
+          math_ops.cast(self._accumulator_decay_rate_tensor, grad.dtype.base_dtype),
+          math_ops.cast(self._accumulator_baseline_tensor, grad.dtype.base_dtype),
+          global_step,
+          grad,
+          indices,
+          use_locking=self._use_locking)
     else:
       return training_ops.resource_sparse_apply_adagrad_decay(
           var.handle,

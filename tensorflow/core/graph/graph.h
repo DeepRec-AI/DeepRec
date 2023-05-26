@@ -153,6 +153,7 @@ class Node {
   bool IsSparseApplyAdagradOps() const {
     return type_string() == "SparseApplyAdagrad" ||
            type_string() == "KvResourceSparseApplyAdagrad" ||
+           type_string() == "KvResourceSparseApplyAdagradWithCounts" ||
            type_string() == "ResourceSparseApplyAdagrad";
   }
   bool IsApplyAdamOps() const {
@@ -165,7 +166,9 @@ class Node {
            type_string() == "ResourceSparseApplyAdam" ||
            type_string() == "KvResourceSparseApplyAdam" ||
            type_string() == "ResourceSparseApplyAdamAsync" ||
-           type_string() == "KvResourceSparseApplyAdamAsync";
+           type_string() == "KvResourceSparseApplyAdamAsync" ||
+           type_string() == "KvResourceSparseApplyAdamWithCounts" ||
+           type_string() == "KvResourceSparseApplyAdamAsyncWithCounts";
   }
   bool IsApplyFtrlOps() const {
     return type_string() == "ApplyFtrl" ||
@@ -179,9 +182,11 @@ class Node {
            type_string() == "ResourceGroupSparseApplyFtrl" ||
            type_string() == "ResourceSparseApplyFtrl" ||
            type_string() == "KvResourceSparseApplyFtrl" ||
+           type_string() == "KvResourceSparseApplyFtrlWithCounts" ||
            type_string() == "SparseApplyFtrlV2" ||
            type_string() == "ResourceSparseApplyFtrlV2" ||
-           type_string() == "KvResourceSparseApplyFtrlV2";
+           type_string() == "KvResourceSparseApplyFtrlV2" ||
+           type_string() == "KvResourceSparseApplyFtrlV2WithCounts";
   }
   bool IsKvSparseApply() const {
     return type_string() == "KvResourceSparseApplyAdagrad" ||
@@ -191,7 +196,15 @@ class Node {
            type_string() == "KvResourceSparseApplyFtrl" ||
            type_string() == "KvResourceSparseApplyFtrlV2" ||
            type_string() == "KvResourceSparseApplyGradientDescent" ||
-           type_string() == "KvResourceSparseApplyAdamW";
+           type_string() == "KvResourceSparseApplyAdamW" ||
+           type_string() == "KvResourceSparseApplyAdagradWithCounts" ||
+           type_string() == "KvResourceSparseApplyAdagradDecayWithCounts" ||
+           type_string() == "KvResourceSparseApplyAdamWithCounts" ||
+           type_string() == "KvResourceSparseApplyAdamAsyncWithCounts" ||
+           type_string() == "KvResourceSparseApplyFtrlWithCounts" ||
+           type_string() == "KvResourceSparseApplyFtrlV2WithCounts" ||
+           type_string() == "KvResourceSparseApplyGradientDescentWithCounts" ||
+           type_string() == "KvResourceSparseApplyAdamWWithCounts";
   }
   bool IsPlaceholder() const { return type_string() == "Placeholder"; }
   bool IsSwitch() const { return class_ == NC_SWITCH; }

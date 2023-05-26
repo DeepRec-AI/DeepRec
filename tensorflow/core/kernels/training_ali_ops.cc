@@ -67,7 +67,8 @@ struct ApplyAdagradDecay<CPUDevice, T> {
 
 }
 
-template <typename TKey, typename T, typename Tstep, bool indices_as_pointer>
+template <typename TKey, typename T, typename Tstep,
+          bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdagradOp : public OpKernel {
  public:
   explicit KvSparseApplyAdagradOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -118,6 +119,15 @@ class KvSparseApplyAdagradOp : public OpKernel {
     OP_REQUIRES(ctx, inner_dim > 0,
                 errors::InvalidArgument(
                     "Inner dimension should be greater than zero."));
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const Tensor& counts_tensor = ctx->input(6);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
 
     if (N > 0) {
       if (inner_dim > 0) {
@@ -126,18 +136,20 @@ class KvSparseApplyAdagradOp : public OpKernel {
         T lr_scalar = lr.scalar<T>()();
         Tstep gs = global_step.scalar<Tstep>()();
         auto do_work = [this, ctx, &indices_vec, var, accum, &grad_flat,
-            &gs, &lr_scalar] (int64 start_i, int64 limit_i) {
+            &gs, &lr_scalar, indices_counts, get_count_fn]
+            (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto a = accum->flat(value_ptr);
+              auto a = accum->flat(value_ptr, index);
               auto g = grad_flat.template chip<0>(i);
-              auto v = var->flat(value_ptr);
+              auto v = var->flat(value_ptr, index);
               a += g.square();
               v -= g.constant(lr_scalar) * g * a.rsqrt();
             }
@@ -146,6 +158,11 @@ class KvSparseApplyAdagradOp : public OpKernel {
         const int64 cost = 1000; //very unreliable estimate for cost per step.
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
+
+        if (has_counts) {
+          const Tensor& indices_counts = ctx->input(6);
+          var->UpdateCache(indices, indices_counts);
+        }
       }
     }
   }
@@ -160,13 +177,25 @@ class KvSparseApplyAdagradOp : public OpKernel {
                               .TypeConstraint<T>("T")                \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradOp<Tindices, T, Tstep, false>); \
+                          KvSparseApplyAdagradOp<Tindices, T, Tstep, false, false>); \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagrad")  \
                               .Device(DEVICE_CPU)                    \
                               .TypeConstraint<T>("T")                \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradOp<Tindices, T, Tstep, true>);
+                          KvSparseApplyAdagradOp<Tindices, T, Tstep, true, false>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagradWithCounts")       \
+                              .Device(DEVICE_CPU)                    \
+                              .TypeConstraint<T>("T")                \
+                              .TypeConstraint<Tindices>("Tindices")  \
+                              .TypeConstraint<Tstep>("Tstep"),       \
+                          KvSparseApplyAdagradOp<Tindices, T, Tstep, false, true>); \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagradWithCounts")  \
+                              .Device(DEVICE_CPU)                    \
+                              .TypeConstraint<T>("T")                \
+                              .TypeConstraint<Tindices>("Tindices")  \
+                              .TypeConstraint<Tstep>("Tstep"),       \
+                          KvSparseApplyAdagradOp<Tindices, T, Tstep, true, true>);
 #define REGISTER_CPU_KERNELS(T)        \
   REGISTER_KERNELS(int32, T, int32);   \
   REGISTER_KERNELS(int64, T, int32);   \
@@ -424,6 +453,25 @@ DECLARE_GPU_SPEC(int64, double);
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagradWithCounts")       \
+                              .Device(DEVICE_GPU)                    \
+                              .TypeConstraint<T>("T")                \
+                              .HostMemory("lr")                      \
+                              .HostMemory("global_step")             \
+                              .HostMemory("indices_counts")          \
+                              .TypeConstraint<Tindices>("Tindices")  \
+                              .TypeConstraint<Tstep>("Tstep"),       \
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, false>);\
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagradWithCounts")  \
+                              .Device(DEVICE_GPU)                    \
+                              .TypeConstraint<T>("T")                \
+                              .HostMemory("indices")                 \
+                              .HostMemory("lr")                      \
+                              .HostMemory("global_step")             \
+                              .HostMemory("indices_counts")          \
+                              .TypeConstraint<Tindices>("Tindices")  \
+                              .TypeConstraint<Tstep>("Tstep"),       \
                           KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true>);
 #define REGISTER_GPU_KERNELS(T)        \
   REGISTER_KERNELS(int32, T, int32);   \
@@ -437,7 +485,8 @@ TF_CALL_float(REGISTER_GPU_KERNELS);
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
-template <typename Device, typename TKey, typename T, bool has_l2_shrinkage, bool indices_as_pointer>
+template <typename Device, typename TKey, typename T,
+          bool has_l2_shrinkage, bool indices_as_pointer, bool has_counts>
 class KvSparseApplyFtrlOp : public OpKernel {
  public:
   explicit KvSparseApplyFtrlOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -521,6 +570,16 @@ class KvSparseApplyFtrlOp : public OpKernel {
                                   "is not a non-negative scalar: ",
                                   l2_shrinkage->shape().DebugString()));
     }
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const int counts_input_index = has_l2_shrinkage ? 10 : 9;
+      const Tensor& counts_tensor = ctx->input(counts_input_index);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
 
     if (N > 0) {
       if (inner_dim > 0) {
@@ -537,19 +596,20 @@ class KvSparseApplyFtrlOp : public OpKernel {
         auto do_work = [this, ctx, inner_dim, &var_,
                        &indices_vec, &accum_, &linear_, &grad_flat,
                        &lr_scalar, &l1_scalar, &l2_scalar, &lr_power,
-                       &l2_shrinkage_scalar, &lr_power_scalar]
-                       (int64 start_i, int64 limit_i) {
-
+                       &l2_shrinkage_scalar, &lr_power_scalar,
+                       get_count_fn, indices_counts]
+            (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var_->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
             if (is_filter) {
-              auto var = var_->flat(value_ptr);
-              auto accum = accum_->flat(value_ptr);
-              auto linear = linear_->flat(value_ptr);
+              auto var = var_->flat(value_ptr, index);
+              auto accum = accum_->flat(value_ptr, index);
+              auto linear = linear_->flat(value_ptr, index);
               auto grad = grad_flat.template chip<0>(i);
 
 // Use a macro to implement the computation here due to the templating of the
@@ -598,6 +658,12 @@ class KvSparseApplyFtrlOp : public OpKernel {
         const int64 cost = 4500; //very unreliable estimate for cost per step.
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
+
+        if (has_counts) {
+          const int counts_input_index = has_l2_shrinkage ? 10 : 9;
+          const Tensor& indices_counts = ctx->input(counts_input_index);
+          var_->UpdateCache(indices, indices_counts);
+        }
       }
     }
 
@@ -614,13 +680,25 @@ class KvSparseApplyFtrlOp : public OpKernel {
           .Device(DEVICE_CPU)                                                 \
           .TypeConstraint<T>("T")                                             \
           .TypeConstraint<Tindices>("Tindices"),                              \
-      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false, false>);\
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false, false, false>);\
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("_OPT_KvResourceSparseApplyFtrl")                                  \
           .Device(DEVICE_CPU)                                                 \
           .TypeConstraint<T>("T")                                             \
           .TypeConstraint<Tindices>("Tindices"),                              \
-      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false, true>);
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false, true, false>);\
+  REGISTER_KERNEL_BUILDER(                                                    \
+      Name("KvResourceSparseApplyFtrlWithCounts")                                       \
+          .Device(DEVICE_CPU)                                                 \
+          .TypeConstraint<T>("T")                                             \
+          .TypeConstraint<Tindices>("Tindices"),                              \
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false, false, true>);\
+  REGISTER_KERNEL_BUILDER(                                                    \
+      Name("_OPT_KvResourceSparseApplyFtrlWithCounts")                                  \
+          .Device(DEVICE_CPU)                                                 \
+          .TypeConstraint<T>("T")                                             \
+          .TypeConstraint<Tindices>("Tindices"),                              \
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false, true, true>);
 
 #define REGISTER_CPU_KERNELS(T) \
   REGISTER_KERNELS(int64, T);   \
@@ -637,13 +715,25 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
           .Device(DEVICE_CPU)                                                \
           .TypeConstraint<T>("T")                                            \
           .TypeConstraint<Tindices>("Tindices"),                             \
-      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true, false>);\
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true, false, false>);\
   REGISTER_KERNEL_BUILDER(                                                   \
       Name("_OPT_KvResourceSparseApplyFtrlV2")                               \
           .Device(DEVICE_CPU)                                                \
           .TypeConstraint<T>("T")                                            \
           .TypeConstraint<Tindices>("Tindices"),                             \
-      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true, true>);
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true, true, false>)\
+  REGISTER_KERNEL_BUILDER(                                                   \
+      Name("KvResourceSparseApplyFtrlV2WithCounts")                                    \
+          .Device(DEVICE_CPU)                                                \
+          .TypeConstraint<T>("T")                                            \
+          .TypeConstraint<Tindices>("Tindices"),                             \
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true, false, true>);\
+  REGISTER_KERNEL_BUILDER(                                                   \
+      Name("_OPT_KvResourceSparseApplyFtrlV2WithCounts")                               \
+          .Device(DEVICE_CPU)                                                \
+          .TypeConstraint<T>("T")                                            \
+          .TypeConstraint<Tindices>("Tindices"),                             \
+      KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true, true, true>);
 
 #define REGISTER_CPU_KERNELS(T) \
   REGISTER_KERNELS(int64, T);   \
@@ -1167,7 +1257,8 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 // Note, this op works on cpu only.
-template <typename T, typename Tindex, typename Tstep, bool indices_as_pointer>
+template <typename T, typename Tindex, typename Tstep,
+          bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdagradDecayOp : public OpKernel {
  public:
   explicit KvSparseApplyAdagradDecayOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -1242,6 +1333,15 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
       ctx, grad.dim_size(0) == N,
       errors::InvalidArgument(
         "grad must be the same size as indices in the first dimension."));
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const Tensor& counts_tensor = ctx->input(10);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
 
     if (N > 0) {
       auto indices_vec = indices.vec<Tindex>();
@@ -1255,21 +1355,24 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
         auto grad_flat = grad.flat_outer_dims<T>();
         auto do_work = [this, ctx, &indices_vec, &var, &accum, &gs,
             &grad_flat, accum_decay_power_var, &decay_step_scalar,
-            &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar]
-                (int64 start_i, int64 limit_i) {
+            &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar,
+            get_count_fn, indices_counts]
+            (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto a = accum->flat(value_ptr);
+              auto a = accum->flat(value_ptr, index);
 
               auto g = grad_flat.template chip<0>(i);
 
-              auto v = var->flat(value_ptr);
-              auto accum_decay_power = accum_decay_power_var->flat(value_ptr);
+              auto v = var->flat(value_ptr, index);
+              auto accum_decay_power = accum_decay_power_var->flat(value_ptr, index);
 
               if (gs / decay_step_scalar > accum_decay_power(0)) {
                 a *= a.constant(decay_rate_scalar);
@@ -1284,6 +1387,10 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
         const int64 cost = 1000;
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
+        if (has_counts) {
+          const Tensor& indices_counts = ctx->input(10);
+          var->UpdateCache(indices, indices_counts);
+        }
       }
     }
 
@@ -1303,7 +1410,7 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdagradDecayOp<T, Tindices, Tstep, false>);\
+                          KvSparseApplyAdagradDecayOp<T, Tindices, Tstep, false, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagradDecay")   \
                               .Device(DEVICE_CPU)                          \
                               .HostMemory("var")                           \
@@ -1312,7 +1419,25 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdagradDecayOp<T, Tindices, Tstep, true>);
+                          KvSparseApplyAdagradDecayOp<T, Tindices, Tstep, true, false>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagradDecayWithCounts")        \
+                              .Device(DEVICE_CPU)                          \
+                              .HostMemory("var")                           \
+                              .HostMemory("accum")                         \
+                              .HostMemory("accum_decay_power")             \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdagradDecayOp<T, Tindices, Tstep, false, true>);\
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagradDecayWithCounts")   \
+                              .Device(DEVICE_CPU)                          \
+                              .HostMemory("var")                           \
+                              .HostMemory("accum")                         \
+                              .HostMemory("accum_decay_power")             \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdagradDecayOp<T, Tindices, Tstep, true, true>);
 
 #define REGISTER_CPU_KERNELS(T)        \
   REGISTER_KERNELS(T, int64, int32);   \
@@ -1325,7 +1450,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
 
-template <typename Device, typename T, typename Tindex, bool indices_as_pointer>
+template <typename Device, typename T, typename Tindex,
+          bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdamOp : public OpKernel {
  public:
   explicit KvSparseApplyAdamOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -1408,6 +1534,15 @@ class KvSparseApplyAdamOp : public OpKernel {
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
             "grad must be the same size as indices in the first dimension."));
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const Tensor& counts_tensor = ctx->input(12);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
 
     if (N > 0) {
       T beta1_power_scalar = beta1_power.scalar<T>()();
@@ -1422,7 +1557,8 @@ class KvSparseApplyAdamOp : public OpKernel {
 
       auto DoWork = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
            &beta1_power_scalar, &beta2_power_scalar, &lr_scalar, &beta1_scalar,
-           &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
+           &beta2_scalar, &epsilon_scalar, &alpha, &global_step,
+           get_count_fn, indices_counts] (int64 start_i, int64 limit_i) {
         if (inner_dim > 0) {
           auto grad_flat = grad.flat_outer_dims<T>();
           auto indices_vec = indices.vec<Tindex>();
@@ -1433,13 +1569,14 @@ class KvSparseApplyAdamOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter =false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto var_i = var->flat(value_ptr);
-              auto m_a = m->flat(value_ptr);
-              auto v_a = v->flat(value_ptr);
+              auto var_i = var->flat(value_ptr, index);
+              auto m_a = m->flat(value_ptr, index);
+              auto v_a = v->flat(value_ptr, index);
 
               auto g = grad_flat.template chip<0>(i);
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
@@ -1453,6 +1590,10 @@ class KvSparseApplyAdamOp : public OpKernel {
       const int64 cost = 1000;
       auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
       Shard(worker_threads.num_threads, worker_threads.workers, N, cost, DoWork);
+      if (has_counts) {
+        const Tensor& indices_counts = ctx->input(12);
+        var->UpdateCache(indices, indices_counts);
+      }
     }
   }
 
@@ -1465,12 +1606,22 @@ class KvSparseApplyAdamOp : public OpKernel {
                               .Device(DEVICE_CPU)                     \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamOp<CPUDevice, T, Tindices, false>);\
+                          KvSparseApplyAdamOp<CPUDevice, T, Tindices, false, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdam")      \
                               .Device(DEVICE_CPU)                     \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamOp<CPUDevice, T, Tindices, true>);
+                          KvSparseApplyAdamOp<CPUDevice, T, Tindices, true, false>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamWithCounts")           \
+                              .Device(DEVICE_CPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamOp<CPUDevice, T, Tindices, false, true>);\
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamWithCounts")      \
+                              .Device(DEVICE_CPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamOp<CPUDevice, T, Tindices, true, true>);
 
 #define REGISTER_CPU_KERNELS(T) \
   REGISTER_KERNELS(T, int32);   \
@@ -1744,7 +1895,7 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
                           KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, false>); \
-   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdam")           \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdam")           \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
                               .HostMemory("lr")                      \
@@ -1754,6 +1905,34 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                               .HostMemory("beta2")                   \
                               .HostMemory("epsilon")                 \
                               .HostMemory("global_step")             \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, true>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamWithCounts")             \
+                              .Device(DEVICE_GPU)                     \
+                              .HostMemory("indices")                 \
+                              .HostMemory("lr")                      \
+                              .HostMemory("beta1_power")             \
+                              .HostMemory("beta2_power")             \
+                              .HostMemory("beta1")                   \
+                              .HostMemory("beta2")                   \
+                              .HostMemory("epsilon")                 \
+                              .HostMemory("global_step")             \
+                              .HostMemory("indices_counts")          \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, false>); \
+   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamWithCounts")           \
+                              .Device(DEVICE_GPU)                     \
+                              .HostMemory("indices")                 \
+                              .HostMemory("lr")                      \
+                              .HostMemory("beta1_power")             \
+                              .HostMemory("beta2_power")             \
+                              .HostMemory("beta1")                   \
+                              .HostMemory("beta2")                   \
+                              .HostMemory("epsilon")                 \
+                              .HostMemory("global_step")             \
+                              .HostMemory("indices_counts")          \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
                           KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, true>);
@@ -2242,7 +2421,8 @@ TF_CALL_double(REGISTER_GPU_KERNEL);
 #endif // End of #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #undef REGISTER_KERNELS
 
-template <typename Device, typename T, typename Tindex, typename Tstep, bool indices_as_pointer>
+template <typename Device, typename T, typename Tindex,
+          typename Tstep, bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdamAsyncOp : public OpKernel {
  public:
   explicit KvSparseApplyAdamAsyncOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -2333,7 +2513,15 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
             "grad must be the same size as indices in the first dimension."));
-
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const Tensor& counts_tensor = ctx->input(12);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
     if (N > 0) {
       if (apply_sparse_rmsprop_) {
         auto indices_vec = indices.vec<Tindex>();
@@ -2345,19 +2533,21 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         const T epsilon_scalar = epsilon.scalar<T>()();
 
         auto do_work = [this, ctx, &indices_vec, &var, v, m, &grad_flat,
-            &beta2_scalar, &beta1_scalar, &epsilon_scalar, &lr_scalar, &global_step]
-                (int64 start_i, int64 limit_i) {
+            &beta2_scalar, &beta1_scalar, &epsilon_scalar, &lr_scalar, &global_step,
+            get_count_fn, indices_counts]
+            (int64 start_i, int64 limit_i) {
           Tstep gs = global_step.scalar<Tstep>()();
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto v_ = v->flat(value_ptr);
-              auto m_ = m->flat(value_ptr);
+              auto v_ = v->flat(value_ptr, index);
+              auto m_ = m->flat(value_ptr, index);
               auto grad_ = grad_flat.template chip<0>(i);
 
               v_ = v_ * v_.constant(beta2_scalar) +
@@ -2366,7 +2556,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                      (v_ + v_.constant(epsilon_scalar)).rsqrt() *
                          v_.constant(lr_scalar) * grad_;
 
-              auto v = var->flat(value_ptr);
+              auto v = var->flat(value_ptr, index);
               v -= m_;
             }
           }
@@ -2388,7 +2578,8 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         auto do_work = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
              &lr_scalar, &beta1_scalar,
              &beta1_power, &beta2_power,
-             &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
+             &beta2_scalar, &epsilon_scalar, &alpha, &global_step,
+             get_count_fn, indices_counts] (int64 start_i, int64 limit_i) {
 
           if (inner_dim > 0) {
             auto grad_flat = grad.flat_outer_dims<T>();
@@ -2399,14 +2590,15 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
               const Tindex index = indices_vec(i);
               ValuePtr<T>* value_ptr = nullptr;
               bool is_filter = false;
+              int64 count = get_count_fn(indices_counts, i);
               OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                             &is_filter, indices_as_pointer));
+                             &is_filter, indices_as_pointer, count));
               var->UpdateVersion(value_ptr, gs);
               if (is_filter) {
-                auto m_a = m->flat(value_ptr);
-                auto v_a = v->flat(value_ptr);
+                auto m_a = m->flat(value_ptr, index);
+                auto v_a = v->flat(value_ptr, index);
                 auto g = grad_flat.template chip<0>(i);
-                auto var_i = var->flat(value_ptr);
+                auto var_i = var->flat(value_ptr, index);
 
                 m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
                 v_a = v_a * beta2_scalar + g.square() * (static_cast<T>(1) - beta2_scalar);
@@ -2422,6 +2614,10 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
         beta1_power_scalar() *= beta1_scalar;
         beta2_power_scalar() *= beta2_scalar;
+      }
+      if (has_counts) {
+        const Tensor& indices_counts = ctx->input(12);
+        var->UpdateCache(indices, indices_counts);
       }
     }
 
@@ -2439,13 +2635,25 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, false>);\
+                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, false, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamAsync")      \
                               .Device(DEVICE_##D)                          \
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, true>);
+                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, true, false>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamAsyncWithCounts")           \
+                              .Device(DEVICE_##D)                          \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, false, true>);\
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamAsyncWithCounts")      \
+                              .Device(DEVICE_##D)                          \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, true, true>);
 
 #define REGISTER_CPU_KERNELS(T)             \
   REGISTER_KERNELS(CPU, T, int32, int32);   \
@@ -2769,6 +2977,30 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, true>); \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamAsyncWithCounts")           \
+                              .Device(DEVICE_##D)                          \
+                              .HostMemory("lr")                      \
+                              .HostMemory("beta1")                   \
+                              .HostMemory("beta2")                   \
+                              .HostMemory("epsilon")                 \
+                              .HostMemory("global_step")             \
+                              .HostMemory("indices_counts")          \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, false>); \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamAsyncWithCounts")           \
+                              .Device(DEVICE_##D)                          \
+                              .HostMemory("lr")                      \
+                              .HostMemory("beta1")                   \
+                              .HostMemory("beta2")                   \
+                              .HostMemory("epsilon")                 \
+                              .HostMemory("global_step")             \
+                              .HostMemory("indices_counts")          \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
                           KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, true>);
 #define REGISTER_GPU_KERNELS(T)        \
   REGISTER_KERNELS(GPU, T, int32, int32);   \
@@ -2822,7 +3054,8 @@ DECLARE_GPU_SPEC_TYPE(double);
 
 #endif // End of GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-template <typename T, typename Tindex, typename Tstep, bool indices_as_pointer>
+template <typename T, typename Tindex, typename Tstep,
+          bool indices_as_pointer, bool has_counts>
 class KvResourceSparseApplyGradientDescentOp : public OpKernel {
  public:
   explicit KvResourceSparseApplyGradientDescentOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -2871,6 +3104,15 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
       ctx, grad.dim_size(0) == N,
       errors::InvalidArgument(
         "grad must be the same size as indices in the first dimension."));
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const Tensor& counts_tensor = ctx->input(5);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
 
     if (N > 0) {
       auto indices_vec = indices.vec<Tindex>();
@@ -2880,17 +3122,19 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
       if (inner_dim > 0) {
         auto grad_flat = grad.flat_outer_dims<T>();
         auto do_work = [this, ctx, &indices_vec, var, &grad_flat, &gs,
-            &lr_scalar] (int64 start_i, int64 limit_i) {
+            &lr_scalar, indices_counts, get_count_fn]
+            (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto g = grad_flat.template chip<0>(i);
-              auto v = var->flat(value_ptr);
+              auto v = var->flat(value_ptr, index);
               v -= g.constant(lr_scalar) * g;
             }
           }
@@ -2898,6 +3142,12 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
         const int64 cost = 1000;
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
+        if (has_counts) {
+          const Tensor& indices = ctx->input(5);
+          var->UpdateCache(indices, indices_counts);
+        } else {
+          var->UpdateCache(indices);
+        }
       }
     }
 
@@ -2915,14 +3165,28 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvResourceSparseApplyGradientDescentOp<T, Tindices, Tstep, false>);\
+                          KvResourceSparseApplyGradientDescentOp<T, Tindices, Tstep, false, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyGradientDescent")\
                               .Device(DEVICE_CPU)                          \
                               .HostMemory("var")                           \
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvResourceSparseApplyGradientDescentOp<T, Tindices, Tstep, true>);
+                          KvResourceSparseApplyGradientDescentOp<T, Tindices, Tstep, true, false>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyGradientDescentWithCounts")     \
+                              .Device(DEVICE_CPU)                          \
+                              .HostMemory("var")                           \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvResourceSparseApplyGradientDescentOp<T, Tindices, Tstep, false, true>);\
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyGradientDescentWithCounts")\
+                              .Device(DEVICE_CPU)                          \
+                              .HostMemory("var")                           \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvResourceSparseApplyGradientDescentOp<T, Tindices, Tstep, true, true>);
 
 #define REGISTER_CPU_KERNELS(T)        \
   REGISTER_KERNELS(T, int64, int32);   \
@@ -2935,7 +3199,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
 
-template <typename Device, typename T, typename Tindex, bool indices_as_pointer>
+template <typename Device, typename T, typename Tindex,
+          bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdamWOp : public OpKernel {
  public:
   explicit KvSparseApplyAdamWOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -3023,6 +3288,15 @@ class KvSparseApplyAdamWOp : public OpKernel {
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
             "grad must be the same size as indices in the first dimension."));
+    int64* indices_counts = nullptr;
+    std::function<int64(int64*, int64)> get_count_fn = 0;
+    if (has_counts) {
+      const Tensor& counts_tensor = ctx->input(13);
+      indices_counts = (int64*)counts_tensor.data();
+      get_count_fn = [](int64* counts, int64 index) {return counts[index];};
+    } else {
+      get_count_fn = [](int64* counts, int64 index) {return 1;};
+    }
 
     if (N > 0) {
       T beta1_power_scalar = beta1_power.scalar<T>()();
@@ -3037,9 +3311,10 @@ class KvSparseApplyAdamWOp : public OpKernel {
           (static_cast<T>(1) - beta1_power_scalar);
 
       auto DoWork = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
-           &beta1_power_scalar, &beta2_power_scalar, &lr_scalar, &beta1_scalar,
-           &beta2_scalar, &epsilon_scalar, &alpha, &global_step, 
-           &weight_decay_scalar] (int64 start_i, int64 limit_i) {
+          &beta1_power_scalar, &beta2_power_scalar, &lr_scalar, &beta1_scalar,
+          &beta2_scalar, &epsilon_scalar, &alpha, &global_step, 
+          &weight_decay_scalar, get_count_fn, indices_counts]
+          (int64 start_i, int64 limit_i) {
         if (inner_dim > 0) {
           auto grad_flat = grad.flat_outer_dims<T>();
           auto indices_vec = indices.vec<Tindex>();
@@ -3050,13 +3325,14 @@ class KvSparseApplyAdamWOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter =false;
+            int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
-                           &is_filter, indices_as_pointer));
+                           &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto var_i = var->flat(value_ptr);
-              auto m_a = m->flat(value_ptr);
-              auto v_a = v->flat(value_ptr);
+              auto var_i = var->flat(value_ptr, index);
+              auto m_a = m->flat(value_ptr, index);
+              auto v_a = v->flat(value_ptr, index);
               auto g = grad_flat.template chip<0>(i);
               // m_a = beta1 * m + (1 - beta1) * g
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
@@ -3071,6 +3347,10 @@ class KvSparseApplyAdamWOp : public OpKernel {
       const int64 cost = 1000;
       auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
       Shard(worker_threads.num_threads, worker_threads.workers, N, cost, DoWork);
+      if (has_counts) {
+        const Tensor& indices_counts = ctx->input(13);
+        var->UpdateCache(indices, indices_counts);
+      }
     }
   }
 
@@ -3083,12 +3363,22 @@ class KvSparseApplyAdamWOp : public OpKernel {
                               .Device(DEVICE_CPU)                     \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamWOp<CPUDevice, T, Tindices, false>);\
+                          KvSparseApplyAdamWOp<CPUDevice, T, Tindices, false, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamW")     \
                               .Device(DEVICE_CPU)                     \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamWOp<CPUDevice, T, Tindices, true>);
+                          KvSparseApplyAdamWOp<CPUDevice, T, Tindices, true, false>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamWWithCounts")          \
+                              .Device(DEVICE_CPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamWOp<CPUDevice, T, Tindices, false, true>);\
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamWWithCounts")     \
+                              .Device(DEVICE_CPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamWOp<CPUDevice, T, Tindices, true, true>);
 
 #define REGISTER_CPU_KERNELS(T) \
   REGISTER_KERNELS(T, int32);   \
@@ -3377,6 +3667,36 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
                               .HostMemory("epsilon")                 \
                               .HostMemory("global_step")             \
                               .HostMemory("weight_decay")            \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, true>);\
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamWWithCounts")             \
+                              .Device(DEVICE_GPU)                     \
+                              .HostMemory("indices")                 \
+                              .HostMemory("lr")                      \
+                              .HostMemory("beta1_power")             \
+                              .HostMemory("beta2_power")             \
+                              .HostMemory("beta1")                   \
+                              .HostMemory("beta2")                   \
+                              .HostMemory("epsilon")                 \
+                              .HostMemory("global_step")             \
+                              .HostMemory("weight_decay")            \
+                              .HostMemory("indices_counts")           \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, false>); \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamWWithCounts")             \
+                              .Device(DEVICE_GPU)                     \
+                              .HostMemory("indices")                 \
+                              .HostMemory("lr")                      \
+                              .HostMemory("beta1_power")             \
+                              .HostMemory("beta2_power")             \
+                              .HostMemory("beta1")                   \
+                              .HostMemory("beta2")                   \
+                              .HostMemory("epsilon")                 \
+                              .HostMemory("global_step")             \
+                              .HostMemory("weight_decay")            \
+                              .HostMemory("indices_counts")           \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
                           KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, true>);

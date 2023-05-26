@@ -756,7 +756,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
         st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
             partition_id, partition_num, false, device);
         if (cache_for_restore_hbm) {
-          cache_for_restore_hbm->add_to_rank(
+          cache_for_restore_hbm->update(
               (K*)restore_buff.key_buffer, read_key_num,
               (int64*)restore_buff.version_buffer,
               (int64*)restore_buff.freq_buffer);
@@ -781,7 +781,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     ev->storage()->Schedule([ev, hbm_ids, num_of_hbm_ids,
                                      hbm_versions, hbm_freqs]() {
       embedding::BatchCache<K>* cache = ev->Cache();
-      cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+      cache->update(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
       delete[] hbm_ids;
       delete[] hbm_freqs;
     });
@@ -981,7 +981,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
       }
       st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false, device);
       if (cache_for_restore_hbm) {
-        cache_for_restore_hbm->add_to_rank(
+        cache_for_restore_hbm->update(
             (K*)restore_buff.key_buffer, read_key_num,
             (int64*)restore_buff.version_buffer,
             (int64*)restore_buff.freq_buffer);
@@ -1018,7 +1018,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
 
         st = ev->Import(restore_buff, read_key_num, 1, 0, 1, true, device);
         if (cache_for_restore_hbm) {
-          cache_for_restore_hbm->add_to_rank(
+          cache_for_restore_hbm->update(
               (K*)restore_buff.key_buffer, read_key_num,
               (int64*)restore_buff.version_buffer,
               (int64*)restore_buff.freq_buffer);
@@ -1043,7 +1043,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     ev->storage()->Schedule([ev, hbm_ids, num_of_hbm_ids,
                                      hbm_versions, hbm_freqs]() {
       embedding::BatchCache<K>* cache = ev->Cache();
-      cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+      cache->update(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
       delete[] hbm_ids;
       delete[] hbm_freqs;
     });
@@ -1424,7 +1424,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
             st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
                 partition_id, partition_num, false, device);
             if (cache_for_restore_hbm) {
-              cache_for_restore_hbm->add_to_rank(
+              cache_for_restore_hbm->update(
                   (K*)restore_buff.key_buffer, read_key_num,
                   (int64*)restore_buff.version_buffer,
                   (int64*)restore_buff.freq_buffer);
@@ -1477,7 +1477,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
               st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
                   partition_id, partition_num, true, device);
               if (cache_for_restore_hbm) {
-                cache_for_restore_hbm->add_to_rank(
+                cache_for_restore_hbm->update(
                     (K*)restore_buff.key_buffer, read_key_num,
                     (int64*)restore_buff.version_buffer,
                     (int64*)restore_buff.freq_buffer);
@@ -1504,7 +1504,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
       ev->storage()->Schedule([ev, hbm_ids, num_of_hbm_ids,
                                        hbm_versions, hbm_freqs]() {
         embedding::BatchCache<K>* cache = ev->Cache();
-        cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+        cache->update(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
         delete[] hbm_ids;
         delete[] hbm_freqs;
       });

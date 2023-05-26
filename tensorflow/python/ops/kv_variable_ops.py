@@ -367,6 +367,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._handle_name = handle_name + ":0"
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
+        self._gather_op = None
         if self._is_primary:
           self._slot_num = 0 
         else:
@@ -379,7 +380,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         if initial_value is not None:
           with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
             with ops.control_dependencies(None if self._is_primary else [self._primary.initializer]):
-              self._init_op = gen_kv_variable_ops.initialize_kv_variable_op(
+              self._init_op = gen_kv_variable_ops.initialize_kv_variable_v2_op(
                     self._handle,
                     self._primary._handle,
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
@@ -405,6 +406,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     default_value_no_permission = self._default_value_no_permission,
                     record_freq = self._record_freq,
                     record_version = self._record_version,
+                    embedding_variable_type=config_pb2.EmbeddingVariableType.IMMUTABLE,
                     name=n)
             set_attr_ops = []
 
@@ -418,8 +420,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                                   config_pb2.StorageType.DRAM_PMEM_SSDHASH,
                                   config_pb2.StorageType.HBM_DRAM_SSDHASH]
               return storage_type in multi_level_list
-
-            if self._is_primary and is_multi_tier(self._storage_type):
+            self._is_multi_tier = is_multi_tier(self._storage_type)
+            if self._is_primary and self._is_multi_tier:
               with ops.control_dependencies([self._init_op]):
                 self._set_cache_strategy_op = gen_kv_variable_ops.kv_resource_init_cache_strategy_op(
                   self._handle,
@@ -440,6 +442,12 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
 
   def export(self):
     return gen_kv_variable_ops.kv_resource_export(self._handle, Tkeys=self._invalid_key_type)
+
+  def need_counts(self):
+    return (self._record_freq or (self._filter_freq > 0) or self._is_multi_tier)
+  @property
+  def gather_op(self):
+    return self._gather_op
 
   def _init_from_proto(self, variable_def, import_scope=None):
     """Initializes from `VariableDef` proto."""
@@ -465,7 +473,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     cache_op = None
     if self._initializer_op.type == "NoOp":
       for op in self._initializer_op.control_inputs:
-        if op.type == "InitializeKvVariableOp":
+        if op.type == "InitializeKvVariableOp" or \
+           op.type == "InitializeKvVariableV2Op":
           init_op = op
           self._init_op = op
         elif op.type == "KvResourceSetCacheStrategyOp":
@@ -788,13 +797,16 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         value = gen_kv_variable_ops.kv_resource_gather_v1(self._handle,
               indices,
               default_value,
-              counts, name=name)
+              counts, is_inference=True,
+              name=name)
       else:
         value = gen_kv_variable_ops.kv_resource_gather(self._handle,
               indices,
               default_value,
               is_use_default_value_tensor,
+              is_inference=True,
               name=name)
+      self._counts_tensor = counts
     return array_ops.identity(value)
 
   def to_proto(self, export_scope=None):

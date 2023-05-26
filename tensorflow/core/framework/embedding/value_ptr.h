@@ -138,7 +138,7 @@ struct NormalHeader {
         freq_counter, freq_counter + 1);
   }
 
-  inline void AddFreq(int count) {
+  inline void AddFreq(int64 count) {
     __sync_bool_compare_and_swap(&freq_counter,
         freq_counter, freq_counter + count);
   }
@@ -192,7 +192,7 @@ struct FixedLengthHeader {
         freq_counter, freq_counter + 1);
   }
 
-  inline void AddFreq(int count) {
+  inline void AddFreq(int64 count) {
     __sync_bool_compare_and_swap(&freq_counter,
         freq_counter, freq_counter + count);
   }
@@ -237,7 +237,7 @@ class ValuePtr {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
   }
 
-  virtual void AddFreq(int count) {
+  virtual void AddFreq(int64 count) {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
   }
 
@@ -381,7 +381,7 @@ class NormalValuePtr : public LooseValuePtr<V> {
     return ((NormalHeader*)this->ptr_)->AddFreq();
   }
 
-  void AddFreq(int count) {
+  void AddFreq(int64 count) override {
     return ((NormalHeader*)this->ptr_)->AddFreq(count);
   }
 };
@@ -457,7 +457,7 @@ class NormalContiguousValuePtr : public LooseValuePtr<V> {
     ((FixedLengthHeader*)this->ptr_)->AddFreq();
   }
 
-  void AddFreq(int count) {
+  void AddFreq(int64 count) override {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
   }
 
@@ -555,7 +555,7 @@ class NormalGPUValuePtr : public LooseValuePtr<V> {
     ((FixedLengthHeader*)this->ptr_)->AddFreq();
   }
 
-  void AddFreq(int64 count) {
+  void AddFreq(int64 count) override {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
   }
 

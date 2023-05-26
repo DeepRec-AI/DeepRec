@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 
 #include "tensorflow/core/framework/embedding/cache.h"
+#include "tensorflow/core/framework/embedding/embedding_var_context.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/framework/embedding/filter_factory.h"
 #include "tensorflow/core/framework/embedding/gpu_hash_map_kv.h"
@@ -37,6 +38,8 @@ limitations under the License.
 #include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
 #if GOOGLE_CUDA
   void SyncWithEventMgr(se::Stream* stream,
@@ -66,16 +69,16 @@ class EmbeddingVar : public ResourceBase {
       default_value_alloc_(alloc),
       emb_config_(emb_cfg) {
     if (IsMultiLevel() || emb_config_.record_freq) {
-      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {
+      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int64 freq, int64 filter_freq) {
         value_ptr->AddFreq(freq);
       };
     } else if (emb_config_.is_counter_filter()) {
-      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {
+      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int64 freq, int64 filter_freq) {
         if (value_ptr->GetFreq() < filter_freq)
           value_ptr->AddFreq(freq);
       };
     } else {
-      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {};
+      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int64 freq, int64 filter_freq) {};
     }
     if (emb_config_.steps_to_live != 0 || emb_config_.record_version) {
       update_version_fn_ = [](ValuePtr<V>* value_ptr, int64 gs) {
@@ -163,13 +166,16 @@ class EmbeddingVar : public ResourceBase {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr,
-                           bool* is_filter, bool indices_as_pointer) {
+                           bool* is_filter, bool indices_as_pointer,
+                           int64 count = 1) {
     if (indices_as_pointer) {
       *value_ptr = (ValuePtr<V>*)key;
       *is_filter = (*value_ptr != nullptr);
       return Status::OK();
     } else {
-      return filter_->LookupOrCreateKey(key, value_ptr, is_filter);
+      Status s = filter_->LookupOrCreateKey(key, value_ptr, is_filter, count);
+      add_freq_fn_(*value_ptr, count, emb_config_.filter_freq);
+      return s;
     }
   }
 
@@ -233,6 +239,46 @@ class EmbeddingVar : public ResourceBase {
                            default_value_no_permission_);
   }
 
+  void GetEmbeddings(const EmbeddingVarContext<CPUDevice>& context,
+                     const K* keys, V* output,
+                     int64 num_of_keys) {
+    auto do_work = [this, keys, output] (int64 start, int64 limit) {
+      for (int64 i = start; i < limit; ++i) {
+        V* default_v =
+            default_value_ +
+                (keys[i] % emb_config_.default_value_dim) * value_len_;
+        filter_->Lookup(this, keys[i],
+            output + i * value_len_, default_v,
+            default_value_no_permission_);
+      }
+    };
+    auto worker_threads = context.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          value_len_ * sizeof(V), do_work);
+  }
+
+//Used for CPU Adaptive Embedding
+  void GetEmbeddings(const EmbeddingVarContext<CPUDevice>& context,
+                     const K* keys, V* output,
+                     int64 num_of_keys, V* default_value) {
+    auto do_work = [this, keys, output, default_value]
+        (int64 start, int64 limit) {
+      for (int64 i = start; i < limit; ++i) {
+        V* default_v = default_value + i * value_len_;
+        ValuePtr<V>* value_ptr = nullptr;
+        filter_->LookupOrCreate(
+            keys[i], output + i * value_len_, default_v, &value_ptr, 1,
+            default_value_no_permission_);
+        add_freq_fn_(value_ptr, 1, emb_config_.filter_freq);
+      }
+    };
+    auto worker_threads = context.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          value_len_ * sizeof(V), do_work);
+  }
+
   void LookupOrCreate(K key, V* val, V* default_v, int count = 1)  {
     const V* default_value_ptr =
       (default_v == nullptr) ? default_value_ : default_v;
@@ -251,7 +297,6 @@ class EmbeddingVar : public ResourceBase {
       embedding::CopyBackFlag copyback_flag =
           embedding::CopyBackFlag::NOT_COPYBACK;
       TF_CHECK_OK(LookupOrCreateKey(keys[i], &value_ptr, -1, copyback_flag));
-      value_ptr->AddFreq();
       memcpy_address[i] = GetAddressOfGpuValuePtr(value_ptr, i, copyback_flag,
           init_cursor, copyback_cursor);
     }
@@ -347,8 +392,10 @@ class EmbeddingVar : public ResourceBase {
     return primary_val;
   }
 
-  typename TTypes<V>::Flat flat(ValuePtr<V>* value_ptr) {
-    V* val = LookupOrCreateEmb(value_ptr, default_value_);
+  typename TTypes<V>::Flat flat(ValuePtr<V>* value_ptr, int64 index) {
+    V* default_v =
+        default_value_ + (index % emb_config_.default_value_dim) * value_len_;
+    V* val = LookupOrCreateEmb(value_ptr, default_v);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
   }
@@ -602,11 +649,28 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
+  void UpdateCache(const Tensor& indices,
+                   const Tensor& indices_counts,
+                   bool is_called_by_gather = false) {
+    if (!is_called_by_gather ||
+        (is_called_by_gather && emb_config_.is_inference)) {
+      storage_->UpdateCache(indices, indices_counts);
+    }
+  }
+
+  void UpdateCache(const Tensor& indices,
+                   bool is_called_by_gather = false) {
+    if (!is_called_by_gather ||
+        (is_called_by_gather && emb_config_.is_inference)) {
+      storage_->UpdateCache(indices);
+    }
+  }
+
   void UpdateCache(const K* key_buff, int64 key_num,
       const int64* version_buff, const int64* freq_buff) {
     auto cache = Cache();
     if (cache) {
-      cache->add_to_rank(key_buff, key_num, version_buff, freq_buff);
+      cache->update(key_buff, key_num, version_buff, freq_buff);
       auto cache_size = CacheSize();
       if (cache->size() > cache_size) {
         int64 evict_size = cache->size() - cache_size;
@@ -667,6 +731,27 @@ class EmbeddingVar : public ResourceBase {
   }
 
  private:
+  void LookupThroughFilter(
+      const EmbeddingVarContext<CPUDevice>& context,
+      const Tensor& indices, V* output,
+      int64 num_of_keys) {
+    const K* keys = (K*)indices.data();
+    auto do_work = [this, keys, output] (int64 start, int64 limit) {
+      for (int64 i = start; i < limit; ++i) {
+        V* default_v =
+            default_value_ +
+                (keys[i] % emb_config_.default_value_dim) * value_len_;
+        filter_->Lookup(this, keys[i],
+            output + i * value_len_, default_v,
+            default_value_no_permission_);
+      }
+    };
+    auto worker_threads = context.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          value_len_ * sizeof(V), do_work);
+  }
+
   V* GetAddressOfGpuValuePtr(ValuePtr<V>* value_ptr,
       int64 index,
       bool copyback_flag,
@@ -712,7 +797,7 @@ class EmbeddingVar : public ResourceBase {
   embedding::StorageType storage_type_;
   EmbeddingConfig emb_config_;
   FilterPolicy<K, V, EmbeddingVar<K, V>>* filter_;
-  std::function<void(ValuePtr<V>*, int, int64)> add_freq_fn_;
+  std::function<void(ValuePtr<V>*, int64, int64)> add_freq_fn_;
   std::function<void(ValuePtr<V>*, int64)> update_version_fn_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);

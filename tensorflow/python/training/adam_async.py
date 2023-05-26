@@ -210,21 +210,32 @@ class AdamAsyncOptimizer(optimizer.Optimizer):
           use_locking=self._use_locking)
     return control_flow_ops.group(update_beta1, update_beta2)
 
-  def _resource_apply_sparse(self, grad, var, indices):
+  def _resource_apply_sparse(self, grad, var, indices, indices_counts = None):
     m = self.get_slot(var, "m")
     v = self.get_slot(var, "v")
     beta1_power = self.get_slot(var, 'beta1_power')
     beta2_power = self.get_slot(var, 'beta2_power')
     if isinstance(var, kv_variable_ops.EmbeddingVariable):
       global_step = training_util.get_or_create_global_step()
-      return training_ops.kv_resource_sparse_apply_adam_async(
-        var.handle, m.handle, v.handle, beta1_power.handle, beta2_power.handle,
-        math_ops.cast(self._lr_t, grad.dtype),
-        math_ops.cast(self._beta1_t, grad.dtype),
-        math_ops.cast(self._beta2_t, grad.dtype),
-        math_ops.cast(self._epsilon_t, grad.dtype),
-        grad, indices, global_step, use_locking=self._use_locking,
-        apply_sparse_rmsprop=self._apply_sparse_rmsprop)
+      if indices_counts != None:
+        return training_ops.kv_resource_sparse_apply_adam_async_with_counts(
+          var.handle, m.handle, v.handle, beta1_power.handle, beta2_power.handle,
+          math_ops.cast(self._lr_t, grad.dtype),
+          math_ops.cast(self._beta1_t, grad.dtype),
+          math_ops.cast(self._beta2_t, grad.dtype),
+          math_ops.cast(self._epsilon_t, grad.dtype),
+          grad, indices, global_step, indices_counts,
+          use_locking=self._use_locking,
+          apply_sparse_rmsprop=self._apply_sparse_rmsprop)
+      else:
+        return training_ops.kv_resource_sparse_apply_adam_async(
+          var.handle, m.handle, v.handle, beta1_power.handle, beta2_power.handle,
+          math_ops.cast(self._lr_t, grad.dtype),
+          math_ops.cast(self._beta1_t, grad.dtype),
+          math_ops.cast(self._beta2_t, grad.dtype),
+          math_ops.cast(self._epsilon_t, grad.dtype),
+          grad, indices, global_step, use_locking=self._use_locking,
+          apply_sparse_rmsprop=self._apply_sparse_rmsprop)
     else:
       return training_ops.resource_sparse_apply_adam_async(
         var.handle, m.handle, v.handle, beta1_power.handle, beta2_power.handle,

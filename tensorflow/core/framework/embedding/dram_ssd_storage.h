@@ -48,8 +48,18 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
 
   Status Get(K key, ValuePtr<V>** value_ptr) override {
     Status s = dram_->Get(key, value_ptr);
-    if (!s.ok()) {
-      s = ssd_hash_->Get(key, value_ptr);
+    if (s.ok()) {
+      return s;
+    }
+    s = ssd_hash_->Get(key, value_ptr);
+    if(s.ok()) {
+      s = dram_->TryInsert(key, *value_ptr);
+      if (s.ok()) {
+        return s;
+      }
+      //Insert Failed, the key is already in Dram;
+      ssd_hash_->DestroyValuePtr(*value_ptr);
+      return dram_->Get(key, value_ptr);
     }
     return s;
   }

@@ -144,7 +144,7 @@ class GroupEmbeddingVariableLookupDenseCpuOp
         embedding_var->storage()->Schedule(
             [embedding_var, dense_values_tensor] {
               embedding::BatchCache<TKey>* cache = embedding_var->Cache();
-              cache->add_to_rank(dense_values_tensor);
+              cache->update(dense_values_tensor);
             });
       }
     }

@@ -211,7 +211,7 @@ class GroupEmbeddingVarLookupOp
         if (ev->IsMultiLevel()) {
           ev->storage()->Schedule([ev, indices_host, N]() {
             embedding::BatchCache<TFKey>* cache = ev->Cache();
-            cache->add_to_rank(indices_host, N);
+            cache->update(indices_host, N);
             delete[] indices_host;
           });
         }

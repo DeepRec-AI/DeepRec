@@ -177,6 +177,11 @@ class Storage {
     }
   }
 
+  virtual void UpdateCache(const Tensor& indices,
+                           const Tensor& indices_counts) {}
+
+  virtual void UpdateCache(const Tensor& indices) {}
+
  protected:
   int64 alloc_len_ = 0;
   int64 total_dims_ = 0;

@@ -71,10 +71,17 @@ class GradientDescentOptimizer(optimizer.Optimizer):
   def _resource_apply_sparse_duplicate_indices(self, grad, handle, indices):
     if isinstance(handle, kv_variable_ops.EmbeddingVariable):
       global_step = training_util.get_or_create_global_step()
-      return training_ops.kv_resource_sparse_apply_gradient_descent(
-          handle.handle, math_ops.cast(self._learning_rate_tensor,
-                                       grad.dtype.base_dtype),
-          grad, indices, global_step, use_locking=self._use_locking)
+      if handle.need_counts() and handle._counts_tensor is not None:
+        return training_ops.kv_resource_sparse_apply_gradient_descent_with_counts(
+            handle.handle, math_ops.cast(self._learning_rate_tensor,
+                                         grad.dtype.base_dtype),
+            grad, indices, global_step,
+            handle._counts_tensor, use_locking=self._use_locking)
+      else:
+        return training_ops.kv_resource_sparse_apply_gradient_descent(
+            handle.handle, math_ops.cast(self._learning_rate_tensor,
+                                         grad.dtype.base_dtype),
+            grad, indices, global_step, use_locking=self._use_locking)
     else:
       return resource_variable_ops.resource_scatter_add(
           handle.handle, indices, -grad * self._learning_rate)

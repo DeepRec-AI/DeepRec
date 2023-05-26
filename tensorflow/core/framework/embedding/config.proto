@@ -41,3 +41,8 @@ enum CacheStrategy {
   LRU = 0;
   LFU = 1;
 }
+
+enum EmbeddingVariableType {
+  IMMUTABLE = 0;
+  MUTABLE = 1;
+}

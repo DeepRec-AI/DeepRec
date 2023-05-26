@@ -362,12 +362,12 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
               initializer=init_ops.ones_initializer(dtypes.float32),
               ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.HBM)),
               partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+      emb1 = runTestFtrl(self, emb_var, g)
       with ops.device('/cpu:0'):
         emb_var2 = variable_scope.get_embedding_variable("var_2", embedding_dim=3,
               initializer=init_ops.ones_initializer(dtypes.float32),
               ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM)),
               partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-      emb1 = runTestFtrl(self, emb_var, g)
       emb2 = runTestFtrl(self, emb_var2, g)
       for i in range(0, 6):
         for j in range(0, 3):

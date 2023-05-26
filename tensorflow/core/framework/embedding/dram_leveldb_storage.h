@@ -48,8 +48,17 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
 
   Status Get(K key, ValuePtr<V>** value_ptr) override {
     Status s = dram_->Get(key, value_ptr);
-    if (!s.ok()) {
-      s = leveldb_->Get(key, value_ptr);
+    if (s.ok()) {
+      return s;
+    }
+    s = leveldb_->Get(key, value_ptr);
+    if (s.ok()) {
+      s = dram_->TryInsert(key, *value_ptr);
+      if (s.ok()) {
+        return s;
+      }
+      leveldb_->DestroyValuePtr(*value_ptr);
+      return dram_->Get(key, value_ptr);
     }
     return s;
   }

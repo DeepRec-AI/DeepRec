@@ -59,7 +59,15 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
 
   Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
       const V* default_value_no_permission) override {
-    return errors::Unimplemented("Can't use CBF filter in EV for inference.");
+    ValuePtr<V>* value_ptr = nullptr;
+    Status s = ev_->LookupKey(key, &value_ptr);
+    if (s.ok()) {
+      V* mem_val = ev_->LookupOrCreateEmb(value_ptr, default_value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
+    } else {
+      memcpy(val, default_value_no_permission, sizeof(V) * ev_->ValueLen());
+    }
+    return Status::OK();
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
@@ -76,12 +84,13 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
-      bool* is_filter) override {
-    if (GetFreq(key, *val) >= config_.filter_freq) {
+      bool* is_filter, int64 count) override {
+    if ((GetFreq(key, *val) + count) >= config_.filter_freq) {
       *is_filter = true;
       return ev_->LookupOrCreateKey(key, val);
     }
     *is_filter = false;
+    AddFreq(key, count);
     return Status::OK();
   }
 

@@ -45,7 +45,7 @@ class FilterPolicy {
     const V* default_value_no_permission) = 0;
 
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val,
-      bool* is_filter) = 0;
+      bool* is_filter, int64 count) = 0;
 
   virtual int64 GetFreq(K key, ValuePtr<V>* value_ptr) = 0;
   virtual int64 GetFreq(K key) = 0;
