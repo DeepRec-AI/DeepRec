@@ -565,7 +565,10 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
         )
         ev_dict = update_embedding_vars(sess)
         if len(ev_dict) > 0:
-            model_outputs.append(_nd(tf.train.get_global_step().name))
+            global_step = tf.train.get_global_step()
+            model_outputs.append(_nd(global_step.name))
+            if isinstance(global_step, tf.Variable):
+                sess.run(tf.variables_initializer([global_step]))
 
         def _extract_sub_graph(outputs):
             graph_def = sess.graph.as_graph_def(add_shapes=True)
