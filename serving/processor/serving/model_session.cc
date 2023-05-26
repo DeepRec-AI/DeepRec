@@ -173,6 +173,10 @@ Status ModelSessionMgr::CreateSessionGroup(
   metadata.model_id = 0;
   metadata.gpu_ids = config->gpu_ids;
   metadata.cpusets = config->cpusets;
+
+  ConfigProto* opt_config = const_cast<ConfigProto*>(&(session_options_->config));
+  GPUOptions* gpu_opt = opt_config->mutable_gpu_options();
+  gpu_opt->mutable_experimental()->clear_virtual_devices();
   TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
                                      session_group, metadata));
   TF_RETURN_IF_ERROR((*session_group)->Create(meta_graph_def_.graph_def()));
