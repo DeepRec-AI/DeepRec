@@ -644,6 +644,23 @@ class EmbeddingVar : public ResourceBase {
     return storage_->HashTable();
   }
 
+  int64 Export(std::vector<K>* tot_key_list,
+              std::vector<V*>* tot_valueptr_list,
+              std::vector<int64>* tot_version_list,
+              std::vector<int64>* tot_freq_list,
+              embedding::Iterator** it = nullptr) {
+    int64 total_size = GetSnapshot(
+        tot_key_list, tot_valueptr_list,
+        tot_version_list, tot_freq_list, it);
+    for(int64 i = 0; i < total_size; i++) {
+      //Return default_value_no_perssion_ if the feature is not admitted.
+      if ((*tot_valueptr_list)[i] == nullptr) {
+        (*tot_valueptr_list)[i] = default_value_no_permission_;
+      }
+    }
+    return total_size;
+  }
+
  protected:
   FilterPolicy<K, V, EmbeddingVar<K, V>>* GetFilter() const {
     return filter_;

@@ -242,6 +242,29 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         self.assertAllEqual([-1, -1, -1, -1, -1, -1], fetches[2])
         self.assertAllEqual([1, 1, 1, 1, 1, 1], fetches[3])
 
+  def testEmbeddingVariableForExportWithFilter(self):
+    print("testEmbeddingVariableForExportWithFilter")
+    with ops.device('/cpu:0'):
+      ev_config = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3))
+      var = variable_scope.get_embedding_variable("var_1", embedding_dim=3,
+              initializer=init_ops.ones_initializer(dtypes.float32), steps_to_live=10000, ev_option=ev_config)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,0,0,1,1,1,2,5], dtypes.int64))
+      init = variables.global_variables_initializer()
+      keys, values, versions, freqs = var.export()
+      with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run(emb)
+        sess.run(emb)
+        fetches = sess.run([keys, values, versions, freqs])
+        self.assertAllEqual([0, 1, 2, 5], fetches[0])
+        self.assertAllEqual([[1., 1., 1.],
+                            [1., 1., 1.],
+                            [0., 0., 0.],
+                            [0., 0., 0.]], fetches[1])
+        self.assertAllEqual([3, 3, 2, 2], fetches[3])
+
   def testEmbeddingVariableForGetShape(self):
     print("testEmbeddingVariableForGetShape")
     with ops.device("/cpu:0"):

@@ -548,13 +548,13 @@ class KvResourceExportOp : public OpKernel {
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
     core::ScopedUnref unref_me(ev);
     std::vector<TKey> tot_key_list;
-    std::vector<TValue *> tot_valueptr_list;
+    std::vector<TValue*> tot_valueptr_list;
     std::vector<int64> tot_version_list;
     std::vector<int64> tot_freq_list;
     embedding::Iterator* it = nullptr;
-    int64 total_size = ev->GetSnapshot(
-        &tot_key_list, &tot_valueptr_list, &tot_version_list,
-        &tot_freq_list, &it);
+    int64 total_size = ev->Export(
+        &tot_key_list, &tot_valueptr_list,
+        &tot_version_list, &tot_freq_list, &it);
 
     // Create an output tensor
     Tensor *keys_output_tensor = NULL;
