@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import tempfile
 
@@ -542,6 +543,18 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
     return update_dict, variable_path
 
 
+def clear_saver_devices(new_meta_graph, meta_graph):
+    def is_saver_node(name):
+        return re.search('^save_[1-9][0-9]*/', name) or re.search('^save/', name)
+
+    saver_name = _nd(meta_graph.saver_def.save_tensor_name)
+    saver_node = [nd for nd in meta_graph.graph_def.node if nd.name == saver_name][0]
+    if saver_node.device == '':
+        for node in new_meta_graph.graph_def.node:
+            if is_saver_node(node.name):
+                node.device = ''
+
+
 def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=None):
     saved_model = loader_impl._parse_saved_model(model_path)
     tags = saved_model.meta_graphs[0].meta_info_def.tags
@@ -549,6 +562,7 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
         meta_graph_def = tf.saved_model.loader.load(sess, tags, model_path)
         signature_keys = list(meta_graph_def.signature_def.keys())
         signature_def = meta_graph_def.signature_def[signature_keys[0]]
+        model_inputs = [_nd(v.name) for v in signature_def.inputs.values()]
         model_outputs = [_nd(v.name) for v in signature_def.outputs.values()]
         init_op = loader_impl.get_init_op(meta_graph_def)
         if init_op is not None:
@@ -576,7 +590,7 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
             return tf.graph_util.extract_sub_graph(graph_def, outputs)
 
         def _save(save_path):
-            sub_graph_def = _extract_sub_graph(model_outputs)
+            sub_graph_def = _extract_sub_graph(model_inputs + model_outputs)
             node_names = [node.name for node in sub_graph_def.node]
             variables = [v for v in get_all_variables() if _nd(v.name) in node_names]
             init_name = tf.variables_initializer(variables).name
@@ -601,7 +615,8 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
             _nd(saver.saver_def.filename_tensor_name),
             _nd(saver.saver_def.save_tensor_name),
         ]
-        graph_def = _extract_sub_graph(model_outputs + saver_nodes + [init_name])
+        outputs = model_inputs + model_outputs + saver_nodes + [init_name]
+        graph_def = _extract_sub_graph(outputs)
         graph = sess.graph
 
     # Create new meta graph def
@@ -645,6 +660,7 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
             assets_collection=assets_collection,
             main_op=main_op,
         )
+        clear_saver_devices(builder._saved_model.meta_graphs[0], meta_graph_def)
         builder.save()
         if len(ev_opt_dict) > 0:
             target_path = f'{save_path}/variables'
