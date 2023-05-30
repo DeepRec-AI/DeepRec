@@ -90,6 +90,7 @@ class Storage {
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) = 0;
+  virtual void GetSnapshot(K* keys, V* values, const Eigen::GpuDevice& device) {};
   virtual int64 GetSnapshotWithoutFetchPersistentEmb(
       std::vector<K>* key_list,
       std::vector<V* >* value_list,
