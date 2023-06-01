@@ -62,7 +62,6 @@ class DirectSession : public Session {
   // closed. This ensures that Reset requests from the 'factory' don't get sent
   // to sessions that are already closed.
   DirectSession(const SessionOptions& options, const DeviceMgr* device_mgr,
-                bool own_device_mgr,
                 DirectSessionFactory* factory,
                 const std::vector<unsigned>& visible_cpus);
 
@@ -337,7 +336,6 @@ class DirectSession : public Session {
   const SessionOptions options_;
 
   // Device structures.
-  bool own_device_mgr_;
   const DeviceMgr* device_mgr_;
   std::vector<Device*> devices_;  // not owned
   DeviceSet device_set_;
