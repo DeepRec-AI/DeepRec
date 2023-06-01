@@ -26,7 +26,6 @@ For GPU tasks, the following configurations are required:
   "session_num": 2,
   "use_per_session_threads": true,
   "gpu_ids_list": "0,2",
-  "use_multi_stream": true,
   ...
 }
 ```
@@ -72,7 +71,7 @@ DeepRec will detect which CPUs can be allocated, and then allocate CPU cores to 
 These options can be used in GPU task.
 
 #### GPU Task
-In Inference scenarios, users often use GPUs for online services to improve computing efficiency and reduce latency. One problem that may be encountered here is that the online GPU utilization rate is low, resulting in a waste of resources. Then, to make good use of GPU resources, we recommend users to use Multi-streams to process requests, which greatly improves QPS while ensuring latency.
+In Inference scenarios, users often use GPUs for online services to improve computing efficiency and reduce latency. One problem that may be encountered here is that the online GPU utilization rate is low, resulting in a waste of resources. Then, to make good use of GPU resources, we use Multi-streams to process requests, which greatly improves QPS while ensuring latency. In the GPU scenario, using session group will use multi-stream by default, that is, each session uses an independent stream.
 
 At present inference scenarios, the multi-streams function is bound to the SessionGroup function. For the usage of SessionGroup, see the previous link. In the future, we will directly support the multi-streams function on DirectSession.
 
@@ -88,7 +87,7 @@ nvidia-cuda-mps-control -d
 Currently taking Tensorflow_serving as an example (it will be necessary to add other framework usage methods later), the following parameters need to be added when starting the server.
 
 ```c++
-CUDA_VISIBLE_DEVICES=0  ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=1 PER_SESSION_HOSTALLOC=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --model_base_path=/xx/xx/pb/
+CUDA_VISIBLE_DEVICES=0  ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=1 PER_SESSION_HOSTALLOC=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --allow_gpu_mem_growth=true --model_base_path=/xx/xx/pb/
 
 ENABLE_MPS=1: Turn on MPS (it is generally recommended to turn on).
 CONTEXTS_COUNT_PER_GPU=4: Configure cuda contexts count for each physical GPU, the default is 4.
@@ -98,7 +97,6 @@ PER_SESSION_HOSTALLOC=1: Each session uses an independent gpu host allocator.
 
 use_per_session_threads=true: Each session configures the thread pool separately.
 session_num_per_group=4: Indicates the number of sessions configured by the session group.
-use_multi_stream=true: Enable the multi-stream function.
 ```
 
 ##### 3.Multi-GPU
@@ -118,7 +116,7 @@ The option --gpu_ids_list=0,2 means that the user can use GPUs 0 and 2. If the n
 
 Startup command:
 ```
-ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --gpu_ids_list=0,2  --model_base_path=/xx/xx/pb/
+ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --allow_gpu_mem_growth=true --gpu_ids_list=0,2  --model_base_path=/xx/xx/pb/
 ```
 For a detailed explanation of the above environment variables, see: [Startup parameters](https://deeprec.readthedocs.io/en/latest/SessionGroup.html#startup-command)
 
