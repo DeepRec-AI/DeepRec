@@ -18,3 +18,21 @@ In user C++ code:
 tensorflow::SessionOptions session_options;
 session_options.config.mutable_graph_options()->mutable_optimizer_options()->set_device_placement_optimization(true);
 ```
+
+If we use [tensorflow-serving](https://github.com/DeepRec-AI/serving) offered by DeepRec, we can enable the optimization via `--enable_device_placement_optimization=true`
+
+And when we use DeepRec [processor](https://deeprec.readthedocs.io/en/latest/Processor.html), we should add `enable_device_placement_optimization` field in the json configuration file, as follows:
+```
+{
+  "model_entry": "",
+  "processor_path": "...",
+  "processor_entry": "libserving_processor.so",
+  "processor_type": "cpp",
+  "model_config": {
+    ...
+    "enable_device_placement_optimization": true,
+    ...
+  },
+  ...
+}
+```

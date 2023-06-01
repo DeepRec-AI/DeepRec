@@ -19,3 +19,21 @@ tensorflow::SessionOptions session_options;
 session_options.config.mutable_graph_options()->mutable_optimizer_options()->set_device_placement_optimization(true);
 ```
 
+如果用户使用DeepRec提供的[tensorflow-serving](https://github.com/DeepRec-AI/serving)，可以通过`--enable_device_placement_optimization=true`来开启device placement功能。
+
+如果用户使用DeepRec [processor](https://deeprec.readthedocs.io/zh/latest/Processor.html)，可以通过在json配追文件中增加enable_device_placement_optimization来开启device placement功能，如下所示:
+```
+{
+  "model_entry": "",
+  "processor_path": "...",
+  "processor_entry": "libserving_processor.so",
+  "processor_type": "cpp",
+  "model_config": {
+    ...
+    "enable_device_placement_optimization": true,
+    ...
+  },
+  ...
+}
+```
+
