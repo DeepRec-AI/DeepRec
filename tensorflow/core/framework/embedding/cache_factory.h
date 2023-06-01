@@ -16,6 +16,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_CACHE_FACTORY_H_
 
 #include "cache.h"
+#include "tensorflow/core/framework/embedding/config.pb.h"
 
 namespace tensorflow {
 namespace embedding {

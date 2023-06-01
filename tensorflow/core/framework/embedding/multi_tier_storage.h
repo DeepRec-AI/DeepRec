@@ -19,6 +19,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/cache_thread_pool_creator.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/cpu_hash_map_kv.h"
+#include "tensorflow/core/framework/embedding/embedding_var_context.h"
 #include "tensorflow/core/framework/embedding/eviction_manager.h"
 #include "tensorflow/core/framework/embedding/globalstep_shrink_policy.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
@@ -285,6 +286,16 @@ class MultiTierStorage : public Storage<K, V> {
   void KeepInvalidValuePtr(ValuePtr<V>* value_ptr) {
     value_ptr_out_of_date_.emplace_back(value_ptr);
   }
+
+#if GOOGLE_CUDA
+  void CopyEmbeddingsFromDramToHbm(const EmbeddingVarContext<GPUDevice>& context,
+                                   const K* keys,
+                                   ValuePtr<V>** value_ptr_list,
+                                   std::list<int64>& copyback_cursors,
+                                   const std::vector<int64>& memory_index,
+                                   const std::vector<ValuePtr<V>*>& gpu_value_ptrs,
+                                   int value_len);
+#endif //GOOGL_CUDA
  private:
   virtual Status EvictionWithDelayedDestroy(K* evict_ids, int64 evict_size) {}
 

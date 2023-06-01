@@ -22,6 +22,7 @@ limitations under the License.
 #include <algorithm>
 
 #include "tensorflow/core/framework/bounds_check.h"
+#include "tensorflow/core/framework/embedding/intra_thread_copy_id_allocator.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/kv_variable_ops.h"
@@ -208,7 +209,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-template <typename Device, typename TKey, typename T, typename Tstep, bool indices_as_pointer>
+template <typename Device, typename TKey, typename T,
+          typename Tstep, bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdagradGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdagradGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -217,55 +219,8 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
     int num_worker_threads = ctx->device()
                              ->tensorflow_cpu_worker_threads()
                              ->num_threads;
-    thread_copy_id_alloc_ = new ThreadCopyIdAllocator(num_worker_threads);
-
-    get_default_v_fn_ =
-        [](T* default_v, TKey id,
-          int64 index, int64 total_dim, int64 len) {
-      return default_v + len * (id % total_dim);
-    };
-  }
-
-  ~KvSparseApplyAdagradGPUOp() {
-    delete thread_copy_id_alloc_;
-  }
-
-  void LookupEmbeddingPointers(
-      OpKernelContext* ctx, EmbeddingVar<TKey, T>* var,
-      EmbeddingVar<TKey, T>* accum, ValuePtr<T>** value_ptrs,
-      std::vector<std::list<int64>>& init_cursor_list,
-      T** v, T**a, const int64 task_size) {
-    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
-    auto do_work_get_ptrs =
-        [var, accum, value_ptrs, a, v,
-         &init_cursor_list, this,
-         main_thread_id] (int64 start, int64 limit) {
-      int copy_id =
-          thread_copy_id_alloc_->GetCopyIdOfThread(main_thread_id);
-      for (int i = start; i < limit; i++) {
-        bool is_need_set_default_value = false;
-        a[i] = accum->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        v[i] = var->LookupOrCreateEmb(
-            value_ptrs[i], var->GetDefaultValue(0));
-        if (is_need_set_default_value) {
-          init_cursor_list[copy_id].emplace_back(i);
-        }
-      }
-    };
-    const int64 unit_cost = 1000;
-    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
-    Shard(worker_threads->num_threads,
-          worker_threads->workers,
-          task_size, unit_cost, do_work_get_ptrs);
-
-    // Merge copies of init_cursor_list
-    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
-      if (init_cursor_list[i].size() > 0) {
-        init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                   init_cursor_list[i]);
-      }
-    }
+    thread_copy_id_alloc_.reset(
+        new IntraThreadCopyIdAllocator(num_worker_threads));
   }
 
   void ApplyGradients(
@@ -353,44 +308,30 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
               N, ctx->get_allocator(AllocatorAttributes()), var, accum,
               key_base, grad_base, lr_scalar, gs, device);
         } else {
-          ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
-          TKey* indices_host = nullptr;
+          Tensor indices_temp_host(indices.dtype(), indices.shape());
+          const Tensor* indices_host_ptr = nullptr;
           //Copy ids from GPU to CPU for CPU Lookup.
           auto stream = ctx->op_device_context()->stream();
           auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
           if (!indices_as_pointer) {
-            indices_host = new TKey[N];
+            indices_host_ptr = &indices_temp_host;
             se::DeviceMemoryBase gpu_src(
                 const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
-            stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
+            stream->ThenMemcpy(indices_host_ptr->data(), gpu_src, N * sizeof(TKey));
             SyncWithEventMgr(stream, event_mgr);
           } else {
-            indices_host = const_cast<TKey*>(&indices_flat(0));
+            indices_host_ptr = &indices;
           }
-          // Lookup ValuePtrs of ids and set version of each id  in parallel
-          LookupKeyAndSetVersion(ctx, var, value_ptrs,
-                                 gs, indices_host, N,
-                                 indices_as_pointer);
 
-          // Get pointers to embeddings and
-          // check which ids need to be initialized
+          int counts_index = has_counts ? 6 : -1;
           T** v = new T*[N * 2];
           T** a = v + N;
-          int num_worker_threads = ctx->device()
-                            ->tensorflow_cpu_worker_threads()
-                            ->num_threads;
-          std::vector<std::list<int64>> init_cursor_list(
-                                            num_worker_threads + 1);
-          LookupEmbeddingPointers(ctx, var, accum,
-                                  value_ptrs, init_cursor_list,
-                                  v, a, N);
-
-          accum->SetDefaultValueOfNewFeatures(
-              indices_host, N,
-              init_cursor_list[0],
-              a, accum->GetDefaultValuePtr(),
-              get_default_v_fn_, stream,
-              event_mgr, ctx->eigen_device<GPUDevice>());
+          std::vector<std::pair<EmbeddingVar<TKey, T>*, T**>> vars(2);
+          vars[0] = std::pair<EmbeddingVar<TKey, T>*, T**>(var, v);
+          vars[1] = std::pair<EmbeddingVar<TKey, T>*, T**>(accum, a);
+          GetEmbeddingPointers(ctx, vars, (TKey*)indices_host_ptr->data(),
+                               gs, indices_as_pointer,
+                               counts_index, N, thread_copy_id_alloc_.get());
 
           ApplyGradients(
               var, accum, v, a,
@@ -399,11 +340,12 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
               stream, event_mgr,
               ctx->eigen_device<GPUDevice>());
 
-          delete[] v;
-          delete[] value_ptrs;
-          if (!indices_as_pointer) {
-            delete[] indices_host;
+          if (has_counts) {
+            const Tensor& counts_tensor = ctx->input(counts_index);
+              var->UpdateCache(*indices_host_ptr, counts_tensor);
           }
+
+          delete[] v;
         }
       }
     }
@@ -411,8 +353,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
 
  private:
   bool use_exclusive_lock_;
-  ThreadCopyIdAllocator* thread_copy_id_alloc_ = nullptr;
-  std::function<T*(T*, TKey, int64, int64, int64)> get_default_v_fn_;
+  std::unique_ptr<IntraThreadCopyIdAllocator> thread_copy_id_alloc_;
 };
 
 namespace functor {
@@ -444,7 +385,7 @@ DECLARE_GPU_SPEC(int64, double);
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, false>);\
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, false, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagrad")  \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
@@ -453,7 +394,7 @@ DECLARE_GPU_SPEC(int64, double);
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true>);\
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true, false>);\
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagradWithCounts")       \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
@@ -462,7 +403,7 @@ DECLARE_GPU_SPEC(int64, double);
                               .HostMemory("indices_counts")          \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, false>);\
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, false, true>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagradWithCounts")  \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
@@ -472,7 +413,7 @@ DECLARE_GPU_SPEC(int64, double);
                               .HostMemory("indices_counts")          \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true>);
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true, true>);
 #define REGISTER_GPU_KERNELS(T)        \
   REGISTER_KERNELS(int32, T, int32);   \
   REGISTER_KERNELS(int64, T, int32);   \
@@ -1633,7 +1574,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-template <typename Device, typename T, typename Tindex, bool indices_as_pointer>
+template <typename Device, typename T, typename Tindex,
+          bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdamGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdamGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -1642,58 +1584,8 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
     int num_worker_threads = ctx->device()
                              ->tensorflow_cpu_worker_threads()
                              ->num_threads;
-    thread_copy_id_alloc_ = new ThreadCopyIdAllocator(num_worker_threads);
-
-    get_default_v_fn_ =
-        [](T* default_v, Tindex id,
-          int64 index, int64 total_dim, int64 len) {
-      return default_v + len * (id % total_dim);
-    };
-  }
-
-  ~KvSparseApplyAdamGPUOp() {
-    delete thread_copy_id_alloc_;
-  }
-
-  void LookupEmbeddingPointers(
-      OpKernelContext* ctx, EmbeddingVar<Tindex, T>* var,
-      EmbeddingVar<Tindex, T>* m, EmbeddingVar<Tindex, T>* v,
-      ValuePtr<T>** value_ptrs,
-      std::vector<std::list<int64>>& init_cursor_list,
-      T** var_ptr, T** m_ptr, T** v_ptr, const int64 task_size) {
-    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
-    auto do_work_get_ptrs =
-        [var, m, v, value_ptrs, var_ptr, m_ptr, v_ptr,
-         &init_cursor_list, this,
-         main_thread_id] (int64 start, int64 limit) {
-      int copy_id =
-          thread_copy_id_alloc_->GetCopyIdOfThread(main_thread_id);
-      for (int i = start; i < limit; i++) {
-        bool is_need_set_default_value = false;
-        m_ptr[i] = m->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        v_ptr[i] = v->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        var_ptr[i] = var->LookupOrCreateEmb(
-            value_ptrs[i], var->GetDefaultValue(0));
-        if (is_need_set_default_value) {
-          init_cursor_list[copy_id].emplace_back(i);
-        }
-      }
-    };
-    const int64 unit_cost = 1000;
-    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
-    Shard(worker_threads->num_threads,
-          worker_threads->workers,
-          task_size, unit_cost, do_work_get_ptrs);
-
-    // Merge copies of init_cursor_list
-    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
-      if (init_cursor_list[i].size() > 0) {
-        init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                   init_cursor_list[i]);
-      }
-    }
+    thread_copy_id_alloc_.reset(
+        new IntraThreadCopyIdAllocator(num_worker_threads));
   }
 
   void ApplyGradients(
@@ -1814,7 +1706,6 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
         auto indices_flat = indices.flat<Tindex>();
         auto grad_flat = grad.flat_outer_dims<T>();
         int64 gs = global_step.scalar<int64>()();
-        ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
         T beta1_power_scalar = beta1_power.scalar<T>()();
         T beta2_power_scalar = beta2_power.scalar<T>()();
         T lr_scalar = lr.scalar<T>()();
@@ -1825,42 +1716,20 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
             Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_scalar) /
             (static_cast<T>(1) - beta1_power_scalar);
 
-        // Lookup ValuePtrs of ids and set version of each id  in parallel
-        LookupKeyAndSetVersion(ctx, var, value_ptrs,
-                               gs, indices_flat.data(), N,
-                               indices_as_pointer);
-
-        // Get pointers to embeddings and
-        // check which ids need to be initialized
+        int counts_index = has_counts ? 12 : -1;
         T** var_ptr = new T*[N * 3];
         T** m_ptr = var_ptr + N;
         T** v_ptr = m_ptr + N;
-        int num_worker_threads = ctx->device()
-                                 ->tensorflow_cpu_worker_threads()
-                                 ->num_threads;
-        std::vector<std::list<int64>> init_cursor_list(
-            num_worker_threads + 1);
-        LookupEmbeddingPointers(ctx, var, m, v,
-                                value_ptrs, init_cursor_list,
-                                var_ptr, m_ptr, v_ptr, N);
+        std::vector<std::pair<EmbeddingVar<Tindex, T>*, T**>> vars(3);
+        vars[0] = std::pair<EmbeddingVar<Tindex, T>*, T**>(var, var_ptr);
+        vars[1] = std::pair<EmbeddingVar<Tindex, T>*, T**>(m, m_ptr);
+        vars[2] = std::pair<EmbeddingVar<Tindex, T>*, T**>(v, v_ptr);
+        GetEmbeddingPointers(ctx, vars, indices_flat.data(),
+                             gs, indices_as_pointer,
+                             counts_index, N, thread_copy_id_alloc_.get());
 
         auto stream = ctx->op_device_context()->stream();
         auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
-
-        m->SetDefaultValueOfNewFeatures(
-            indices_flat.data(), N,
-            init_cursor_list[0],
-            m_ptr, m->GetDefaultValuePtr(),
-            get_default_v_fn_, stream,
-            event_mgr, ctx->eigen_gpu_device());
-
-        v->SetDefaultValueOfNewFeatures(
-            indices_flat.data(), N,
-            init_cursor_list[0],
-            v_ptr, v->GetDefaultValuePtr(),
-            get_default_v_fn_, stream,
-            event_mgr, ctx->eigen_gpu_device());
-
         ApplyGradients(
             var, m, v, var_ptr,
             m_ptr, v_ptr, alpha,
@@ -1869,15 +1738,19 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
             stream, event_mgr,
             ctx->eigen_gpu_device());
 
+        if (has_counts) {
+          const Tensor& counts_tensor = ctx->input(counts_index);
+          var->UpdateCache(indices, counts_tensor);
+        }
+
         delete[] var_ptr;
-        delete[] value_ptrs;
       }
     }
   }
 
  private:
   bool use_exclusive_lock_;
-  ThreadCopyIdAllocator* thread_copy_id_alloc_ = nullptr;
+  std::unique_ptr<IntraThreadCopyIdAllocator> thread_copy_id_alloc_;
   std::function<T*(T*, Tindex, int64, int64, int64)> get_default_v_fn_;
 };
 
@@ -1894,7 +1767,7 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                               .HostMemory("global_step")             \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, false>); \
+                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, false, false>); \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdam")           \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
@@ -1907,7 +1780,7 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                               .HostMemory("global_step")             \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, true>);\
+                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, true, false>);\
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamWithCounts")             \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
@@ -1921,7 +1794,7 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                               .HostMemory("indices_counts")          \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, false>); \
+                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, false, true>); \
    REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamWithCounts")           \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
@@ -1935,7 +1808,7 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                               .HostMemory("indices_counts")          \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, true>);
+                          KvSparseApplyAdamGPUOp<GPUDevice, T, Tindices, true, true>);
 #define REGISTER_GPU_KERNELS(T) \
   REGISTER_KERNELS(T, int32);   \
   REGISTER_KERNELS(T, int64);
@@ -2670,7 +2543,8 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-template <typename Device, typename T, typename Tindex, typename Tstep, bool indices_as_pointer>
+template <typename Device, typename T, typename Tindex,
+          typename Tstep, bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdamAsyncGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -2680,58 +2554,8 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
     int num_worker_threads = ctx->device()
                              ->tensorflow_cpu_worker_threads()
                              ->num_threads;
-    thread_copy_id_alloc_ = new ThreadCopyIdAllocator(num_worker_threads);
-
-    get_default_v_fn_ =
-        [](T* default_v, Tindex id,
-          int64 index, int64 total_dim, int64 len) {
-      return default_v + len * (id % total_dim);
-    };
-  }
-
-  ~KvSparseApplyAdamAsyncGPUOp() {
-    delete thread_copy_id_alloc_;
-  }
-
-  void LookupEmbeddingPointers(
-      OpKernelContext* ctx, EmbeddingVar<Tindex, T>* var,
-      EmbeddingVar<Tindex, T>* m, EmbeddingVar<Tindex, T>* v,
-      ValuePtr<T>** value_ptrs,
-      std::vector<std::list<int64>>& init_cursor_list,
-      T** var_ptr, T** m_ptr, T** v_ptr, const int64 task_size) {
-    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
-    auto do_work_get_ptrs =
-        [var, m, v, value_ptrs, var_ptr, m_ptr, v_ptr,
-         &init_cursor_list, this,
-         main_thread_id] (int64 start, int64 limit) {
-      int copy_id =
-          thread_copy_id_alloc_->GetCopyIdOfThread(main_thread_id);
-      for (int i = start; i < limit; i++) {
-        bool is_need_set_default_value = false;
-        m_ptr[i] = m->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        v_ptr[i] = v->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        var_ptr[i] = var->LookupOrCreateEmb(
-            value_ptrs[i], var->GetDefaultValue(0));
-        if (is_need_set_default_value) {
-          init_cursor_list[copy_id].emplace_back(i);
-        }
-      }
-    };
-    const int64 unit_cost = 1000;
-    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
-    Shard(worker_threads->num_threads,
-          worker_threads->workers,
-          task_size, unit_cost, do_work_get_ptrs);
-
-    // Merge copies of init_cursor_list
-    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
-      if (init_cursor_list[i].size() > 0) {
-        init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                   init_cursor_list[i]);
-      }
-    }
+    thread_copy_id_alloc_.reset(
+        new IntraThreadCopyIdAllocator(num_worker_threads));
   }
 
   void ApplyGradients(
@@ -2887,47 +2711,32 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
         auto beta1_power_scalar = beta1_power.scalar<T>();
         auto beta2_power_scalar = beta2_power.scalar<T>();
 
-        ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
-        Tindex* indices_host = new Tindex[N];
+        Tensor indices_temp_host(indices.dtype(), indices.shape());
+        const Tensor* indices_host_ptr = nullptr;
         //Copy ids from GPU to CPU for CPU Lookup.
         auto stream = ctx->op_device_context()->stream();
         auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
-        se::DeviceMemoryBase gpu_src(
-            const_cast<Tindex*>(indices_vec.data()), N * sizeof(Tindex));
-        stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(Tindex));
-        SyncWithEventMgr(stream, event_mgr);
-        // Lookup ValuePtrs of ids and set version of each id  in parallel
-        LookupKeyAndSetVersion(ctx, var, value_ptrs,
-                               gs, indices_host, N,
-                               indices_as_pointer);
+        if (!indices_as_pointer) {
+          indices_host_ptr = &indices_temp_host;
+          se::DeviceMemoryBase gpu_src(
+              const_cast<Tindex*>(&indices_vec(0)), N * sizeof(Tindex));
+          stream->ThenMemcpy(indices_host_ptr->data(), gpu_src, N * sizeof(Tindex));
+          SyncWithEventMgr(stream, event_mgr);
+        } else {
+          indices_host_ptr = &indices;
+        }
 
-        // Get pointers to embeddings and
-        // check which ids need to be initialized
+        int counts_index = has_counts ? 12 : -1;
         T** var_ptr = new T*[N * 3];
         T** m_ptr = var_ptr + N;
         T** v_ptr = m_ptr + N;
-        int num_worker_threads = ctx->device()
-                                 ->tensorflow_cpu_worker_threads()
-                                 ->num_threads;
-        std::vector<std::list<int64>> init_cursor_list(
-            num_worker_threads + 1);
-        LookupEmbeddingPointers(ctx, var, m, v,
-                                value_ptrs, init_cursor_list,
-                                var_ptr, m_ptr, v_ptr, N);
-
-        m->SetDefaultValueOfNewFeatures(
-            indices_host, N,
-            init_cursor_list[0],
-            m_ptr, m->GetDefaultValuePtr(),
-            get_default_v_fn_, stream,
-            event_mgr, ctx->eigen_device<GPUDevice>());
-
-        v->SetDefaultValueOfNewFeatures(
-            indices_host, N,
-            init_cursor_list[0],
-            v_ptr, v->GetDefaultValuePtr(),
-            get_default_v_fn_, stream,
-            event_mgr, ctx->eigen_device<GPUDevice>());
+        std::vector<std::pair<EmbeddingVar<Tindex, T>*, T**>> vars(3);
+        vars[0] = std::pair<EmbeddingVar<Tindex, T>*, T**>(var, var_ptr);
+        vars[1] = std::pair<EmbeddingVar<Tindex, T>*, T**>(m, m_ptr);
+        vars[2] = std::pair<EmbeddingVar<Tindex, T>*, T**>(v, v_ptr);
+        GetEmbeddingPointers(ctx, vars, (Tindex*)indices_host_ptr->data(),
+                             gs, indices_as_pointer,
+                             counts_index, N, thread_copy_id_alloc_.get());
 
         ApplyGradients(
             var, m, v, var_ptr,
@@ -2940,9 +2749,12 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
             stream, event_mgr,
             ctx->eigen_device<GPUDevice>());
 
+        if (has_counts) {
+          const Tensor& counts_tensor = ctx->input(counts_index);
+          var->UpdateCache(*indices_host_ptr, counts_tensor);
+        }
+
         delete[] var_ptr;
-        delete[] value_ptrs;
-        delete[] indices_host;
       }
     }
     MaybeForwardRefInputToRefOutput(ctx, 0, 0);
@@ -2951,8 +2763,7 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
  private:
   bool use_exclusive_lock_;
   bool apply_sparse_rmsprop_;
-  ThreadCopyIdAllocator* thread_copy_id_alloc_ = nullptr;
-  std::function<T*(T*, Tindex, int64, int64, int64)> get_default_v_fn_;
+  std::unique_ptr<IntraThreadCopyIdAllocator> thread_copy_id_alloc_;
 };
 
 #define REGISTER_KERNELS(D, T, Tindices, Tstep)                             \
@@ -2966,7 +2777,7 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, false>); \
+                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, false, false>); \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamAsync")           \
                               .Device(DEVICE_##D)                          \
                               .HostMemory("lr")                      \
@@ -2977,7 +2788,7 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, true>); \
+                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, true, false>); \
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamAsyncWithCounts")           \
                               .Device(DEVICE_##D)                          \
                               .HostMemory("lr")                      \
@@ -2989,7 +2800,7 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, false>); \
+                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, false, true>); \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamAsyncWithCounts")           \
                               .Device(DEVICE_##D)                          \
                               .HostMemory("lr")                      \
@@ -3001,7 +2812,7 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, true>);
+                          KvSparseApplyAdamAsyncGPUOp<D##Device, T, Tindices, Tstep, true, true>);
 #define REGISTER_GPU_KERNELS(T)        \
   REGISTER_KERNELS(GPU, T, int32, int32);   \
   REGISTER_KERNELS(GPU, T, int64, int32);   \
@@ -3390,7 +3201,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-template <typename Device, typename T, typename Tindex, bool indices_as_pointer>
+template <typename Device, typename T, typename Tindex,
+          bool indices_as_pointer, bool has_counts>
 class KvSparseApplyAdamWGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdamWGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -3399,58 +3211,8 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
     int num_worker_threads = ctx->device()
                              ->tensorflow_cpu_worker_threads()
                              ->num_threads;
-    thread_copy_id_alloc_ = new ThreadCopyIdAllocator(num_worker_threads);
-
-    get_default_v_fn_ =
-        [](T* default_v, Tindex id,
-          int64 index, int64 total_dim, int64 len) {
-      return default_v + len * (id % total_dim);
-    };
-  }
-
-  ~KvSparseApplyAdamWGPUOp() {
-    delete thread_copy_id_alloc_;
-  }
-
-  void LookupEmbeddingPointers(
-      OpKernelContext* ctx, EmbeddingVar<Tindex, T>* var,
-      EmbeddingVar<Tindex, T>* m, EmbeddingVar<Tindex, T>* v,
-      ValuePtr<T>** value_ptrs,
-      std::vector<std::list<int64>>& init_cursor_list,
-      T** var_ptr, T** m_ptr, T** v_ptr, const int64 task_size) {
-    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
-    auto do_work_get_ptrs =
-        [var, m, v, value_ptrs, var_ptr, m_ptr, v_ptr,
-         &init_cursor_list, this,
-         main_thread_id] (int64 start, int64 limit) {
-      int copy_id =
-          thread_copy_id_alloc_->GetCopyIdOfThread(main_thread_id);
-      for (int i = start; i < limit; i++) {
-        bool is_need_set_default_value = false;
-        m_ptr[i] = m->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        v_ptr[i] = v->LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        var_ptr[i] = var->LookupOrCreateEmb(
-            value_ptrs[i], var->GetDefaultValue(0));
-        if (is_need_set_default_value) {
-          init_cursor_list[copy_id].emplace_back(i);
-        }
-      }
-    };
-    const int64 unit_cost = 1000;
-    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
-    Shard(worker_threads->num_threads,
-          worker_threads->workers,
-          task_size, unit_cost, do_work_get_ptrs);
-
-    // Merge copies of init_cursor_list
-    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
-      if (init_cursor_list[i].size() > 0) {
-        init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                   init_cursor_list[i]);
-      }
-    }
+    thread_copy_id_alloc_.reset(
+        new IntraThreadCopyIdAllocator(num_worker_threads));
   }
 
   void ApplyGradients(
@@ -3572,7 +3334,6 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
         auto indices_flat = indices.flat<Tindex>();
         auto grad_flat = grad.flat_outer_dims<T>();
         int64 gs = global_step.scalar<int64>()();
-        ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
         T beta1_power_scalar = beta1_power.scalar<T>()();
         T beta2_power_scalar = beta2_power.scalar<T>()();
         T lr_scalar = lr.scalar<T>()();
@@ -3585,41 +3346,20 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
             (static_cast<T>(1) - beta1_power_scalar);
 
         // Lookup ValuePtrs of ids and set version of each id  in parallel
-        LookupKeyAndSetVersion(ctx, var, value_ptrs,
-                               gs, indices_flat.data(), N,
-                               indices_as_pointer);
-
-        // Get pointers to embeddings and
-        // check which ids need to be initialized
+        int counts_index = has_counts ? 13 : -1;
         T** var_ptr = new T*[N * 3];
         T** m_ptr = var_ptr + N;
         T** v_ptr = m_ptr + N;
-        int num_worker_threads = ctx->device()
-                                 ->tensorflow_cpu_worker_threads()
-                                 ->num_threads;
-        std::vector<std::list<int64>> init_cursor_list(
-            num_worker_threads + 1);
-        LookupEmbeddingPointers(ctx, var, m, v,
-                                value_ptrs, init_cursor_list,
-                                var_ptr, m_ptr, v_ptr, N);
+        std::vector<std::pair<EmbeddingVar<Tindex, T>*, T**>> vars(3);
+        vars[0] = std::pair<EmbeddingVar<Tindex, T>*, T**>(var, var_ptr);
+        vars[1] = std::pair<EmbeddingVar<Tindex, T>*, T**>(m, m_ptr);
+        vars[2] = std::pair<EmbeddingVar<Tindex, T>*, T**>(v, v_ptr);
+        GetEmbeddingPointers(ctx, vars, indices_flat.data(),
+                             gs, indices_as_pointer,
+                             counts_index, N, thread_copy_id_alloc_.get());
 
         auto stream = ctx->op_device_context()->stream();
         auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
-
-        m->SetDefaultValueOfNewFeatures(
-            indices_flat.data(), N,
-            init_cursor_list[0],
-            m_ptr, m->GetDefaultValuePtr(),
-            get_default_v_fn_, stream,
-            event_mgr, ctx->eigen_gpu_device());
-
-        v->SetDefaultValueOfNewFeatures(
-            indices_flat.data(), N,
-            init_cursor_list[0],
-            v_ptr, v->GetDefaultValuePtr(),
-            get_default_v_fn_, stream,
-            event_mgr, ctx->eigen_gpu_device());
-
         ApplyGradients(
             var, m, v, var_ptr,
             m_ptr, v_ptr, alpha,
@@ -3629,16 +3369,19 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
             stream, event_mgr,
             ctx->eigen_gpu_device());
 
+        if (has_counts) {
+          const Tensor& counts_tensor = ctx->input(counts_index);
+          var->UpdateCache(indices, counts_tensor);
+        }
+
         delete[] var_ptr;
-        delete[] value_ptrs;
       }
     }
   }
 
  private:
   bool use_exclusive_lock_;
-  ThreadCopyIdAllocator* thread_copy_id_alloc_ = nullptr;
-  std::function<T*(T*, Tindex, int64, int64, int64)> get_default_v_fn_;
+  std::unique_ptr<IntraThreadCopyIdAllocator> thread_copy_id_alloc_;
 };
 
 #define REGISTER_KERNELS(T, Tindices)                                 \
@@ -3655,7 +3398,7 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
                               .HostMemory("weight_decay")            \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, false>); \
+                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, false, false>); \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamW")             \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
@@ -3669,7 +3412,7 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
                               .HostMemory("weight_decay")            \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, true>);\
+                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, true, false>);\
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamWWithCounts")             \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
@@ -3684,7 +3427,7 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
                               .HostMemory("indices_counts")           \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, false>); \
+                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, false, true>); \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdamWWithCounts")             \
                               .Device(DEVICE_GPU)                     \
                               .HostMemory("indices")                 \
@@ -3699,7 +3442,7 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
                               .HostMemory("indices_counts")           \
                               .TypeConstraint<T>("T")                 \
                               .TypeConstraint<Tindices>("Tindices"),  \
-                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, true>);
+                          KvSparseApplyAdamWGPUOp<GPUDevice, T, Tindices, true, true>);
 #define REGISTER_GPU_KERNELS(T) \
   REGISTER_KERNELS(T, int32);   \
   REGISTER_KERNELS(T, int64);

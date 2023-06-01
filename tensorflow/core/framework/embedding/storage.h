@@ -23,8 +23,15 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
 #include "tensorflow/core/util/work_sharder.h"
+#include "tensorflow/core/framework/device_base.h"
+#if GOOGLE_CUDA
+#include "tensorflow/core/platform/stream_executor.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
+#endif
 
 namespace tensorflow {
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
 const int kSavedPartitionNum = 1000;
 
@@ -43,6 +50,8 @@ class FilterPolicy;
 template <class K, class V>
 class GPUHashTable;
 
+template<typename Device>
+struct EmbeddingVarContext;
 namespace embedding {
 
 template<typename K, typename V>
@@ -54,6 +63,11 @@ class Storage {
   TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
+  virtual void BatchGet(const EmbeddingVarContext<GPUDevice>& ctx,
+                        const K* key,
+                        ValuePtr<V>** value_ptr_list,
+                        int64 num_of_keys,
+                        int64 value_len) {}
   virtual Status Contains(K key) = 0;
   virtual void Insert(K key, ValuePtr<V>** value_ptr, size_t alloc_len) = 0;
   virtual void InsertToDram(K key, ValuePtr<V>** value_ptr,
@@ -184,6 +198,13 @@ class Storage {
                            const Tensor& indices_counts) {}
 
   virtual void UpdateCache(const Tensor& indices) {}
+
+  virtual void UpdateCache(const K* indices,
+                           int64 num_indices,
+                           const Tensor& indices_counts) {}
+
+  virtual void UpdateCache(const K* keys,
+                           int64 num_indices) {}
 
  protected:
   int64 alloc_len_ = 0;

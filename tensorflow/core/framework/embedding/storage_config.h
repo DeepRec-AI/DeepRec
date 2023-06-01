@@ -16,8 +16,8 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_STORAGE_CONFIG_H_
 
 #include "tensorflow/core/framework/embedding/cache.h"
-#include "tensorflow/core/framework/embedding/config.pb.h"
-
+#include "tensorflow/core/framework/embedding/embedding_config.h"
+#include "tensorflow/core/framework/embedding/value_ptr.h"
 namespace tensorflow {
 namespace embedding {
 struct StorageConfig {

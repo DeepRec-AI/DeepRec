@@ -2890,7 +2890,8 @@ cuda_library(
         "//tensorflow/core:common_runtime/gpu/gpu_event_mgr.h"
     ],
     srcs = [
-        "//tensorflow/core:framework/embedding/embedding_var.cu.cc"
+        "//tensorflow/core:framework/embedding/embedding_var.cu.cc",
+        "//tensorflow/core:framework/embedding/multi_tier_storage.cu.cc"
     ],
     copts = tf_copts() + ["-g"]
         + if_cuda(["-DGOOGLE_CUDA=1"]) +

@@ -3024,7 +3024,8 @@ tf_cuda_library(
             "framework/embedding/batch.h",
             "framework/embedding/gpu_hash_table.cu.cc",
             "framework/embedding/gpu_hash_table.h",
-            "framework/embedding/embedding_var.cu.cc"
+            "framework/embedding/embedding_var.cu.cc",
+            "framework/embedding/multi_tier_storage.cu.cc"
         ],
     ) + select({
         "//tensorflow:windows": [],

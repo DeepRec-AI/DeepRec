@@ -41,8 +41,16 @@ class FilterPolicy {
       const V* default_value_ptr, ValuePtr<V>** value_ptr,
       int count, const V* default_value_no_permission) = 0;
 
-  virtual Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+  virtual Status Lookup(K key, V* val, const V* default_value_ptr,
     const V* default_value_no_permission) = 0;
+
+#if GOOGLE_CUDA
+  virtual void BatchLookup(const EmbeddingVarContext<GPUDevice>& context,
+                           const K* keys, V* output,
+                           int64 num_of_keys,
+                           V* default_value_ptr,
+                           V* default_value_no_permission) = 0;
+#endif //GOOGLE_CUDA
 
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter, int64 count) = 0;

@@ -118,66 +118,32 @@ EmbeddingVariableInputLockHolder<K, V> MaybeLockEmbeddingVariableInputMutexesInO
   return EmbeddingVariableInputLockHolder<K, V>(std::move(vars), std::move(locks));
 }
 
-// Allocate a copy id for each thread
-class ThreadCopyIdAllocator {
- public:
-  ThreadCopyIdAllocator(int num_threads): num_worker_threads_(num_threads) {
-    is_occupy_flag_ = new bool[num_worker_threads_];
-    memset(is_occupy_flag_, 0, sizeof(bool) * num_worker_threads_);
-  }
-
-  ~ThreadCopyIdAllocator() {
-    delete[] is_occupy_flag_;
-  }
-
-  int64 GetCopyIdOfThread(uint64 main_thread_id) {
-    uint64 thread_id = Env::Default()->GetCurrentThreadId();
-    if (thread_id == main_thread_id) {
-      return num_worker_threads_;
-    } else {
-      int64 copy_id = -1;
-      {
-        spin_rd_lock l(mu_);
-        auto iter = hash_map_.find(thread_id);
-        if (iter != hash_map_.end()) {
-          copy_id = iter->second;
-          return copy_id;
-        }
-      }
-      if (copy_id == -1) {
-        // bind a new thread to a local cursor_list
-        copy_id = thread_id % num_worker_threads_;
-        while (!__sync_bool_compare_and_swap(
-            &(is_occupy_flag_[copy_id]), false, true)) {
-          copy_id = (copy_id + 1) % num_worker_threads_;
-        }
-        {
-          spin_wr_lock l(mu_);
-          hash_map_.insert(std::pair<uint64, int64>(thread_id, copy_id));
-        }
-        return copy_id;
-      }
-    }
-  }
-
- private:
-  int num_worker_threads_;
-  bool* is_occupy_flag_ = nullptr;
-  std::map<uint64, int64> hash_map_;
-  mutable easy_spinrwlock_t mu_ = EASY_SPINRWLOCK_INITIALIZER;
-};
-
 template<class K, class V, class Tstep>
 void LookupKeyAndSetVersion(
     OpKernelContext* ctx, EmbeddingVar<K, V>* var,
     ValuePtr<V>** value_ptrs, Tstep gs, const K* indices,
-    const int64 task_size, bool indices_as_pointer) {
+    int64 task_size, bool indices_as_pointer,
+    int counts_index) {
+  int64* indices_counts = nullptr;
+  std::function<int64(int64*, int64)> get_count_fn = 0;
+  if (counts_index != -1) {
+    const Tensor& counts_tensor = ctx->input(counts_index);
+    indices_counts = (int64*)counts_tensor.data();
+    get_count_fn = [](int64* counts, int64 index) {
+      return counts[index];};
+  } else {
+    get_count_fn = [](int64* counts, int64 index) {return 1;};
+  }
+
   auto lookup_key_and_set_version_fn = [var, value_ptrs, gs,
-                  indices, indices_as_pointer] (int64 start, int64 limit) {
+      indices, indices_as_pointer,
+      indices_counts, get_count_fn] (int64 start, int64 limit) {
     ValuePtr<V>* value_ptr = nullptr;
     for (int i = start; i < limit; i++) {
       bool is_filter = false;
-      var->LookupOrCreateKey(indices[i], &value_ptr, &is_filter, indices_as_pointer);
+      int64 count = get_count_fn(indices_counts, i);
+      var->LookupOrCreateKey(indices[i], &value_ptr,
+          &is_filter, indices_as_pointer, count);
       value_ptrs[i] = value_ptr;
       var->UpdateVersion(value_ptr, gs);
     }
@@ -187,6 +153,39 @@ void LookupKeyAndSetVersion(
   Shard(worker_threads->num_threads,
         worker_threads->workers, task_size, unit_cost,
         lookup_key_and_set_version_fn);
+}
+
+template<class K, class V>
+void LookupOrCreateEmbedding(
+    OpKernelContext* ctx,
+    std::vector<std::pair<EmbeddingVar<K, V>*, V**>>& vars,
+    ValuePtr<V>** value_ptrs,
+    const K* indices,
+    int64 num_of_keys,
+    IntraThreadCopyIdAllocator* thread_copy_id_alloc) {
+  for (auto it: vars) {
+    EmbeddingVar<K, V>* var = it.first;
+    V** var_ptr = it.second;
+    EmbeddingVarContext<Eigen::GpuDevice> ev_ctx(ctx);
+    var->BatchLookupOrCreateEmb(
+        ev_ctx, var_ptr, value_ptrs,
+        indices, num_of_keys, thread_copy_id_alloc);
+  }
+}
+
+template<class K, class V, class Tstep>
+void GetEmbeddingPointers(
+    OpKernelContext* ctx,
+    std::vector<std::pair<EmbeddingVar<K, V>*, V**>>& vars,
+    const K* indices, Tstep gs, bool indices_as_pointer,
+    int counts_index, int64 num_of_keys,
+    IntraThreadCopyIdAllocator* thread_copy_id_alloc) {
+  std::vector<ValuePtr<V>*> value_ptrs(num_of_keys);
+  LookupKeyAndSetVersion(ctx, vars[0].first, value_ptrs.data(),
+                         gs, indices, num_of_keys,
+                         indices_as_pointer, counts_index);
+  LookupOrCreateEmbedding(ctx, vars, value_ptrs.data(),
+                          indices, num_of_keys, thread_copy_id_alloc);
 }
 }  // end namespace tensorflow
 

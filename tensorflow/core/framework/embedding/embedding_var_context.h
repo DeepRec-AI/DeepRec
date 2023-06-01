@@ -48,11 +48,13 @@ struct EmbeddingVarContext<GPUDevice> {
       : worker_threads(op_ctx->device()->tensorflow_cpu_worker_threads()),
         compute_stream(op_ctx->op_device_context()->stream()),
         event_mgr(op_ctx->device()->tensorflow_gpu_device_info()->event_mgr),
+        gpu_allocator(op_ctx->device()->GetAllocator(AllocatorAttributes())),
         gpu_device(op_ctx->eigen_gpu_device()) {}
 
   const DeviceBase::CpuWorkerThreads* worker_threads = nullptr;
   se::Stream* compute_stream = nullptr;
   EventMgr* event_mgr = nullptr;
+  Allocator* gpu_allocator= nullptr;
   const GPUDevice& gpu_device;
 };
 #endif  // GOOGLE_CUDA
