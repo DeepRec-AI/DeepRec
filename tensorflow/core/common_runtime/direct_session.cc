@@ -364,7 +364,7 @@ class DirectSessionFactory : public SessionFactory {
     std::vector<unsigned> visible_cpus;
     DirectSession* session =
         new DirectSession(options, new DeviceMgr(std::move(devices)),
-                          true, this, visible_cpus);
+                          this, visible_cpus);
 
 #if GOOGLE_CUDA
     // owned gpu_shared_rmgr
@@ -422,13 +422,15 @@ class DirectSessionFactory : public SessionFactory {
 #if GOOGLE_CUDA
     // Each virtual gpu device will be assigned to one session,
     // and every virtual device has a independent stream.
-    bool use_multi_stream = options.config.use_per_session_stream();
+
+    // NOTE: we use multi_stream always in gpu session_group.
+    // bool use_multi_stream = options.config.use_per_session_stream();
     int base_index = 0;
     std::vector<size_t> sorted_gpu_ids;
     // Visiable gpu ids: 0,1,2...
     int visible_gpu_count = VisibleDeviceCount();
     int stream_num_per_device = session_num;
-    if (use_multi_stream) {
+    {
       // Current model id in multi-models
       int model_id = metadata.model_id;
       // If user not set gpu id list, session group will
@@ -510,11 +512,6 @@ class DirectSessionFactory : public SessionFactory {
 
       // We set allow_growth in multi-stream mode.
       gpu_options->set_allow_growth(true);
-    } else {
-      // NOTE: Use single stream in session group mode.
-      // This can't get good performance.
-      LOG(WARNING) << "Use single stream in session group mode,"
-                   << "this can't get good performance.";
     }
 #endif // GOOGLE_CUDA
 
@@ -614,7 +611,6 @@ class DirectSessionFactory : public SessionFactory {
     }
 #endif
 
-
 #if GOOGLE_CUDA
     SessionGroup* session_group =
       new DirectSessionGroup(shared_rmgr, gpu_shared_rmgrs,
@@ -634,44 +630,30 @@ class DirectSessionFactory : public SessionFactory {
           options, "/job:localhost/replica:0/task:0", &dev,
           &dev_rmgr_map, dev_global_tp_opt));
       DeviceMgr* dev_mgr = nullptr;
-      bool owned_device_mgr = true;
 #if GOOGLE_CUDA
-      if (use_multi_stream) {
-        RemoveUselessDevice(dev, session_to_device_id[i]);
-        dev_mgr = new DeviceMgr(std::move(dev));
-        owned_device_mgr = true;
-      } else {
-        // Use the same deivce as leader session, this can't get
-        // good performance, so user should set use_multi_stream true
-        // in session group mode.
-        static DeviceMgr* device_mgr = new DeviceMgr(std::move(dev));
-        dev_mgr = device_mgr;
-        owned_device_mgr = false;
-      }
+      RemoveUselessDevice(dev, session_to_device_id[i]);
+      dev_mgr = new DeviceMgr(std::move(dev));
 #else
       dev_mgr = new DeviceMgr(std::move(dev));
-      owned_device_mgr = true;
 #endif // GOOGLE_CUDA
 
       SessionOptions curr_options = options;
 #if GOOGLE_CUDA
-      if (use_multi_stream) {
+      curr_options.config.add_per_session_devices(
+          "/job:localhost/replica:0/task:0/device:GPU:" +
+          std::to_string(session_to_device_id[i]));
+      if (use_per_session_host_allocator) {
         curr_options.config.add_per_session_devices(
-            "/job:localhost/replica:0/task:0/device:GPU:" +
-            std::to_string(session_to_device_id[i]));
-        if (use_per_session_host_allocator) {
-          curr_options.config.add_per_session_devices(
-              "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
-        } else {
-          curr_options.config.add_per_session_devices(
-              "/job:localhost/replica:0/task:0/device:CPU:0");
-        }
+            "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
+      } else {
+        curr_options.config.add_per_session_devices(
+            "/job:localhost/replica:0/task:0/device:CPU:0");
       }
 #endif // GOOGLE_CUDA
 
       DirectSession* sess =
-          new DirectSession(curr_options, dev_mgr, owned_device_mgr,
-                            this, visible_cpus_per_session[i]);
+          new DirectSession(curr_options, dev_mgr, this,
+                            visible_cpus_per_session[i]);
       session_group->CreateSession(sess);
       {
         mutex_lock l(sessions_lock_);
@@ -812,11 +794,9 @@ bool DirectSession::ShouldUseRunHandlerPool(
 
 DirectSession::DirectSession(const SessionOptions& options,
                              const DeviceMgr* device_mgr,
-                             bool owd_device_mgr,
                              DirectSessionFactory* factory,
                              const std::vector<unsigned>& visible_cpus)
     : options_(options),
-      own_device_mgr_(owd_device_mgr),
       device_mgr_(device_mgr),
       factory_(factory),
       cancellation_manager_(new CancellationManager()),
@@ -966,9 +946,7 @@ DirectSession::~DirectSession() {
   execution_state_.reset(nullptr);
   flib_def_.reset(nullptr);
 
-  if (own_device_mgr_) {
-    delete device_mgr_;
-  }
+  delete device_mgr_;
 
   if (multi_stream_shared_rmgr_) {
     delete multi_stream_shared_rmgr_;
