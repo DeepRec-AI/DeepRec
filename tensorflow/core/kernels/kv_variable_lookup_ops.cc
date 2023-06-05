@@ -783,6 +783,25 @@ class KvResourceGatherGPUOp : public OpKernel {
         return 1;
       };
     }
+    bool is_inference;
+    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
+    if (!is_inference) {
+      lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, const TKey* key,
+                      TValue* val, TValue* default_v, int32 default_v_num,
+                      bool is_use_default_value_tensor,
+                      size_t n, const Eigen::GpuDevice& device) {
+        ev->LookupOrCreate(key, val, default_v, default_v_num,
+            is_use_default_value_tensor, n, device);
+      };
+    } else {
+      lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, const TKey* key,
+                      TValue* val, TValue* default_v, int32 default_v_num,
+                      bool is_use_default_value_tensor,
+                      size_t n, const Eigen::GpuDevice& device) {
+        ev->Lookup(key, val, default_v, default_v_num,
+            is_use_default_value_tensor, n, device);
+      };
+    }
   }
 
   ~KvResourceGatherGPUOp() {
@@ -851,11 +870,11 @@ class KvResourceGatherGPUOp : public OpKernel {
           auto default_values_matrix = default_values.shaped<TValue, 2>(
               {default_value_num, ev->ValueLen()});
           TValue* default_v_base = &default_values_matrix(0, 0);
-          ev->LookupOrCreate(key_base, out_base, default_v_base,
+          lookup_fn_(ev, key_base, out_base, default_v_base,
               default_value_num, is_use_default_value_tensor_,
               indices_size, device);
         } else {
-          ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(),
+          lookup_fn_(ev, key_base, out_base, ev->GetDefaultValuePtr(),
               ev->GetDefaultValueDim(), is_use_default_value_tensor_,
               indices_size, device);
         }
@@ -967,6 +986,10 @@ class KvResourceGatherGPUOp : public OpKernel {
     std::function<
       TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
     std::function<int32(int32*, int64)> get_count_fn_;
+    std::function<void(EmbeddingVar<TKey, TValue>* ev, const TKey* key,
+                      TValue* val, TValue* default_v, int32 default_v_num,
+                      bool is_use_default_value_tensor,
+                      size_t n, const Eigen::GpuDevice& device)> lookup_fn_;
     std::map<uint64, int64> hash_map_;
     mutable easy_spinrwlock_t mu_ = EASY_SPINRWLOCK_INITIALIZER;
     bool* occupy_flag_ = nullptr;

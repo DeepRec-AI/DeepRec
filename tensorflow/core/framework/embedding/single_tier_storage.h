@@ -455,6 +455,13 @@ class HbmStorage : public SingleTierStorage<K, V> {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreateKeys(key, n, item_idxs, device);
   }
 
+  void BatchLookup(const K* key, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) override {
+    SingleTierStorage<K, V>::kv_->BatchLookup(key, val, default_v, default_v_num,
+        is_use_default_value_tensor, n, device);
+  }
+  
   int64 GetSnapshot(std::vector<K>* key_list,
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,

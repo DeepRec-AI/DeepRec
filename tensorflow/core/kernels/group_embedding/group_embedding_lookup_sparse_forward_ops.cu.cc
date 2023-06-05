@@ -52,6 +52,26 @@ class GroupEmbeddingVarLookupOp
         return default_v + len * (id % total_dim);
       };
     }
+    bool is_inference;
+    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
+    if (!is_inference) {
+      lookup_fn_ = [](EmbeddingVar<TFKey, TValue>* ev, const TFKey* key,
+                      TValue* val, TValue* default_v, int32 default_v_num,
+                      bool is_use_default_value_tensor,
+                      size_t n, const Eigen::GpuDevice& device) {
+        ev->LookupOrCreate(key, val, default_v, default_v_num,
+            is_use_default_value_tensor, n, device);
+      };
+    } else {
+      lookup_fn_ = [](EmbeddingVar<TFKey, TValue>* ev, const TFKey* key,
+                      TValue* val, TValue* default_v, int32 default_v_num,
+                      bool is_use_default_value_tensor,
+                      size_t n, const Eigen::GpuDevice& device) {
+        ev->Lookup(key, val, default_v, default_v_num,
+            is_use_default_value_tensor, n, device);
+      };
+    }
+
   }
 
   ~GroupEmbeddingVarLookupOp() { delete[] occupy_flag_; }
@@ -67,6 +87,7 @@ class GroupEmbeddingVarLookupOp
         this->num_lookups_, this->dimension_, this->max_norm_, gpu_allocator);
 
     std::vector<Tensor> tensor_list;
+    tensor_list.reserve(this->num_lookups_);
 
     for (int i = 0; i < this->num_lookups_; ++i) {
       EmbeddingVar<TFKey, TValue>* ev = nullptr;
@@ -107,12 +128,13 @@ class GroupEmbeddingVarLookupOp
           auto default_values_matrix =
               default_values.shaped<TValue, 2>({default_value_num, dimension});
           TValue* default_v_base = &default_values_matrix(0, 0);
-          ev->LookupOrCreate(key_base, out_base, default_v_base,
-                             default_value_num, is_use_default_value_tensor_, N,
-                             device);
+          lookup_fn_(ev, key_base, out_base, default_v_base,
+                     default_value_num, is_use_default_value_tensor_, N,
+                     device);
+          
         } else {
-          ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(),
-                             ev->GetDefaultValueDim(), true, N, device);
+          lookup_fn_(ev, key_base, out_base, ev->GetDefaultValuePtr(),
+                     ev->GetDefaultValueDim(), true, N, device);
         }
       } else {
         auto out_flat =
@@ -287,6 +309,10 @@ class GroupEmbeddingVarLookupOp
  private:
   std::map<uint64, int64> hash_map_;
   std::function<TValue*(TValue*, TFKey, int64, int64, int64)> get_default_v_fn_;
+  std::function<void(EmbeddingVar<TFKey, TValue>* ev, const TFKey* key,
+                      TValue* val, TValue* default_v, int32 default_v_num,
+                      bool is_use_default_value_tensor,
+                      size_t n, const Eigen::GpuDevice& device)> lookup_fn_;
   mutable easy_spinrwlock_t mu_ = EASY_SPINRWLOCK_INITIALIZER;
   bool* occupy_flag_{nullptr};
   mutex m_init_occupy_flag_;
