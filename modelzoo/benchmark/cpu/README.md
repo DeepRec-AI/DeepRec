@@ -1,4 +1,4 @@
-# Deeprec Benchmark
+# DeepRec Benchmark
 The following is a brief directory structure and description for this example:
 
 ```
@@ -17,7 +17,7 @@ The following is a brief directory structure and description for this example:
 
 
 ## Content
-- [Deeprec Benchmark](#deeprec-benchmark)
+- [DeepRec Benchmark](#deeprec-benchmark)
   - [Content](#content)
   - [Requirement](#requirement)
   - [Usage](#usage)
@@ -44,11 +44,11 @@ The following test environment should be installed:
 
 - `tf_test_image` : the images used to benchmark stock tf, the default value is `alideeprec/deeprec-weekly-modelzoo:tf` 
 
-- `test model` : which models you need to benchmark, like `- WDL`. These models can be added or deleted according to the benchmark needs.  The default value is all six models that need to be benchmarked : `DLRM WDL DeepFM DSSM DIEN DIN`
+- `test model` : which models you need to benchmark, like `- wide_and_deep`. These models can be added or deleted according to the benchmark needs. The default value is all models in modelzoo that need to be benchmarked
 
-- `model_batchsize` : batch size of all models, like `WDL: 512`. Please keep the same batch size as used in model training. It is only used to calculate throughput and cannot be used to set training parameters
+- `model_batchsize` : batch size of all models, like `wide_and_deep: 512`. Please keep the same batch size as used in model training. It is only used to calculate throughput and cannot be used to set training parameters
 
-- `modelArgs` : parameters of deeprec benchmark, like `--emb_fusion true`, the default is null
+- `modelArgs` : parameters of deeprec benchmark, like `--emb_fusion true`, the default is `--steps 12000`. Please do not modify the `--steps` parameter
 
 - `stocktf` : benchmark Stock tf or not, the value can be chosen in `on` and `off`. The default value is `on`, which means benchmark Stock tf. If there is no need to benchmark Stock tf, this value should be changed to `off`
 
@@ -61,4 +61,4 @@ The following test environment should be installed:
 ### log
 The documents of each benchmark are stored in `benchmark/benchmark_result/log/$CurrentTime`
 
-The end of log files are ACC and AUC value and the thoughtout values are multiply the average value of `global_step/sec` between 2000~3000 steps by model batchsize
+The end of log files are ACC and AUC value and the thoughtout values are multiply the average value of `global_step/sec` between 2000~12000 steps by model batchsize
