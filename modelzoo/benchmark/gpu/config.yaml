@@ -2,7 +2,7 @@
 deeprec_test_image: alideeprec/deeprec-release-modelzoo:gpu-latest
 tf_test_image: alideeprec/deeprec-release-modelzoo:gpu-latest
 
-#test model default: [WDL, DLRM ,DeepFM, DSSM, DIEN, DIN]
+#test model
 test_model: 
   - dlrm
   - wide_and_deep
@@ -41,6 +41,7 @@ model_batchsize:
 #args for deeprec
 #like --emb_fusion true
 modelArgs:
+  --steps 12000
 
 #tf on/off
 stocktf: on
