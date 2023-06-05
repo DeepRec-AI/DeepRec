@@ -17,6 +17,7 @@ limitations under the License.
 
 #if GOOGLE_CUDA
 #include <cuda/std/atomic>
+
 #include "tensorflow/core/framework/typed_allocator.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
@@ -28,10 +29,32 @@ class gpu_hash_map_tf_allocator;
 template <typename KeyType, typename ValueType, typename Allocator>
 class DynamicHashTable;
 
+template <typename KeyType, typename ValueType, typename Allocator>
+class StaticHashTable;
+
+template <typename K, typename V>
+class GPUStaticHashTable {
+ public:
+  GPUStaticHashTable(size_t capacity, int dimension, K empty_key_sentinel,
+                     int32 empty_value_sentinel, Allocator* alloc,
+                     cudaStream_t stream);
+
+  ~GPUStaticHashTable();
+
+  std::size_t Size();
+
+  StaticHashTable<K, V, gpu_hash_map_tf_allocator<uint8_t>>* hash_table;
+  V* values_d{nullptr};
+  int dimension_;
+  V* default_values{nullptr};
+  int capacity_;
+};
+
 template <typename K, typename V>
 class GPUHashTable {
-public:
-  GPUHashTable(K empty_key_sentinel, Allocator* alloc, size_t initial_capacity=50000);
+ public:
+  GPUHashTable(K empty_key_sentinel, Allocator* alloc,
+               size_t initial_capacity = 50000);
 
   ~GPUHashTable();
 
@@ -49,83 +72,65 @@ public:
 };
 
 namespace functor {
+
+template <typename Device, typename Key, typename V>
+struct KvLookupKey {
+  void operator()(const Key* key_first, V* value_first, int32 num_items,
+                  int32 dimension, GPUStaticHashTable<Key, V>* hash_table,
+                  cudaStream_t stream);
+};
+
+template <typename Device, typename Key, typename V>
+struct KvInitStaticMap {
+  void operator()(const Key* key_first, GPUStaticHashTable<Key, V>* hash_table,
+                  int32 num_items, int32 dimension, cudaStream_t stream);
+};
+
 template <typename Device, typename Key, typename V>
 struct KvLookupInsertKey {
-  void operator()(const Key* key_first,
-                  int32* value_first,
-                  int32 num_items,
-                  GPUHashTable<Key, V>* hash_table,
-                  cuda::atomic<std::size_t, cuda::thread_scope_device>* start_idx,
-                  cudaStream_t stream);
+  void operator()(
+      const Key* key_first, int32* value_first, int32 num_items,
+      GPUHashTable<Key, V>* hash_table,
+      cuda::atomic<std::size_t, cuda::thread_scope_device>* start_idx,
+      cudaStream_t stream);
 };
 
 template <typename Device, typename Key, typename Value>
 struct KvLookupCreateEmb {
-  void operator()(const Key* key_first,
-                  Value* val,
-                  Value* default_v,
-                  int64 dim,
-                  int32* item_idxs,
-                  int32 num_items,
-                  int32 slot_idx,
-                  int32 default_v_num,
-                  bool is_use_default_value_tensor,
-                  Value** d_banks,
-                  bool** d_flags,
-                  int32 slot_num,
-                  int32 bank_size,
-                  cudaStream_t stream);
+  void operator()(const Key* key_first, Value* val, Value* default_v, int64 dim,
+                  int32* item_idxs, int32 num_items, int32 slot_idx,
+                  int32 default_v_num, bool is_use_default_value_tensor,
+                  Value** d_banks, bool** d_flags, int32 slot_num,
+                  int32 bank_size, cudaStream_t stream);
 };
 
 template <typename Device, typename Key, typename Value>
 struct KvUpdateEmb {
-  void operator()(const Key* key_first,
-                  Value* default_v,
-                  int64 dim,
-                  int32* item_idxs,
-                  int32 num_items,
-                  int32 slot_idx,
-                  int32 default_v_num,
-                  Value** d_banks,
-                  bool** d_flags,
-                  int32 slot_num,
-                  int32 bank_size,
-                  cudaStream_t stream);
+  void operator()(const Key* key_first, Value* default_v, int64 dim,
+                  int32* item_idxs, int32 num_items, int32 slot_idx,
+                  int32 default_v_num, Value** d_banks, bool** d_flags,
+                  int32 slot_num, int32 bank_size, cudaStream_t stream);
 };
 
 template <typename Device, typename Key, typename V>
 struct KvKeyGetSnapshot {
-  void operator()(Key* key_first,
-                  int32* value_first,
-                  int32 slot_idx,
-                  int32 primary_slot_idx,
-                  bool** d_flags,
-                  int32 bank_num,
-                  int32 slot_num,
-                  int32 bank_size,
-                  GPUHashTable<Key, V>* hash_table,
-                  int32 ev_size,
+  void operator()(Key* key_first, int32* value_first, int32 slot_idx,
+                  int32 primary_slot_idx, bool** d_flags, int32 bank_num,
+                  int32 slot_num, int32 bank_size,
+                  GPUHashTable<Key, V>* hash_table, int32 ev_size,
                   cudaStream_t stream);
 };
 
 template <typename Device, typename Key, typename Value>
 struct KvEmbGetSnapshot {
-  void operator()(Key* key,
-                  Value* val,
-                  Key empty_key_sentinel,
-                  int64 dim,
-                  int32* item_idxs,
-                  int32 num_items,
-                  int32 slot_idx,
-                  Value** d_banks,
-                  int32 bank_num,
-                  int32 slot_num,
-                  int32 bank_size,
-                  cudaStream_t stream);
+  void operator()(Key* key, Value* val, Key empty_key_sentinel, int64 dim,
+                  int32* item_idxs, int32 num_items, int32 slot_idx,
+                  Value** d_banks, int32 bank_num, int32 slot_num,
+                  int32 bank_size, cudaStream_t stream);
 };
 
-} // namespace functor
-} // namespace tensorflow
+}  // namespace functor
+}  // namespace tensorflow
 
-#endif // GOOGLE_CUDA
-#endif // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_GPU_HASH_TABLE_H_
+#endif  // GOOGLE_CUDA
+#endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_GPU_HASH_TABLE_H_

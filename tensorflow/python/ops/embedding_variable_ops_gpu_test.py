@@ -146,7 +146,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
@@ -198,7 +198,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
     shape = var.total_count()
     init = variables.global_variables_initializer()
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
@@ -226,7 +226,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
 
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run(init)
@@ -255,7 +255,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
 
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
@@ -291,7 +291,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run(init)
@@ -311,7 +311,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
       init = variables.global_variables_initializer()
-      with self.test_session(force_gpu=True) as sess:
+      with self.test_session() as sess:
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
@@ -346,7 +346,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
       init = variables.global_variables_initializer()
-      with self.test_session(graph=g, force_gpu=True) as sess:
+      with self.test_session(graph=g) as sess:
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
@@ -383,7 +383,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
               partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,6], dtypes.int64))
     init = variables.global_variables_initializer()
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
@@ -402,7 +402,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
               partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,6], dtypes.int64))
     init = variables.global_variables_initializer()
-    with self.test_session(force_gpu=True) as sess:
+    with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
@@ -428,7 +428,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
         var_emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,3,4,5,6,7], dtypes.int64))
         emb_emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([0,1,2,5,6,7,8,9,10], dtypes.int64))
         init = variables.global_variables_initializer()
-        with self.test_session(graph=g, force_gpu=True) as sess:
+        with self.test_session(graph=g) as sess:
           sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
           sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
           sess.run([init])
@@ -454,7 +454,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
       init = variables.global_variables_initializer()
-      with self.test_session(graph=g, force_gpu=True) as sess:
+      with self.test_session(graph=g) as sess:
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])

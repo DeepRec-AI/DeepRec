@@ -1,17 +1,17 @@
-From 874376f7e6b597bc288d3b945e706fd83a7033bf Mon Sep 17 00:00:00 2001
-From: Hongxiao Bai <hongxiaob@nvidia.com>
-Date: Thu, 20 Jan 2022 21:33:03 +0800
-Subject: [PATCH] cuco_modification_for_deeprec
+From b47364f0bf2c1e630c600e4e2e09e54020bac7fa Mon Sep 17 00:00:00 2001
+From: Mesilenceki <silenceki@hotmail.com>
+Date: Tue, 18 Apr 2023 11:56:47 +0800
+Subject: [PATCH] cuco patch
 
 ---
- include/cuco/detail/dynamic_map.inl         |  47 +++++++-
- include/cuco/detail/dynamic_map_kernels.cuh |  71 +++++++++++-
- include/cuco/detail/pair.cuh                |  14 +++
- include/cuco/detail/static_map.inl          | 115 ++++++++++++++++----
- include/cuco/dynamic_map.cuh                |  49 ++++++++-
- include/cuco/static_map.cuh                 |  51 ++++++++-
+ include/cuco/detail/dynamic_map.inl         |  47 ++++++-
+ include/cuco/detail/dynamic_map_kernels.cuh |  71 +++++++++-
+ include/cuco/detail/pair.cuh                |  14 ++
+ include/cuco/detail/static_map.inl          | 138 ++++++++++++++++----
+ include/cuco/dynamic_map.cuh                |  49 ++++++-
+ include/cuco/static_map.cuh                 |  57 +++++++-
  include/cuco/traits.hpp                     |   1 +
- 7 files changed, 317 insertions(+), 31 deletions(-)
+ 7 files changed, 340 insertions(+), 37 deletions(-)
 
 diff --git a/include/cuco/detail/dynamic_map.inl b/include/cuco/detail/dynamic_map.inl
 index 57950ea..78543c5 100644
@@ -190,10 +190,61 @@ index 0d8a85e..4aa8481 100644
  namespace detail {
  
 diff --git a/include/cuco/detail/static_map.inl b/include/cuco/detail/static_map.inl
-index 1719970..febc1fb 100644
+index 1719970..23482f8 100644
 --- a/include/cuco/detail/static_map.inl
 +++ b/include/cuco/detail/static_map.inl
-@@ -271,18 +271,18 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
+@@ -31,7 +31,10 @@ static_map<Key, Value, Scope, Allocator>::static_map(std::size_t capacity,
+     counter_allocator_{alloc}
+ {
+   slots_         = std::allocator_traits<slot_allocator_type>::allocate(slot_allocator_, capacity_);
+-  num_successes_ = std::allocator_traits<counter_allocator_type>::allocate(counter_allocator_, 1);
++  // num_successes_ = std::allocator_traits<counter_allocator_type>::allocate(counter_allocator_, 1);
++  CUCO_CUDA_TRY(cudaMallocManaged(&num_successes_, sizeof(atomic_ctr_type)));
++  // static_assert(sizeof(std::size_t) == sizeof(atomic_ctr_type));
++  // CUCO_CUDA_TRY(cudaMemsetAsync(num_successes_, 0, sizeof(atomic_ctr_type), stream));
+ 
+   auto constexpr block_size = 256;
+   auto constexpr stride     = 4;
+@@ -45,7 +48,8 @@ template <typename Key, typename Value, cuda::thread_scope Scope, typename Alloc
+ static_map<Key, Value, Scope, Allocator>::~static_map()
+ {
+   std::allocator_traits<slot_allocator_type>::deallocate(slot_allocator_, slots_, capacity_);
+-  std::allocator_traits<counter_allocator_type>::deallocate(counter_allocator_, num_successes_, 1);
++  // std::allocator_traits<counter_allocator_type>::deallocate(counter_allocator_, num_successes_, 1);
++  CUCO_ASSERT_CUDA_SUCCESS(cudaFree(num_successes_));
+ }
+ 
+ template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
+@@ -63,8 +67,12 @@ void static_map<Key, Value, Scope, Allocator>::insert(
+   auto view             = get_device_mutable_view();
+ 
+   // TODO: memset an atomic variable is unsafe
+-  static_assert(sizeof(std::size_t) == sizeof(atomic_ctr_type));
+-  CUCO_CUDA_TRY(cudaMemsetAsync(num_successes_, 0, sizeof(atomic_ctr_type), stream));
++  // static_assert(sizeof(std::size_t) == sizeof(atomic_ctr_type));
++  int device_id;
++  CUCO_CUDA_TRY(cudaGetDevice(&device_id));
++  CUCO_CUDA_TRY(cudaMemPrefetchAsync(num_successes_, sizeof(atomic_ctr_type), device_id));
++
++  // CUCO_CUDA_TRY(cudaMemsetAsync(num_successes_, 0, sizeof(atomic_ctr_type), stream));
+   std::size_t h_num_successes;
+ 
+   detail::insert<block_size, tile_size><<<grid_size, block_size, 0, stream>>>(
+@@ -101,8 +109,11 @@ void static_map<Key, Value, Scope, Allocator>::insert_if(InputIt first,
+   auto view            = get_device_mutable_view();
+ 
+   // TODO: memset an atomic variable is unsafe
+-  static_assert(sizeof(std::size_t) == sizeof(atomic_ctr_type));
+-  CUCO_CUDA_TRY(cudaMemsetAsync(num_successes_, 0, sizeof(atomic_ctr_type), stream));
++  // static_assert(sizeof(std::size_t) == sizeof(atomic_ctr_type));
++  // CUCO_CUDA_TRY(cudaMemsetAsync(num_successes_, 0, sizeof(atomic_ctr_type), stream));
++  int device_id;
++  CUCO_CUDA_TRY(cudaGetDevice(&device_id));
++  CUCO_CUDA_TRY(cudaMemPrefetchAsync(num_successes_, sizeof(atomic_ctr_type), device_id));
+   std::size_t h_num_successes;
+ 
+   detail::insert_if_n<block_size, tile_size><<<grid_size, block_size, 0, stream>>>(
+@@ -271,18 +282,18 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
  
      if (slot_is_empty) {
        auto const status = [&]() {
@@ -222,7 +273,7 @@ index 1719970..febc1fb 100644
        }();
  
        // successful insert
-@@ -325,18 +325,18 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
+@@ -325,18 +336,18 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
        uint32_t src_lane = __ffs(window_contains_empty) - 1;
  
        if (g.thread_rank() == src_lane) {
@@ -252,7 +303,7 @@ index 1719970..febc1fb 100644
        }
  
        uint32_t res_status = g.shfl(static_cast<uint32_t>(status), src_lane);
-@@ -358,6 +358,43 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
+@@ -358,6 +369,43 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
    }
  }
  
@@ -296,7 +347,7 @@ index 1719970..febc1fb 100644
  template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
  template <typename Hash, typename KeyEqual>
  __device__ typename static_map<Key, Value, Scope, Allocator>::device_view::iterator
-@@ -482,6 +519,42 @@ static_map<Key, Value, Scope, Allocator>::device_view::find(CG g,
+@@ -482,6 +530,42 @@ static_map<Key, Value, Scope, Allocator>::device_view::find(CG g,
    }
  }
  
@@ -340,7 +391,7 @@ index 1719970..febc1fb 100644
  template <typename Hash, typename KeyEqual>
  __device__ bool static_map<Key, Value, Scope, Allocator>::device_view::contains(
 diff --git a/include/cuco/dynamic_map.cuh b/include/cuco/dynamic_map.cuh
-index 2e57ac6..64f4d3f 100644
+index 2e57ac6..b85759d 100644
 --- a/include/cuco/dynamic_map.cuh
 +++ b/include/cuco/dynamic_map.cuh
 @@ -96,8 +96,8 @@ class dynamic_map {
@@ -420,7 +471,7 @@ index 2e57ac6..64f4d3f 100644
    thrust::device_vector<view_type> submap_views_;  ///< vector of device views for each submap
    thrust::device_vector<mutable_view_type>
 diff --git a/include/cuco/static_map.cuh b/include/cuco/static_map.cuh
-index 321b1f3..cc7601b 100644
+index 321b1f3..fa810e4 100644
 --- a/include/cuco/static_map.cuh
 +++ b/include/cuco/static_map.cuh
 @@ -123,10 +123,10 @@ class static_map {
@@ -502,6 +553,19 @@ index 321b1f3..cc7601b 100644
      /**
       * @brief Indicates whether the key `k` was inserted into the map.
       *
+@@ -1053,6 +1096,12 @@ class static_map {
+    * @return The number of elements in the map
+    */
+   std::size_t get_size() const noexcept { return size_; }
++  
++  void update_size(std::size_t n) noexcept { size_ += n; }
++
++  atomic_ctr_type* get_num_success() noexcept {
++    return num_successes_;
++  }
+ 
+   /**
+    * @brief Gets the load factor of the hash map.
 diff --git a/include/cuco/traits.hpp b/include/cuco/traits.hpp
 index 445a40d..07fe954 100644
 --- a/include/cuco/traits.hpp
@@ -515,5 +579,4 @@ index 445a40d..07fe954 100644
  namespace cuco {
  
 -- 
-2.33.0
-
+2.37.1 (Apple Git-137.1)
