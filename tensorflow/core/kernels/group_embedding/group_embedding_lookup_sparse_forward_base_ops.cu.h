@@ -116,14 +116,14 @@ __global__ void WeightedEmbeddingVarComputeFn(
       }
 
       float out = 0.0f;
-
-      // #pragma unroll
+      float total_batch_weight = 0.0f;
       if (feature_num > 0) {
         for (int j = 0; j < feature_num; ++j) {
           size_t feature_indices = value_offset + j;
           int64_t embedding_offset = feature_indices * dimension;
           TValue sum = args[ev_id].emb_variable_[embedding_offset + tid];
           TValue sp_weights = args[ev_id].sp_weights_[feature_indices];
+          total_batch_weight += sp_weights;
           if (max_norm >= 0.0) {
             if (tid == 0) {
               l2_sum = 0.0;
@@ -138,7 +138,7 @@ __global__ void WeightedEmbeddingVarComputeFn(
           }
           out = __fmaf_rn(sum, sp_weights, out);
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, TValue>(out, total_batch_weight);
       }
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
@@ -169,7 +169,7 @@ __global__ void WeightedVariableComputeFn(
       }
 
       TValue out = 0.0f;
-
+      TValue total_batch_weight = 0.0f;
       const TValue* emb_variable = args[ev_id].emb_variable_;
       // #pragma unroll
       if (feature_num > 0) {
@@ -177,6 +177,7 @@ __global__ void WeightedVariableComputeFn(
           size_t feature_indices = value_offset + i;
           int embedding_indices = int(args[ev_id].sp_values_[feature_indices]);
           TValue sp_weights = args[ev_id].sp_weights_[embedding_indices];
+          total_batch_weight += sp_weights;
           TValue emb_element = emb_variable[feature_indices];
           if (max_norm >= 0.0f) {
             // calc l2 norm of this emb row(per block) and compare with
@@ -196,7 +197,7 @@ __global__ void WeightedVariableComputeFn(
           }
           out = __fmaf_rn(emb_element, sp_weights, out);
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, TValue>(out, total_batch_weight);
       }
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
@@ -227,7 +228,7 @@ __global__ void EmbeddingVarComputeFn(
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
       TValue out = 0.0;
-
+      
       // #pragma unroll
       if (feature_num > 0) {
         for (int j = 0; j < feature_num; ++j) {
@@ -247,7 +248,7 @@ __global__ void EmbeddingVarComputeFn(
           }
           out += sum;
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, int>(out, feature_num);
       }
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
@@ -303,7 +304,7 @@ __global__ void VariableComputeFn(
           }
           out += emb_element;
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, int>(out, feature_num);
       }
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
@@ -352,7 +353,7 @@ __global__ void NormalEmbeddingVarComputeFn(
           }
           out += sum;
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, int>(out, feature_num);
       }
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
@@ -406,7 +407,7 @@ __global__ void NormalVariableComputeFn(
           }
           out += emb_element;
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, int>(out, feature_num);
       }
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
@@ -434,8 +435,8 @@ __global__ void NormalWeightedEmbeddingVarComputeFn(
       } else {
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
-      TValue out = 0.0;
-
+      TValue out = 0.0f;
+      TValue total_batch_weight = 0.0f;
       // #pragma unroll
       if (feature_num > 0) {
         for (int j = 0; j < feature_num; ++j) {
@@ -443,6 +444,7 @@ __global__ void NormalWeightedEmbeddingVarComputeFn(
           int64_t embedding_offset = feature_indices * dimension;
           TValue sum = args[ev_id].emb_variable_[embedding_offset + tid];
           TValue sp_weights = args[ev_id].sp_weights_[feature_indices];
+          total_batch_weight += sp_weights;
           if (max_norm >= 0.0) {
             if (tid == 0) {
               l2_sum[0] = 0.0;
@@ -457,7 +459,7 @@ __global__ void NormalWeightedEmbeddingVarComputeFn(
           }
           out = __fmaf_rn(sum, sp_weights, out);
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, TValue>(out, total_batch_weight);
       }
       args[ev_id].emb_vector_[bid * dimension + tid] = out;
     }
@@ -485,7 +487,7 @@ __global__ void NormalWeightedVariableComputeFn(
         feature_num = args[ev_id].offset_indices_[bid + 1] - value_offset;
       }
       TValue out = 0.0f;
-
+      TValue total_batch_weight = 0.0f;
       const TValue* emb_variable = args[ev_id].emb_variable_;
 
       // #pragma unroll
@@ -496,6 +498,7 @@ __global__ void NormalWeightedVariableComputeFn(
           TValue emb_element =
               emb_variable[embedding_indices * emb_vec_size + tid];
           TValue sp_weights = args[ev_id].sp_weights_[feature_indices];
+          total_batch_weight += sp_weights;
           // printf("indices is %d emb_element is %f\n", indices, emb_element);
           if (max_norm >= 0.0f) {
             // calc l2 norm of this emb row(per block) and compare with
@@ -515,7 +518,7 @@ __global__ void NormalWeightedVariableComputeFn(
           }
           out = __fmaf_rn(emb_element, sp_weights, out);
         }
-        out = Combine<combiner>(out, feature_num);
+        out = Combine<combiner, int>(out, feature_num);
       }
       args[ev_id].emb_vector_[bid * emb_vec_size + tid] = out;
     }
@@ -556,7 +559,7 @@ class GroupEmbeddingLookupForWard {
 
     {
       if (tile_size <= 32) {
-        const int block_size = batch_size / 64 * tile_size + 1;
+	const int block_size = batch_size * tile_size / 64 + 1;
         compute_fn<<<block_size, 64, 0, stream>>>(batch_size, dimension_,
                                                   max_norm_, ev_nums_, d_args_);
       } else {

@@ -77,7 +77,7 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
   }
 
   // combine
-  out = Combine<combiner>(out, feature_num);
+  out = Combine<combiner, int>(out, feature_num);
 
   // store the embedding vector
   embedding_vector[blockIdx.x * emb_vec_size + threadIdx.x] = out;

@@ -59,7 +59,7 @@ __global__ void ApplyCombiner(float* emb_vectors, const int* row_emptiness_flag,
   }
   const int feature_num = feature_nums[blockIdx.x];
   const float emb_element = emb_vectors[offset];
-  emb_vectors[offset] = Combine<combiner>(emb_element, feature_num);
+  emb_vectors[offset] = Combine<combiner, int>(emb_element, feature_num);
 }
 
 template <Combiner combiner>
