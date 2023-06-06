@@ -29,24 +29,42 @@ struct IndicePair {
 
 enum Combiner { Mean, Sum, Sqrtn };
 
-template <Combiner combiner>
-__forceinline__ __device__ float Combine(const float in, const int feature_num);
+template <Combiner combiner, typename T>
+__forceinline__ __device__ float Combine(const float in, const T feature_num);
 
 template <>
-__forceinline__ __device__ float Combine<Sqrtn>(const float in,
+__forceinline__ __device__ float Combine<Sqrtn, int>(const float in,
                                                 const int feature_num) {
   return in / sqrtf(feature_num);
 }
 
 template <>
-__forceinline__ __device__ float Combine<Mean>(const float in,
+__forceinline__ __device__ float Combine<Mean, int>(const float in,
                                                const int feature_num) {
   return in / feature_num;
 }
 
 template <>
-__forceinline__ __device__ float Combine<Sum>(const float in,
+__forceinline__ __device__ float Combine<Sum, int>(const float in,
                                               const int feature_num) {
+  return in;
+}
+
+template <>
+__forceinline__ __device__ float Combine<Sqrtn, float>(const float in,
+                                                const float feature_num) {
+  return in / sqrtf(feature_num);
+}
+
+template <>
+__forceinline__ __device__ float Combine<Mean, float>(const float in,
+                                               const float feature_num) {
+  return in / feature_num;
+}
+
+template <>
+__forceinline__ __device__ float Combine<Sum, float>(const float in,
+                                              const float feature_num) {
   return in;
 }
 

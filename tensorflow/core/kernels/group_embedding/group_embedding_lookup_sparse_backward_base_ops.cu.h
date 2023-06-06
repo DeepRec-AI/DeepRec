@@ -274,7 +274,7 @@ class GroupEmbeddingLookupBackWard {
 
     {
       if (tile_size <= 32) {
-        const int block_size = batch_size / 64 * tile_size + 1;
+        const int block_size = batch_size * tile_size / 64 + 1;
 
         fn<<<block_size, 64, 0, stream>>>(batch_size, max_norm_, nums_,
                                           dimension_, d_args_);
