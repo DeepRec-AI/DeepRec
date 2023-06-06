@@ -201,7 +201,6 @@ def _internal_input_layer(features,
         builder = _LazyBuilder(features, adaptive_mask_tensors)
         output_tensors = []
         ordered_columns = []
-        group_name_set = set()
         group_embedding_list = []
         embedding_columns = []
         for index, column in enumerate(sorted(feature_columns, key=lambda x: x.name)):
@@ -211,9 +210,7 @@ def _internal_input_layer(features,
                 None, default_name=column._var_scope_name
             ):  # pylint: disable=protected-access
                 if group_name != "":
-                    group_name_set.add(group_name)
-                    output_tensor = None
-                    output_tensors.append(output_tensor)  # placeholder
+                    output_tensors.append(None)  # placeholder
                     group_embedding_list.append(index)  # for later gather
                     embedding_columns.append(column)
                 else:
@@ -244,17 +241,18 @@ def _internal_input_layer(features,
                         scope=variable_scope.get_variable_scope().name,
                     )
 
-        group_embedding_tensor = gec._get_global_group_embedding_scope(
-            group_name_set, builder, weight_collections, trainable
-        )
-        for ind, column in zip(group_embedding_list, embedding_columns):
-            output_tensor, _ = group_embedding_tensor[column]
-            output_tensors[ind] = output_tensor
-            if cols_to_output_tensors is not None:
-                cols_to_output_tensors[column] = output_tensor
-            ops.add_to_collections(
-                ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor
-            )
+        if len(embedding_columns) > 0:
+          group_embedding_tensor = gec._get_global_group_embedding_scope(
+              embedding_columns, builder, weight_collections, trainable
+          )
+          for ind, column in zip(group_embedding_list, embedding_columns):
+              output_tensor, _ = group_embedding_tensor[column]
+              output_tensors[ind] = output_tensor
+              if cols_to_output_tensors is not None:
+                  cols_to_output_tensors[column] = output_tensor
+              ops.add_to_collections(
+                  ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor
+              )
 
         _verify_static_batch_size_equality(output_tensors, ordered_columns)
         return array_ops.concat(output_tensors, -1)

@@ -43,8 +43,8 @@ def group_embedding_var_lookup(params,
                                                         default_value,
                                                         combiners,
                                                         dimensions,
-                                                        ignore_weights,
-                                                        is_use_default_value_tensor,
+                                                        ignore_weights=ignore_weights,
+                                                        is_use_default_value_tensor=is_use_default_value_tensor,
                                                         is_sequence=is_sequence)
 
 @ops.RegisterGradient("GroupEmbeddingVarLookup")
