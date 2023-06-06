@@ -59,6 +59,7 @@ from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.framework import ops
 
 os.environ["TF_GPU_THREAD_MODE"] = "global"
+os.environ["TF_GPU_THREAD_COUNT"] = "16"
 
 import horovod.tensorflow as hvd
 

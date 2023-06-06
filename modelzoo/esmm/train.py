@@ -975,6 +975,8 @@ def set_env_for_DeepRec():
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
     if args.group_embedding == "collective":
         tf.config.experimental.enable_distributed_strategy(strategy="collective")
+        if args.smartstaged and not args.tf:
+            os.environ["TF_GPU_THREAD_COUNT"] = "16"
 
 def check_stock_tf():
     import pkg_resources
