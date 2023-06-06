@@ -1635,6 +1635,14 @@ def group_embedding_lookup_sparse(params,
     if not isinstance(params, list):
         params = [params]
 
+    #Currently do not support PartitionedVariable.
+    for index, param in enumerate(params):
+      if isinstance(param, variables.PartitionedVariable):
+        tmp_param = list(param)
+        if len(tmp_param) != 1:
+          raise TypeError("PartitionedVariable not support in 'group_embedding_lookup_sparse'. ")
+        params[index] = tmp_param[0]
+
     ignore_weights = sp_weights is None
 
     if len(combiners) != len(sp_ids):
@@ -1648,14 +1656,9 @@ def group_embedding_lookup_sparse(params,
             raise ValueError('len of combiners must be equal to len of sp_weights'
                              )
 
-  # # Currently not doing unique
-
     strategy = get_group_lookup_strategy()
     if strategy == DistStrategy.COLLECTIVE:
         for (index, param) in enumerate(params):
-            if isinstance(param, variables.PartitionedVariable):
-                raise TypeError("PartitionedVariable not support in 'group_embedding_lookup_sparse'. "
-                                )
             param.target_gpu = -1
 
         try:
@@ -1683,6 +1686,7 @@ def group_embedding_lookup_sparse(params,
         if not isinstance(sp_id, sparse_tensor.SparseTensor):
           try:  # assume RaggedTensor
             sp_id = sp_id.to_sparse()
+            sp_ids[index] = sp_id
           except:
             raise ValueError('sp_id is neither SparseTensor nor RaggedTensor!')
 
@@ -1789,7 +1793,7 @@ def group_embedding_lookup_sparse(params,
                   (ev_handlers[group_id])[-num_remainder:],
                   (ev_sp_values[group_id])[-num_remainder:],
                   (ev_sp_indices[group_id])[-num_remainder:],
-                  (ev_sp_weights[group_id])[-num_remainder:],
+                  sub_ev_sp_weight,
                   ev_combiners[group_id],
                   (ev_dense_shapes[group_id])[-num_remainder:],
                   dim,

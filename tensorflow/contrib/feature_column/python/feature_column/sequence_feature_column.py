@@ -110,7 +110,6 @@ def sequence_input_layer(
         output_tensors = []
         sequence_lengths = []
         ordered_columns = []
-        group_name_set = set()
         group_embedding_list = []
         embedding_columns = []
 
@@ -122,8 +121,7 @@ def sequence_input_layer(
             ):
                 if group_name != "":
                     group_name_set.add(group_name)
-                    output_tensor = None
-                    output_tensors.append(output_tensor)  # placeholder
+                    output_tensors.append(None)  # placeholder
                     group_embedding_list.append(index)
                     embedding_columns.append(column)
                     sequence_lengths.append(None)
@@ -142,13 +140,14 @@ def sequence_input_layer(
                     )
                     sequence_lengths.append(sequence_length)
 
-        group_embedding_tensor = gec._get_global_group_embedding_scope(
-            group_name_set, builder, weight_collections, trainable
-        )
-        for ind, column in zip(group_embedding_list, embedding_columns):
-            output_tensor, sequence_length = group_embedding_tensor[column]
-            output_tensors[ind] = output_tensor
-            sequence_lengths[ind] = sequence_length
+        if len(embedding_columns) > 0:
+          group_embedding_tensor = gec._get_global_group_embedding_scope(
+              embedding_columns, builder, weight_collections, trainable
+          )
+          for ind, column in zip(group_embedding_list, embedding_columns):
+              output_tensor, sequence_length = group_embedding_tensor[column]
+              output_tensors[ind] = output_tensor
+              sequence_lengths[ind] = sequence_length
 
         fc._verify_static_batch_size_equality(output_tensors, ordered_columns)
         fc._verify_static_batch_size_equality(sequence_lengths, ordered_columns)
