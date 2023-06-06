@@ -22,6 +22,7 @@ import math
 import collections
 from tensorflow.python.client import timeline
 import json
+import contextlib
 
 from tensorflow.python.ops import partitioned_variables
 
@@ -40,9 +41,9 @@ SEQ_COLUMNS = HIS_COLUMNS
 LABEL_COLUMN = ['CLICKED']
 TRAIN_DATA_COLUMNS = LABEL_COLUMN + UNSEQ_COLUMNS + SEQ_COLUMNS
 
-EMBEDDING_DIM = 18
-HIDDEN_SIZE = 18 * 2
-ATTENTION_SIZE = 18 * 2
+EMBEDDING_DIM = 16
+HIDDEN_SIZE = 16 * 2
+ATTENTION_SIZE = 16 * 2
 MAX_SEQ_LENGTH = 50
 
 
@@ -50,7 +51,7 @@ class DIN():
     def __init__(self,
                  feature_column=None,
                  learning_rate=0.001,
-                 embedding_dim=18,
+                 embedding_dim=16,
                  hidden_size=36,
                  attention_size=36,
                  inputs=None,
@@ -503,56 +504,62 @@ def build_feature_columns(data_location=None):
     uid_cate_column = tf.feature_column.categorical_column_with_vocabulary_file(
         'UID', uid_file, default_value=0)
     ev_opt = None
-    if not args.tf:
-        '''Feature Elimination of EmbeddingVariable Feature'''
-        if args.ev_elimination == 'gstep':
-            # Feature elimination based on global steps
-            evict_opt = tf.GlobalStepEvict(steps_to_live=4000)
-        elif args.ev_elimination == 'l2':
-            # Feature elimination based on l2 weight
-            evict_opt = tf.L2WeightEvict(l2_weight_threshold=1.0)
-        else:
-            evict_opt = None
-        '''Feature Filter of EmbeddingVariable Feature'''
-        if args.ev_filter == 'cbf':
-            # CBF-based feature filter
-            filter_option = tf.CBFFilter(filter_freq=3,
-                                         max_element_size=2**30,
-                                         false_positive_probability=0.01,
-                                         counter_type=tf.int64)
-        elif args.ev_filter == 'counter':
-            # Counter-based feature filter
-            filter_option = tf.CounterFilter(filter_freq=3)
-        else:
-            filter_option = None
-        ev_opt = tf.EmbeddingVariableOption(evict_option=evict_opt,
-                                            filter_option=filter_option)
+    if args.group_embedding and not args.tf:
+          context = tf.feature_column.group_embedding_column_scope(name="categorical")
+    else:
+        context = contextlib.nullcontext()
+    with context:
 
-        if args.ev:
-            '''Embedding Variable Feature with feature_column API'''
-            uid_cate_column = tf.feature_column.categorical_column_with_embedding(
-                'UID', dtype=tf.string, ev_option=ev_opt)
-        elif args.adaptive_emb:
-            '''            Adaptive Embedding Feature Part 2 of 2
-            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
-            'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
-            For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
-            tensor with shape [batch_size].
-            '''
-            uid_cate_column = tf.feature_column.categorical_column_with_adaptive_embedding(
-                'UID',
-                hash_bucket_size=100000,
-                dtype=tf.string,
-                ev_option=ev_opt)
-        elif args.dynamic_ev:
-            '''Dynamic-dimension Embedding Variable'''
-            print(
-                "Dynamic-dimension Embedding Variable isn't really enabled in model now."
-            )
-            sys.exit()
+        if not args.tf:
+            '''Feature Elimination of EmbeddingVariable Feature'''
+            if args.ev_elimination == 'gstep':
+                # Feature elimination based on global steps
+                evict_opt = tf.GlobalStepEvict(steps_to_live=4000)
+            elif args.ev_elimination == 'l2':
+                # Feature elimination based on l2 weight
+                evict_opt = tf.L2WeightEvict(l2_weight_threshold=1.0)
+            else:
+                evict_opt = None
+            '''Feature Filter of EmbeddingVariable Feature'''
+            if args.ev_filter == 'cbf':
+                # CBF-based feature filter
+                filter_option = tf.CBFFilter(filter_freq=3,
+                                            max_element_size=2**30,
+                                            false_positive_probability=0.01,
+                                            counter_type=tf.int64)
+            elif args.ev_filter == 'counter':
+                # Counter-based feature filter
+                filter_option = tf.CounterFilter(filter_freq=3)
+            else:
+                filter_option = None
+            ev_opt = tf.EmbeddingVariableOption(evict_option=evict_opt,
+                                                filter_option=filter_option)
 
-    uid_emb_column = tf.feature_column.embedding_column(
-        uid_cate_column, dimension=EMBEDDING_DIM)
+            if args.ev:
+                '''Embedding Variable Feature with feature_column API'''
+                uid_cate_column = tf.feature_column.categorical_column_with_embedding(
+                    'UID', dtype=tf.string, ev_option=ev_opt)
+            elif args.adaptive_emb:
+                '''            Adaptive Embedding Feature Part 2 of 2
+                Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of
+                'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
+                For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
+                tensor with shape [batch_size].
+                '''
+                uid_cate_column = tf.feature_column.categorical_column_with_adaptive_embedding(
+                    'UID',
+                    hash_bucket_size=100000,
+                    dtype=tf.string,
+                    ev_option=ev_opt)
+            elif args.dynamic_ev:
+                '''Dynamic-dimension Embedding Variable'''
+                print(
+                    "Dynamic-dimension Embedding Variable isn't really enabled in model now."
+                )
+                sys.exit()
+
+        uid_emb_column = tf.feature_column.embedding_column(
+            uid_cate_column, dimension=EMBEDDING_DIM)
 
     # item
     item_cate_column = tf.feature_column.categorical_column_with_vocabulary_file(
@@ -930,6 +937,11 @@ def get_arg_parser():
                         help='Whether to enable shuffle operation for Parquet Dataset. Default to False.',
                         type=boolean_string,
                         default=False)
+    parser.add_argument("--group_embedding", \
+                      help='Whether to enable Group Embedding. Defualt to None.',
+                      type=str,
+                      choices=[None, 'localized', 'collective'],
+                      default=None)
     return parser
 
 
@@ -1006,6 +1018,10 @@ def set_env_for_DeepRec():
     os.environ['STOP_STATISTIC_STEP'] = '110'
     os.environ['MALLOC_CONF']= \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
+    if args.group_embedding == "collective":
+        tf.config.experimental.enable_distributed_strategy(strategy="collective")
+        if args.smartstaged and not args.tf:
+            os.environ["TF_GPU_THREAD_COUNT"] = "16"
 
 if __name__ == '__main__':
     parser = get_arg_parser()
