@@ -30,8 +30,15 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
 
   Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
       const V* default_value_no_permission) override {
-    return errors::Unimplemented(
-        "Can't use counter filter in EV for inference.");
+    ValuePtr<V>* value_ptr = nullptr;
+    Status s = ev_->LookupKey(key, &value_ptr);
+    if (s.ok() && GetFreq(key, value_ptr) >= config_.filter_freq) {
+      V* mem_val = ev_->LookupOrCreateEmb(value_ptr, default_value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
+    } else {
+      memcpy(val, default_value_no_permission, sizeof(V) * ev_->ValueLen());
+    }
+    return Status::OK();
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
@@ -47,9 +54,9 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
-      bool* is_filter) override {
+      bool* is_filter, int64 count) override {
     Status s = ev_->LookupOrCreateKey(key, val);
-    *is_filter = GetFreq(key, *val) >= config_.filter_freq;
+    *is_filter = (GetFreq(key, *val) + count) >= config_.filter_freq;
     return s;
   }
 

@@ -246,11 +246,24 @@ class FtrlOptimizer(optimizer.Optimizer):
           math_ops.cast(self._learning_rate_power_tensor, var.dtype.base_dtype),
           use_locking=self._use_locking)
 
-  def _resource_apply_sparse(self, grad, var, indices):
+  def _create_ftrl_appy_v1_op(self, grad, var, indices, indices_counts=None):
     accum = self.get_slot(var, "accum")
     linear = self.get_slot(var, "linear")
-    if self._l2_shrinkage_regularization_strength <= 0.0:
-      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+    if isinstance(var, kv_variable_ops.EmbeddingVariable):
+      if indices_counts != None:
+        return training_ops.kv_resource_sparse_apply_ftrl_with_counts(
+          var.handle,
+          accum.handle,
+          linear.handle,
+          grad,
+          indices,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          math_ops.cast(self._l1_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._l2_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
+          indices_counts,
+          use_locking=self._use_locking)
+      else:
         return training_ops.kv_resource_sparse_apply_ftrl(
           var.handle,
           accum.handle,
@@ -262,8 +275,8 @@ class FtrlOptimizer(optimizer.Optimizer):
           math_ops.cast(self._l2_regularization_strength_tensor, grad.dtype),
           math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
           use_locking=self._use_locking)
-      else:
-        return training_ops.resource_sparse_apply_ftrl(
+    else:
+       return training_ops.resource_sparse_apply_ftrl(
           var.handle,
           accum.handle,
           linear.handle,
@@ -274,8 +287,26 @@ class FtrlOptimizer(optimizer.Optimizer):
           math_ops.cast(self._l2_regularization_strength_tensor, grad.dtype),
           math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
           use_locking=self._use_locking)
-    else:
-      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+
+  def _create_ftrl_appy_v2_op(self, grad, var, indices, indices_counts=None):
+    accum = self.get_slot(var, "accum")
+    linear = self.get_slot(var, "linear")
+    if isinstance(var, kv_variable_ops.EmbeddingVariable):
+      if indices_counts != None:
+        return training_ops.kv_resource_sparse_apply_ftrl_v2_with_counts(
+          var.handle,
+          accum.handle,
+          linear.handle,
+          grad,
+          indices,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          math_ops.cast(self._l1_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._l2_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._l2_shrinkage_regularization_strength_tensor,
+                        grad.dtype),
+          math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
+          indices_counts, use_locking=self._use_locking)
+      else:
         return training_ops.kv_resource_sparse_apply_ftrl_v2(
           var.handle,
           accum.handle,
@@ -289,8 +320,8 @@ class FtrlOptimizer(optimizer.Optimizer):
                         grad.dtype),
           math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
           use_locking=self._use_locking)
-      else:
-        return training_ops.resource_sparse_apply_ftrl_v2(
+    else:
+       return training_ops.resource_sparse_apply_ftrl_v2(
           var.handle,
           accum.handle,
           linear.handle,
@@ -303,3 +334,9 @@ class FtrlOptimizer(optimizer.Optimizer):
                         grad.dtype),
           math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
           use_locking=self._use_locking)
+
+  def _resource_apply_sparse(self, grad, var, indices, indices_counts=None):
+    if self._l2_shrinkage_regularization_strength <= 0.0:
+      return self._create_ftrl_appy_v1_op(grad, var, indices, indices_counts)
+    else:
+      return self._create_ftrl_appy_v2_op(grad, var, indices, indices_counts)

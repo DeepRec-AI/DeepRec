@@ -176,7 +176,7 @@ class GroupEmbeddingVariableLookupCpuOp
         embedding_var->storage()->Schedule(
             [embedding_var, sp_values_tensor] {
               embedding::BatchCache<TKey> *cache = embedding_var->Cache();
-              cache->add_to_rank(sp_values_tensor);
+              cache->update(sp_values_tensor);
             });
       }
 

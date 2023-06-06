@@ -195,6 +195,17 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
+    int embedding_var_type= 0;
+    Status s = c->GetAttr("embedding_variable_type", &embedding_var_type);
+    if (!s.ok()) {
+      //Not InitializeKvVariableV2Op!
+      embedding_var_type = embedding::EmbeddingVariableType::MUTABLE;
+    }
+    is_inference_ = false;
+    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference_));
+    is_inference_ |=
+        (embedding_var_type ==
+         embedding::EmbeddingVariableType::IMMUTABLE);
 
     int64 storage_type = 0;
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
@@ -315,7 +326,8 @@ class InitializeKvVariableOp : public OpKernel {
                 max_element_size_, false_positive_probability_,
                 counter_type_, default_value_dim_,
                 default_value_no_permission_,
-                record_freq_, record_version_); 
+                record_freq_, record_version_,
+                is_inference_);
             auto storage =
                 embedding::StorageFactory::Create<TKey, TValue>(
                     embedding::StorageConfig(
@@ -350,7 +362,8 @@ class InitializeKvVariableOp : public OpKernel {
                 steps_to_live_, filter_freq_, max_freq_,
                 l2_weight_threshold_, layout_,
                 max_element_size_, false_positive_probability_,
-                counter_type_, 0, record_freq_, record_version_);
+                counter_type_, 0, record_freq_, record_version_,
+                is_inference_);
             auto storage =
                 embedding::StorageFactory::Create<TKey, TValue>(
                     embedding::StorageConfig(
@@ -385,7 +398,8 @@ class InitializeKvVariableOp : public OpKernel {
                               false_positive_probability_,
                               counter_type_, default_value_dim_,
                               default_value_no_permission_,
-                              record_freq_, record_version_),
+                              record_freq_, record_version_,
+                              is_inference_),
           primary_variable->GetAllocator());
           return (*ptr)->Init(default_values, default_value_dim_);
         }));
@@ -421,6 +435,7 @@ class InitializeKvVariableOp : public OpKernel {
   float default_value_no_permission_;
   bool record_freq_;
   bool record_version_;
+  bool is_inference_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -436,9 +451,36 @@ TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
+#define REGISTER_KERNELS(ktype, vtype)                               \
+  REGISTER_KERNEL_BUILDER(Name("InitializeKvVariableV2Op")           \
+                              .Device(DEVICE_CPU)                    \
+                              .TypeConstraint<ktype>("Tkeys")        \
+                              .TypeConstraint<vtype>("dtype"),       \
+                          InitializeKvVariableOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                             \
+  REGISTER_KERNELS(int32, type)                                      \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
+
 #if GOOGLE_CUDA
 #define REGISTER_KERNELS(ktype, vtype)                               \
   REGISTER_KERNEL_BUILDER(Name("InitializeKvVariableOp")             \
+                              .Device(DEVICE_GPU)                    \
+                              .TypeConstraint<ktype>("Tkeys")        \
+                              .TypeConstraint<vtype>("dtype"),       \
+                          InitializeKvVariableOp<ktype, vtype>);
+
+#define REGISTER_GPU_KERNELS(type)        \
+  REGISTER_KERNELS(int32, type);          \
+  REGISTER_KERNELS(int64, type);
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
+#undef REGISTER_GPU_KERNELS
+#undef REGISTER_KERNELS
+
+#define REGISTER_KERNELS(ktype, vtype)                               \
+  REGISTER_KERNEL_BUILDER(Name("InitializeKvVariableV2Op")            \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<ktype>("Tkeys")        \
                               .TypeConstraint<vtype>("dtype"),       \

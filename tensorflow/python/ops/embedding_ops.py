@@ -264,10 +264,13 @@ def _embedding_lookup_and_transform(params,
       gather_ids = data_flow_ops.dynamic_partition(new_ids, p_assignments, np)
       gather_blocknums = None
       gather_ev_init_value = None
+      gather_counts = None
       if isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable): 
         gather_blocknums = data_flow_ops.dynamic_partition(blocknums, p_assignments, np)
       if ev_init_value is not None:
         gather_ev_init_value = data_flow_ops.dynamic_partition(ev_init_value, p_assignments, np)
+      if counts is not None:
+        gather_counts = data_flow_ops.dynamic_partition(counts, p_assignments, np)
       # Similarly, partition the original indices.
       pindices = data_flow_ops.dynamic_partition(original_indices,
                                                  p_assignments, np)
@@ -297,7 +300,11 @@ def _embedding_lookup_and_transform(params,
               new_ev_init_value = None
             else:
               new_ev_init_value = gather_ev_init_value[p]
-            result = array_ops.gather(params[p], pids, ev_init_value=new_ev_init_value, counts=counts)
+            if counts is None:
+              new_counts = None
+            else:
+              new_counts = gather_counts[p]
+            result = array_ops.gather(params[p], pids, ev_init_value=new_ev_init_value, counts=new_counts)
             if transform_fn:
               # If transform_fn is provided, the clip_by_norm precedes
               # the transform and hence must be co-located. See below
@@ -570,8 +577,8 @@ def embedding_lookup_sparse(params,
       segment_ids = math_ops.cast(segment_ids, dtypes.int32)
 
     ids = sp_ids.values
-    if isinstance(params[0], kv_variable_ops.EmbeddingVariable) and params[0]._filter_freq > 0:
-      ids, idx, counts = array_ops.unique_with_counts(ids)
+    if isinstance(params[0], kv_variable_ops.EmbeddingVariable) and params[0].need_counts():
+      ids, idx, counts = array_ops.unique_with_counts(ids, out_idx=dtypes.int64)
     else:
       ids, idx = array_ops.unique(ids)
       counts = None

@@ -168,6 +168,53 @@ value: the value to set the new tensor to use.
 dtype: the dtype of the value.
 )");
 
+REGISTER_OP("InitializeKvVariableV2Op")
+    .Input("resource_self: resource")
+    .Input("resource_primary: resource")
+    .Input("value: dtype")
+    .Input("empty_key: Tkeys")
+    .Attr("slot_num: int = 0")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("dtype: type")
+    .Attr("shape: shape")
+    .Attr("initial_num_buckets: int = 131072")  // 2^17
+    .Attr("max_load_factor: float = 0.8")
+    .Attr("steps_to_live: int = 0")
+    .Attr("ht_type: string = ''")
+    .Attr("emb_index: int = 0")
+    .Attr("block_num: int = 1")
+    .Attr("slot_index: int = 0")
+    .Attr("ht_partition_num: int = 1000")
+    .Attr("filter_freq: int = 0")
+    .Attr("max_freq: int = 999999")
+    .Attr("max_element_size: int  = 0")
+    .Attr("counter_type: type")
+    .Attr("false_positive_probability: float = -1.0")
+    .Attr("l2_weight_threshold: float =-1.0")
+    .Attr("layout: string = ''")
+    .Attr("storage_type: int = 0")
+    .Attr("storage_path: string = '.'")
+    .Attr("storage_size: list(int) = []")
+    .Attr("default_value_dim: int = 4096")
+    .Attr("default_value_no_permission: float = .0")
+    .Attr("record_freq: bool = false")
+    .Attr("record_version: bool = false")
+    .Attr("embedding_variable_type: int = 0")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"(
+Assigns a new value to a variable.
+
+Any ReadVariableOp with a control dependency on this op is guaranteed to return
+this value or a subsequent newer value of the variable.
+
+resource_self: handle to the resource in which to store the variable.
+resource_primary: handle to the resource in which to store the variable.
+value: the value to set the new tensor to use.
+dtype: the dtype of the value.
+)");
+
 REGISTER_OP("KvVarIsInitializedOp")
     .Input("resource: resource")
     .Output("is_initialized: bool")

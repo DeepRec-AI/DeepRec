@@ -351,23 +351,36 @@ class AdamWOptimizer(DecoupledWeightDecayExtension, adam.AdamOptimizer):
         epsilon=epsilon,
         use_locking=use_locking,
         name=name)
-    
-  def _resource_apply_sparse(self, grad, var, indices):
+  def _resource_apply_sparse(self, grad, var, indices, indices_counts=None):
     if isinstance(var, kv_variable_ops.EmbeddingVariable):
       m = self.get_slot(var, "m")
       v = self.get_slot(var, "v")
       beta1_power, beta2_power = self._get_beta_accumulators()
       global_step = training_util.get_or_create_global_step()
-      return training_ops.kv_resource_sparse_apply_adam_w(
-        var.handle, m.handle, v.handle,
-        math_ops.cast(beta1_power, grad.dtype),
-        math_ops.cast(beta2_power, grad.dtype),
-        math_ops.cast(self._lr_t, grad.dtype),
-        math_ops.cast(self._beta1_t, grad.dtype),
-        math_ops.cast(self._beta2_t, grad.dtype),
-        math_ops.cast(self._epsilon_t, grad.dtype),
-        grad, indices, global_step, weight_decay=self._weight_decay,
-        use_locking=self._use_locking)
+      if indices_counts != None:
+        return training_ops.kv_resource_sparse_apply_adam_w_with_counts(
+          var.handle, m.handle, v.handle,
+          math_ops.cast(beta1_power, grad.dtype),
+          math_ops.cast(beta2_power, grad.dtype),
+          math_ops.cast(self._lr_t, grad.dtype),
+          math_ops.cast(self._beta1_t, grad.dtype),
+          math_ops.cast(self._beta2_t, grad.dtype),
+          math_ops.cast(self._epsilon_t, grad.dtype),
+          grad, indices, global_step,
+          weight_decay=self._weight_decay,
+          indices_counts=indices_counts,
+          use_locking=self._use_locking)
+      else:
+        return training_ops.kv_resource_sparse_apply_adam_w(
+          var.handle, m.handle, v.handle,
+          math_ops.cast(beta1_power, grad.dtype),
+          math_ops.cast(beta2_power, grad.dtype),
+          math_ops.cast(self._lr_t, grad.dtype),
+          math_ops.cast(self._beta1_t, grad.dtype),
+          math_ops.cast(self._beta2_t, grad.dtype),
+          math_ops.cast(self._epsilon_t, grad.dtype),
+          grad, indices, global_step, weight_decay=self._weight_decay,
+          use_locking=self._use_locking)
     else:
       scatter_add = self._resource_scatter_add
       decay_op = self._decay_weights_sparse_op(var, indices, scatter_add)

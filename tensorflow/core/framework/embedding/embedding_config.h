@@ -23,6 +23,7 @@ struct EmbeddingConfig {
   int normal_fix_flag;
   bool record_freq;
   bool record_version;
+  bool is_inference;
 
   EmbeddingConfig(int64 emb_index = 0,
                   int64 primary_emb_index = 0,
@@ -40,7 +41,8 @@ struct EmbeddingConfig {
                   int64 default_value_dim = 4096,
                   float default_value_no_permission = .0,
                   bool record_freq =false,
-                  bool record_version=false):
+                  bool record_version=false,
+                  bool is_inference=false):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
       block_num(block_num),
@@ -55,7 +57,8 @@ struct EmbeddingConfig {
       default_value_no_permission(default_value_no_permission),
       normal_fix_flag(0),
       record_freq(record_freq),
-      record_version(record_version) {
+      record_version(record_version),
+      is_inference(is_inference) {
     if (max_element_size != 0 && false_positive_probability != -1.0){
       kHashFunc = calc_num_hash_func(false_positive_probability);
       num_counter = calc_num_counter(max_element_size,

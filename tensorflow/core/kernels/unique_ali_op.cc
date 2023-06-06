@@ -178,6 +178,31 @@ class UniqueAliOp : public OpKernel {
 TF_CALL_REAL_NUMBER_TYPES(REGISTER_UNIQUE);
 REGISTER_UNIQUE(string)
 #undef REGISTER_UNIQUE
+
+#if GOOGLE_CUDA
+#define REGISTER_UNIQUE(type)                                    \
+  REGISTER_KERNEL_BUILDER(Name("UniqueWithCounts")               \
+                              .Device(DEVICE_GPU)                \
+                              .HostMemory("x")                   \
+                              .HostMemory("y")                   \
+                              .HostMemory("idx")                 \
+                              .HostMemory("count")               \
+                              .TypeConstraint<type>("T")         \
+                              .TypeConstraint<int32>("out_idx"), \
+                          UniqueAliOp<type, int32>)              \
+  REGISTER_KERNEL_BUILDER(Name("UniqueWithCounts")               \
+                              .Device(DEVICE_GPU)                \
+                              .HostMemory("x")                   \
+                              .HostMemory("y")                   \
+                              .HostMemory("idx")                 \
+                              .HostMemory("count")               \
+                              .TypeConstraint<type>("T")         \
+                              .TypeConstraint<int64>("out_idx"), \
+                          UniqueAliOp<type, int64>);
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_UNIQUE);
+REGISTER_UNIQUE(string)
+#undef REGISTER_UNIQUE
+#endif //GOOGLE_CUDA
   
 #ifdef TENSORFLOW_USE_SYCL
 REGISTER_KERNEL_BUILDER(Name("Unique")

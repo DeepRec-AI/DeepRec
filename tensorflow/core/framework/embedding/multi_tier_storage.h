@@ -243,6 +243,19 @@ class MultiTierStorage : public Storage<K, V> {
     }
   }
 
+  void UpdateCache(const Tensor& indices,
+                   const Tensor& indices_counts) override {
+    Schedule([this, indices, indices_counts]() {
+      cache_->update(indices, indices_counts);
+    });
+  }
+
+  void UpdateCache(const Tensor& indices) override {
+    Schedule([this, indices]() {
+      cache_->update(indices);
+    });
+  }
+
  protected:
   virtual void SetTotalDims(int64 total_dims) = 0;
 

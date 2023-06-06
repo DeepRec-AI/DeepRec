@@ -136,18 +136,29 @@ class AdagradOptimizer(optimizer.Optimizer):
         indices,
         use_locking=self._use_locking)
 
-  def _resource_apply_sparse(self, grad, var, indices):
+  def _resource_apply_sparse(self, grad, var, indices, indices_counts=None):
     acc = self.get_slot(var, "accumulator")
     if isinstance(var, kv_variable_ops.EmbeddingVariable):
       global_step = training_util.get_or_create_global_step()
-      return training_ops.kv_resource_sparse_apply_adagrad(
-        var.handle,
-        acc.handle,
-        math_ops.cast(self._learning_rate_tensor, grad.dtype),
-        grad,
-        indices,
-        global_step,
-        use_locking=self._use_locking)
+      if indices_counts != None:
+        return training_ops.kv_resource_sparse_apply_adagrad_with_counts(
+          var.handle,
+          acc.handle,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          grad,
+          indices,
+          global_step,
+          indices_counts,
+          use_locking=self._use_locking)
+      else:
+        return training_ops.kv_resource_sparse_apply_adagrad(
+          var.handle,
+          acc.handle,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          grad,
+          indices,
+          global_step,
+          use_locking=self._use_locking)
     else:
       return training_ops.resource_sparse_apply_adagrad(
         var.handle,

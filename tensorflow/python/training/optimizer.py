@@ -83,6 +83,15 @@ def _deduplicate_indexed_slices(values, indices):
       array_ops.shape(unique_indices)[0])
   return (summed_values, unique_indices)
 
+def _deduplicate_indexed_slices_with_counts(values, indices):
+  """Sums `values` associated with any non-unique `indices`
+  and return counts of each count in `values`."""
+  unique_indices, new_index_positions, indices_counts = \
+      array_ops.unique_with_counts(indices, out_idx=dtypes.int64)
+  summed_values = math_ops.unsorted_segment_sum(
+      values, new_index_positions,
+      array_ops.shape(unique_indices)[0])
+  return (summed_values, unique_indices, indices_counts)
 
 def _var_key(var):
   # TODO(ashankar): Consolidate handling for eager and graph
@@ -232,6 +241,10 @@ def _get_processor(v):
   if v.op.type == "VarHandleOp":
     return _DenseResourceVariableProcessor(v)
   if v.op.type == "KvVarHandleOp":
+    from tensorflow.core.framework import attr_value_pb2
+    from tensorflow.core.framework.embedding import config_pb2
+    v._init_op._set_attr("embedding_variable_type",
+        attr_value_pb2.AttrValue(i=config_pb2.EmbeddingVariableType.MUTABLE))
     return _DenseResourceVariableProcessor(v)
   if isinstance(v, variables.Variable):
     return _RefVariableProcessor(v)
@@ -1074,11 +1087,26 @@ class Optimizer(
     Returns:
       An `Operation` which updates the value of the variable.
     """
-    summed_grad, unique_indices = _deduplicate_indexed_slices(
-        values=grad, indices=indices)
-    return self._resource_apply_sparse(summed_grad, handle, unique_indices)
+    from tensorflow.python.ops import kv_variable_ops
+    if isinstance(handle, kv_variable_ops.EmbeddingVariable) and handle.need_counts():
+      if handle._counts_tensor is None:
+        summed_grad, unique_indices, indices_counts = \
+            _deduplicate_indexed_slices_with_counts(
+                values=grad, indices=indices)
+      else:
+        summed_grad, unique_indices = _deduplicate_indexed_slices(
+            values=grad, indices=indices)
+        indices_counts = handle._counts_tensor
+      return self._resource_apply_sparse(
+          summed_grad, handle, unique_indices, indices_counts)
+    else:
+      summed_grad, unique_indices = _deduplicate_indexed_slices(
+          values=grad, indices=indices)
+      indices_counts = None
+      return self._resource_apply_sparse(
+          summed_grad, handle, unique_indices)
 
-  def _resource_apply_sparse(self, grad, handle, indices):
+  def _resource_apply_sparse(self, grad, handle, indices, indices_count=None):
     """Add ops to apply sparse gradients to the variable `handle`.
 
     Similar to `_apply_sparse`, the `indices` argument to this method has been
@@ -1092,6 +1120,8 @@ class Optimizer(
        to be updated.
       indices: a `Tensor` of integral type representing the indices for
        which the gradient is nonzero. Indices are unique.
+      indices_count: a `Tensor` of integral type representing the count of
+       each index in `indices` when it is not None.
 
     Returns:
       An `Operation` which updates the value of the variable.

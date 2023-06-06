@@ -142,7 +142,7 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
   for (int64 i=0; i < insert_num; ++i) {
     ValuePtr<float>* value_ptr = nullptr;
     Status s = emb_var->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr);
+    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr, i);
     vflat += vflat.constant((float)i);
   }
 
@@ -182,7 +182,7 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
   for (int64 i=0; i < insert_num; ++i) {
     ValuePtr<float>* value_ptr = nullptr;
     Status s = emb_var->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr);
+    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr, i);
     emb_var->UpdateVersion(value_ptr, i);
   }
 
@@ -281,7 +281,7 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
   for (int64 i = 0; i < 5; i++) {
     ValuePtr<float>* value_ptr = nullptr;
     variable->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr, i);
     vflat(i) = 5.0;
   }
 
@@ -358,7 +358,7 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
   for (int64 i = 0; i < ev_size; i++) {
     ValuePtr<float>* value_ptr = nullptr;
     variable->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr, i);
   }
 
   LOG(INFO) << "size:" << variable->Size();
@@ -420,7 +420,7 @@ void multi_insertion(EmbeddingVar<int64, float>* variable, int64 value_size){
   for (long j = 0; j < 5; j++) {
     ValuePtr<float>* value_ptr = nullptr;
     variable->LookupOrCreateKey(j, &value_ptr);
-    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr, j);
   }
 }
 
@@ -908,7 +908,7 @@ void BM_MULTIREAD_LOCKLESS(int iters, int thread_num) {
   for (int64 i = 0; i < InsertLoop; i++){
     ValuePtr<float>* value_ptr = nullptr;
     variable->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr, i);
   }
 
   testing::StartTiming();
@@ -1196,7 +1196,7 @@ TEST(EmbeddingVariableTest, TestLRUCache) {
   for (int i = 0; i < num_access; i++){
     ids[i] = i % num_ids;
   }
-  cache->add_to_rank(ids, num_access);
+  cache->update(ids, num_access);
   int64 size = cache->get_evic_ids(evict_ids, num_evict);
   ASSERT_EQ(size, num_ids);
   ASSERT_EQ(cache->size(), 0);
@@ -1216,7 +1216,7 @@ TEST(EmbeddingVariableTest, TestLRUCacheGetCachedIds) {
   for (int i = 0; i < num_access; i++){
     ids[i] = i % num_ids;
   }
-  cache->add_to_rank(ids, num_access);
+  cache->update(ids, num_access);
   ASSERT_EQ(cache->size(), num_ids);
   int64* cached_ids = new int64[num_cache];
   int64* cached_freqs = new int64[num_cache];
@@ -1244,7 +1244,7 @@ TEST(EmbeddingVariableTest, TestLFUCacheGetCachedIds) {
   for (int i = 0; i < num_access; i++){
     ids[i] = i % num_ids;
   }
-  cache->add_to_rank(ids, num_access);
+  cache->update(ids, num_access);
   ASSERT_EQ(cache->size(), num_ids);
   int64* cached_ids = new int64[num_cache];
   int64* cached_freqs = new int64[num_cache];
@@ -1315,7 +1315,7 @@ TEST(EmbeddingVariableTest, TestLFUCache) {
   for (int i = 0; i < num_access; i++){
     ids[i] = i % num_ids;
   }
-  cache->add_to_rank(ids, num_access);
+  cache->update(ids, num_access);
   int64 size = cache->get_evic_ids(evict_ids, num_evict);
   ASSERT_EQ(size, num_ids);
   ASSERT_EQ(cache->size(), 0);

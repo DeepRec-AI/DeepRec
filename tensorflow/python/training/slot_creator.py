@@ -94,6 +94,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         validate_shape=validate_shape,
         steps_to_live=primary._steps_to_live,
         ht_partition_num=primary._ht_partition_num)
+      slot._init_op._set_attr("embedding_variable_type",
+            attr_value_pb2.AttrValue(i=config_pb2.EmbeddingVariableType.MUTABLE))
     else:
       filter_strategy = None
       if primary._filter_freq != 0:
@@ -130,6 +132,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
             l2_weight_threshold=primary._l2_weight_threshold,
             filter_strategy=filter_strategy)
         )
+        slot._init_op._set_attr("embedding_variable_type",
+            attr_value_pb2.AttrValue(i=config_pb2.EmbeddingVariableType.MUTABLE))
       else:
         slot = variable_scope.get_variable(
           scope,

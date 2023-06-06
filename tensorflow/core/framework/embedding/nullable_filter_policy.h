@@ -39,11 +39,11 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
     ValuePtr<V>* value_ptr = nullptr;
     Status s = ev->LookupKey(key, &value_ptr);
     if (s.ok()) {
-      V* mem_val = ev->LookupPrimaryEmb(value_ptr);
+      V* mem_val = ev->LookupOrCreateEmb(value_ptr, default_value_ptr);
       memcpy(val, mem_val, sizeof(V) * ev->ValueLen());
     } else {
-      memcpy(val, default_value_no_permission,
-          sizeof(V) * ev->ValueLen());
+      memcpy(val, default_value_ptr,
+             sizeof(V) * ev->ValueLen());
     }
     return Status::OK();
   }
@@ -57,7 +57,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
-      bool* is_filter) override {
+      bool* is_filter, int64 count) override {
     *is_filter = true;
     return ev_->LookupOrCreateKey(key, val);
   }

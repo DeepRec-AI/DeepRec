@@ -20,8 +20,8 @@ class BatchCache {
  public:
   BatchCache() {}
   virtual ~BatchCache() {}
-  void add_to_rank(const Tensor& t) {
-    add_to_rank((K*)t.data(), t.NumElements());
+  void update(const Tensor& t) {
+    update((K*)t.data(), t.NumElements());
   }
   void add_to_prefetch_list(const Tensor& t) {
     add_to_prefetch_list((K*)t.data(), t.NumElements());
@@ -30,16 +30,20 @@ class BatchCache {
     add_to_cache((K*)t.data(), t.NumElements());
   }
 
+  void update(const Tensor& t, const Tensor& counts_tensor) {
+    update((K*)t.data(), t.NumElements(),
+           nullptr, (int64*)counts_tensor.data());
+  }
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
   virtual size_t get_cached_ids(K* cached_ids, size_t k_size,
                                 int64* cached_versions,
                                 int64* cached_freqs) = 0;
-  virtual void add_to_rank(const K* batch_ids, size_t batch_size,
-                           bool use_locking=true) = 0;
-  virtual void add_to_rank(const K* batch_ids, size_t batch_size,
-                           const int64* batch_versions,
-                           const int64* batch_freqs,
-                           bool use_locking=true) = 0;
+  virtual void update(const K* batch_ids, size_t batch_size,
+                      bool use_locking=true) = 0;
+  virtual void update(const K* batch_ids, size_t batch_size,
+                      const int64* batch_versions,
+                      const int64* batch_freqs,
+                      bool use_locking=true) = 0;
   virtual void add_to_prefetch_list(
       const K* batch_ids, size_t batch_size) = 0;
   virtual void add_to_cache(
@@ -172,8 +176,8 @@ class LRUCache : public BatchCache<K> {
     return i;
   }
 
-  void add_to_rank(const K* batch_ids, size_t batch_size,
-                   bool use_locking=true) {
+  void update(const K* batch_ids, size_t batch_size,
+              bool use_locking=true) {
     mutex temp_mu;
     auto lock = BatchCache<K>::maybe_lock_cache(mu_, temp_mu, use_locking);
     for (size_t i = 0; i < batch_size; ++i) {
@@ -200,12 +204,12 @@ class LRUCache : public BatchCache<K> {
     }
   }
 
-  void add_to_rank(const K* batch_ids, size_t batch_size,
-                    const int64* batch_version,
-                    const int64* batch_freqs,
-                    bool use_locking = true) {
+  void update(const K* batch_ids, size_t batch_size,
+              const int64* batch_version,
+              const int64* batch_freqs,
+              bool use_locking = true) override {
     //TODO: add to rank accroding to the version of ids
-    add_to_rank(batch_ids, batch_size);
+    update(batch_ids, batch_size);
   }
 
   void add_to_prefetch_list(const K* batch_ids, const size_t batch_size) {
@@ -247,7 +251,7 @@ class LRUCache : public BatchCache<K> {
         nums_to_cache++;
       }
     }
-    add_to_rank(ids_to_cache.data(), nums_to_cache, false);
+    update(ids_to_cache.data(), nums_to_cache, false);
   }
 
  private:
@@ -334,8 +338,8 @@ class LFUCache : public BatchCache<K> {
     return true_size;
   }
 
-  void add_to_rank(const K *batch_ids, size_t batch_size,
-                   bool use_locking=true) {
+  void update(const K *batch_ids, size_t batch_size,
+              bool use_locking=true) {
     mutex temp_mu;
     auto lock = BatchCache<K>::maybe_lock_cache(mu_, temp_mu, use_locking);
     for (size_t i = 0; i < batch_size; ++i) {
@@ -370,10 +374,10 @@ class LFUCache : public BatchCache<K> {
     }
   }
 
-  void add_to_rank(const K *batch_ids, const size_t batch_size,
-                   const int64* batch_versions,
-                   const int64* batch_freqs,
-                   bool use_locking = true) {
+  void update(const K *batch_ids, const size_t batch_size,
+              const int64* batch_versions,
+              const int64* batch_freqs,
+              bool use_locking = true) override {
     mutex temp_mu;
     auto lock = BatchCache<K>::maybe_lock_cache(mu_, temp_mu, use_locking);
     for (size_t i = 0; i < batch_size; ++i) {
@@ -480,9 +484,9 @@ class LFUCache : public BatchCache<K> {
       }
     }
     const int64* versions_to_cache = nullptr;
-    add_to_rank(ids_to_cache.data(), nums_to_cache,
-                versions_to_cache, freqs_to_cache.data(),
-                false);
+    update(ids_to_cache.data(), nums_to_cache,
+           versions_to_cache, freqs_to_cache.data(),
+           false);
   }
 
 
