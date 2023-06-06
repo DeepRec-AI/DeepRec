@@ -151,6 +151,7 @@ from tensorflow.python.ops import check_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import lookup_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
@@ -2674,6 +2675,8 @@ class _SharedEmbeddingColumn(
               'The feature_column library already adds a variable under the '
               'hood.'.format(shared_embedding_collection))
         embedding_weights = shared_embedding_collection[0]
+        if isinstance(embedding_weights, kv_variable_ops.EmbeddingVariable):
+          embedding_shape = (self.dimension)
         if embedding_weights.get_shape() != embedding_shape:
           raise ValueError(
               'Shared embedding collection {} contains variable {} of '
