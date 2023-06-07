@@ -159,9 +159,8 @@ class OpKernel {
     // updates may result in one or more updates being ignored.  This does not
     // affect correctness but may slow down the update frequency.
     cost_estimate_.store(
-        (kCostDecay - 1) * cost_estimate_.load(std::memory_order_relaxed) /
-                kCostDecay +
-            (elapsed_cycles / kCostDecay),
+        ((kCostDecay - 1) * cost_estimate_.load(std::memory_order_relaxed) +
+                elapsed_cycles) / kCostDecay,
         std::memory_order_relaxed);
   }
 
