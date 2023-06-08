@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/embedding_config.h"
 #include "tensorflow/core/framework/embedding/filter_policy.h"
+#include "tensorflow/core/framework/embedding/intra_thread_copy_id_allocator.h"
 
 namespace tensorflow {
 
@@ -102,6 +103,70 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
         output, num_of_keys, embedding_ptr.data(),
         stream, event_mgr, ctx.gpu_device);
   }
+
+  void BatchLookupOrCreateKey(const EmbeddingVarContext<GPUDevice>& ctx,
+                              const K* keys, ValuePtr<V>** value_ptrs_list,
+                              int64 num_of_keys) {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    std::vector<std::vector<K>> lookup_or_create_ids(num_worker_threads);
+    std::vector<std::vector<int>>
+        lookup_or_create_cursor(num_worker_threads);
+    std::vector<std::vector<ValuePtr<V>*>>
+        lookup_or_create_ptrs(num_worker_threads);
+    IntraThreadCopyIdAllocator thread_copy_id_alloc(num_worker_threads);
+    std::vector<std::list<int64>>
+        not_found_cursor_list(num_worker_threads + 1);
+    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
+
+    auto do_work = [this, keys, value_ptrs_list,
+                    &lookup_or_create_ids,
+                    &lookup_or_create_ptrs,
+                    &lookup_or_create_cursor,
+                    main_thread_id,
+                    &thread_copy_id_alloc]
+         (int64 start, int64 limit) {
+      int copy_id =
+          thread_copy_id_alloc.GetCopyIdOfThread(main_thread_id);
+      for (int i = start; i < limit; i++) {
+        if (GetBloomFreq(keys[i]) >= config_.filter_freq) {
+          lookup_or_create_ids[copy_id].emplace_back(keys[i]);
+          lookup_or_create_ptrs[copy_id].emplace_back(value_ptrs_list[i]);
+          lookup_or_create_cursor[copy_id].emplace_back(i);
+        } else {
+          AddFreq(keys[i], 1);
+        }
+      }
+    };
+    auto worker_threads = ctx.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          1000, do_work);
+
+    std::vector<K> total_ids(num_of_keys);
+    std::vector<ValuePtr<V>*> total_ptrs(num_of_keys);
+    std::vector<int> total_cursors(num_of_keys);
+    int num_of_admit_id = 0;
+    for (int i = 0; i < num_worker_threads; i++) {
+      if (lookup_or_create_ids[i].size() > 0) {
+        memcpy(total_ids.data() + num_of_admit_id,
+               lookup_or_create_ids[i].data(),
+               sizeof(K) * lookup_or_create_ids[i].size());
+        memcpy(total_ptrs.data() + num_of_admit_id,
+               lookup_or_create_ptrs[i].data(),
+               sizeof(ValuePtr<V>*) * lookup_or_create_ptrs[i].size());
+        memcpy(total_cursors.data() + num_of_admit_id,
+               lookup_or_create_cursor[i].data(),
+               sizeof(int) * lookup_or_create_cursor[i].size());
+        num_of_admit_id += lookup_or_create_ids[i].size();
+      }
+    }
+
+    ev_->BatchLookupOrCreateKey(ctx, total_ids.data(), total_ptrs.data(),
+                                num_of_keys, not_found_cursor_list);
+    for (int i = 0; i < total_ptrs.size(); i++) {
+      value_ptrs_list[total_cursors[i]] = total_ptrs[i];
+    }
+  }
 #endif //GOOGLE_CUDA
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
@@ -119,6 +184,7 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter, int64 count) override {
+    *val = nullptr;
     if ((GetFreq(key, *val) + count) >= config_.filter_freq) {
       *is_filter = true;
       return ev_->LookupOrCreateKey(key, val);
@@ -138,6 +204,14 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
 
   void* GetBloomCounter() const {
     return bloom_counter_;
+  }
+
+  bool is_admit(K key, ValuePtr<V>* value_ptr) override {
+    if (value_ptr == nullptr) {
+      return false;
+    } else {
+      return GetFreq(key, value_ptr) >= config_.filter_freq;
+    }
   }
 
  private:

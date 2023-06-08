@@ -206,6 +206,9 @@ class Node {
            type_string() == "KvResourceSparseApplyGradientDescentWithCounts" ||
            type_string() == "KvResourceSparseApplyAdamWWithCounts";
   }
+  bool IsUnique() const {
+    return type_string() == "Unique" || type_string() == "UniqueWithCounts";
+  }
   bool IsPlaceholder() const { return type_string() == "Placeholder"; }
   bool IsSwitch() const { return class_ == NC_SWITCH; }
   bool IsMerge() const { return class_ == NC_MERGE; }

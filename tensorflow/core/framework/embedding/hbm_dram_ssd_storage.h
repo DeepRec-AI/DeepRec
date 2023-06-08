@@ -101,6 +101,31 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
         ssd_value_ptr_list[0], value_len);
   }
 
+  void BatchGetOrCreate(
+      const EmbeddingVarContext<GPUDevice>& ctx,
+      const K* keys,
+      ValuePtr<V>** value_ptr_list,
+      int64 num_of_keys,
+      int64 value_len,
+      std::vector<std::list<int64>>& not_fountd_cursor_list) override {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    std::vector<std::list<int64>>
+        copyback_cursor_list(num_worker_threads + 1);
+    std::vector<std::list<ValuePtr<V>*>>
+        ssd_value_ptr_list(num_worker_threads + 1);
+
+    BatchGetValuePtrs(ctx, keys, value_ptr_list, num_of_keys,
+                      copyback_cursor_list, ssd_value_ptr_list,
+                      &not_fountd_cursor_list);
+
+    CopyEmbeddingsFromDramToHbm(
+        ctx, keys, value_ptr_list, copyback_cursor_list[0],
+        ssd_value_ptr_list[0], value_len);
+
+    CreateValuePtrs(ctx, keys, value_ptr_list,
+                    not_fountd_cursor_list[0], value_len);
+  }
+
   void Insert(K key, ValuePtr<V>* value_ptr) override {
     hbm_->Insert(key, value_ptr);
   }
@@ -525,13 +550,30 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
       ValuePtr<V>** value_ptr_list,
       int64 num_of_keys,
       std::vector<std::list<int64>>& copyback_cursor_list,
-      std::vector<std::list<ValuePtr<V>*>>& ssd_value_ptr_list) {
+      std::vector<std::list<ValuePtr<V>*>>& ssd_value_ptr_list,
+      std::vector<std::list<int64>>* not_found_cursor_list = nullptr) {
     int num_worker_threads = ctx.worker_threads->num_threads;
     IntraThreadCopyIdAllocator thread_copy_id_alloc(num_worker_threads);
     uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
+
+    std::function<void(std::vector<std::list<int64>>*,
+                       int64, int)> set_not_found_list = 0;
+    if (not_found_cursor_list != nullptr) {
+      set_not_found_list =
+          [](std::vector<std::list<int64>>* not_found_cursor_list,
+             int64 i, int copy_id) {
+        (*not_found_cursor_list)[copy_id].emplace_back(i);
+      };
+    } else {
+      set_not_found_list =
+          [](std::vector<std::list<int64>>* not_found_cursor_list,
+             int64 i, int copy_id) {};
+    }
+
     auto do_work = [this, keys, value_ptr_list, &thread_copy_id_alloc,
                     main_thread_id, &copyback_cursor_list,
-                    &ssd_value_ptr_list]
+                    &ssd_value_ptr_list, set_not_found_list,
+                    &not_found_cursor_list]
         (int64 start, int64 limit) {
       int copy_id =
           thread_copy_id_alloc.GetCopyIdOfThread(main_thread_id);
@@ -549,6 +591,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
           }
         } else {
           value_ptr_list[i] = nullptr;
+          set_not_found_list(not_found_cursor_list, i, copy_id);
         }
       }
     };
@@ -565,6 +608,16 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
       if (ssd_value_ptr_list[i].size()>0) {
         ssd_value_ptr_list[0].splice(ssd_value_ptr_list[0].end(),
                                      ssd_value_ptr_list[i]);
+      }
+    }
+
+    if (not_found_cursor_list != nullptr) {
+      for (int i = 1; i < worker_threads->num_threads + 1; i++) {
+        if ((*not_found_cursor_list)[i].size()>0) {
+          (*not_found_cursor_list)[0].splice(
+              (*not_found_cursor_list)[0].end(),
+              (*not_found_cursor_list)[i]);
+        }
       }
     }
   }
@@ -606,10 +659,22 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
         memory_index, gpu_value_ptrs, value_len);
 
     //Insert copyback ids to hbm hash table.
-    auto do_insert = [this, copyback_keys, gpu_value_ptrs]
+    auto do_insert = [this, copyback_keys, gpu_value_ptrs,
+                      memory_index, value_ptr_list]
         (int64 start, int64 limit) {
-      for (int64 i = start; i < limit; i++)
-        hbm_->Insert(copyback_keys[i], gpu_value_ptrs[i]);
+      for (int64 i = start; i < limit; i++) {
+        Status s = hbm_->TryInsert(
+            copyback_keys[i], gpu_value_ptrs[i]);
+        if (!s.ok()) {
+          {
+            mutex_lock l(memory_pool_mu_);
+            embedding_mem_pool_->Deallocate(
+                gpu_value_ptrs[i]->GetValue(0, 0));
+          }
+          delete gpu_value_ptrs[i];
+          hbm_->Get(copyback_keys[i], &value_ptr_list[memory_index[i]]);
+        }
+      }
     };
     auto worker_threads = ctx.worker_threads;
     Shard(worker_threads->num_threads, worker_threads->workers,
@@ -618,6 +683,59 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     for (auto it = ssd_value_ptrs.cbegin();
          it != ssd_value_ptrs.cend(); ++it) {
       ssd_->DestroyValuePtr(*it);
+    }
+  }
+
+  void CreateValuePtrs(const EmbeddingVarContext<GPUDevice>& ctx,
+                       const K* keys,
+                       ValuePtr<V>** value_ptr_list,
+                       std::list<int64>& not_found_cursors,
+                       int64 value_len) {
+    int64 total = not_found_cursors.size();
+    if (total > 0) {
+      std::vector<std::pair<int64, ValuePtr<V>*>> insert_pairs(total);
+      std::vector<int64> cursor_index(total);
+      //Create Hbm ValuePtrs.
+      {
+        int64 i = 0;
+        auto it = not_found_cursors.cbegin();
+        //Mutex with eviction thread
+        mutex_lock l(memory_pool_mu_);
+        for ( ; it != not_found_cursors.cend(); ++it, ++i) {
+          int64 j = *it;
+          cursor_index[i] = j;
+          ValuePtr<V>* gpu_value_ptr = hbm_->CreateValuePtr(value_len);
+          V* val_ptr = embedding_mem_pool_->Allocate();
+          bool flag = gpu_value_ptr->SetPtr(val_ptr);
+          if (!flag) {
+            embedding_mem_pool_->Deallocate(val_ptr);
+          }
+          value_ptr_list[j] = gpu_value_ptr;
+          insert_pairs[i].first = keys[j];
+          insert_pairs[i].second = value_ptr_list[j];
+        }
+      }
+
+      //Insert copyback ids to hbm hash table.
+      auto do_insert = [this, insert_pairs, value_ptr_list, cursor_index]
+          (int64 start, int64 limit) {
+        for (int64 i = start; i < limit; i++) {
+          Status s = hbm_->TryInsert(
+              insert_pairs[i].first, insert_pairs[i].second);
+          if (!s.ok()) {
+            {
+              mutex_lock l(memory_pool_mu_);
+              embedding_mem_pool_->Deallocate(
+                  insert_pairs[i].second->GetValue(0, 0));
+            }
+            delete insert_pairs[i].second;
+            hbm_->Get(insert_pairs[i].first, &value_ptr_list[cursor_index[i]]);
+          }
+        }
+      };
+      auto worker_threads = ctx.worker_threads;
+      Shard(worker_threads->num_threads, worker_threads->workers,
+            total, 100000, do_insert);
     }
   }
 

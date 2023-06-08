@@ -257,6 +257,18 @@ class MultiTierStorage : public Storage<K, V> {
     });
   }
 
+  void AddToCachePrefetchList(const Tensor& indices) override {
+    Schedule([this, indices]() {
+      cache_->add_to_prefetch_list(indices);
+    });
+  }
+
+  void AddToCache(const Tensor& indices) override {
+    Schedule([this, indices]() {
+      cache_->add_to_cache(indices);
+    });
+  }
+
  protected:
   virtual void SetTotalDims(int64 total_dims) = 0;
 
