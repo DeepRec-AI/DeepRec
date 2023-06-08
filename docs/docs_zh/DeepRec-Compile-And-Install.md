@@ -46,13 +46,14 @@
 | Volta (V100)        | 7.0                          |
 | Turing (T4)         | 7.5                          |
 | Ampere (A10, A100)  | 8.0+8.6                      |
+| Hopper (H100, H800) | 9.0                          |
 
-如果希望编译出支持不同GPU卡上执行的版本，可以配置多个值，比如DeepRec中默认配置为"6.0,6.1,7.0,7.5,8.0"
+如果希望编译出支持不同GPU卡上执行的版本，可以配置多个值，比如DeepRec中默认配置为"7.0,7.5,8.0,8.6" (当前CIBUILD使用A10卡）
 
-比如配置环境变量TF_CUDA_COMPUTE_CAPABILITIES方法：
+如果编译的DeepRec需要执行在H100和A100的GPU卡上，配置环境变量TF_CUDA_COMPUTE_CAPABILITIES：
 
 ```bash
-export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
+export TF_CUDA_COMPUTE_CAPABILITIES="8.0,8.6,9.0"
 ```
 
 ```bash
