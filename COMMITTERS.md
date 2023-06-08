@@ -16,6 +16,7 @@
 - Wei LIN, weilin.lw@alibaba-inc.com, Alibaba
 - Ruozhou ZANG, zrzn@foxmail.com, MetaApp
 - Jin OUYANG, oyjmical@gmail.com, Kuaishou
+- Yue SONG, 13810271944@163.com, Kuaishou
 - Changqing LI, changqing.li@intel.com, Intel
 - Pujiang HE, pujiang.he@intel.com, Intel
 - Weifei YU, weifei.yu@intel.com, Intel
