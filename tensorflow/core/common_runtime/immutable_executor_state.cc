@@ -82,8 +82,7 @@ ImmutableExecutorState::FrameInfo* ImmutableExecutorState::EnsureFrameInfo(
   }
 }
 
-Status ImmutableExecutorState::Initialize() {
-  const Graph& graph = *graph_;
+Status ImmutableExecutorState::Initialize(const Graph& graph) {
   TF_RETURN_IF_ERROR(gview_.Initialize(&graph));
 
   // Build the information about frames in this subgraph.
@@ -263,8 +262,10 @@ Status ImmutableExecutorState::Initialize() {
   return gview_.SetAllocAttrs(&graph, params_.device);
 }
 
-Status ImmutableExecutorState::InitializeScheduleInfo(ExecutorInternal::KernelStats* kernel_stats) {
-  for (const Node* n : graph_->nodes()) {
+Status ImmutableExecutorState::InitializeScheduleInfo(
+    ExecutorInternal::KernelStats* kernel_stats,
+    const Graph& graph) {
+  for (const Node* n : graph.nodes()) {
     if (IsSink(n)) continue;
     const int id = n->id();
     NodeItem* item = gview_.node(id);
