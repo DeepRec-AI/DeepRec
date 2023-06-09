@@ -4243,7 +4243,7 @@ def group_embedding_column_scope(name='', params_num_per_group=sys.maxsize):
   else:
     name = "group_embedding_column_scope"
   if len(global_group_embedding_scope) == 0:
-    fusion_embedding_scope = GroupEmbeddingScope(name)
+    fusion_embedding_scope = GroupEmbeddingScope(name, params_num_per_group)
     global_group_embedding_scope.append(fusion_embedding_scope)
   else:
     fusion_embedding_scope = global_group_embedding_scope.pop(-1)
