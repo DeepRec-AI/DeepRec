@@ -48,43 +48,26 @@ class StageSubGraphOnCPUPass : public GraphOptimizationPass {
     std::unique_ptr<Graph> new_graph(new Graph(OpRegistry::Global()));
     CopyGraph(*graph, new_graph.get());
 
-    // Get CPU Device
-    std::string cpu_device_name="";
-    const DeviceSet* device_set = options.device_set;
-    GetCPUDevice(cpu_device_name, device_set);
-    if (cpu_device_name.empty()) {
-      LOG(INFO) << "Failed to Get CPU Device. "
-		<< "StageSubGraphOnCPU Optimization is disabled.";
-	return Status::OK();
-    }
-
     // Place Stage SubGraph on CPU.
-    PlaceStageSubGraphOnCPU(cpu_device_name, new_graph.get());
+    PlaceStageSubGraphOnCPU(new_graph.get());
 
     options.graph->swap(new_graph);
     return Status::OK();
   }
 
  private:
-  void GetCPUDevice(std::string& cpu_device_name, const DeviceSet* device_set) {
-    const auto& devices = device_set->devices();
-    for (auto iter = devices.begin(); iter != devices.end(); iter++) {
-      if ((*iter)->device_type() == "CPU") {
-	cpu_device_name = (*iter)->name();
-	return;
-      }
-    }
-  }
 
-  void PlaceStageSubGraphOnCPU(const std::string& cpu_device_name,
-			       Graph* graph) {
+  void PlaceStageSubGraphOnCPU(Graph* graph) {
     for (Node* n : graph->op_nodes()) {
       if (n->IsStage()) {
 	std::vector<Node*> start_node;
 	for (const Edge* e : n->in_edges())
 	  start_node.emplace_back(e->src());
 
-	auto set_stage_subgraph_node_device = [cpu_device_name](Node *node) {
+	auto set_stage_subgraph_node_device = [](Node *node) {
+          std::string cpu_device_name;
+          TF_CHECK_OK(DeviceNameUtils::DeviceNameToCpuDeviceName(
+              node->assigned_device_name(), &cpu_device_name));
 	  node->set_assigned_device_name(cpu_device_name);
 	};
         ReverseDFSFrom(*graph, start_node,
