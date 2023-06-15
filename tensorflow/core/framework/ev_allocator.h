@@ -18,6 +18,7 @@ limitations under the License.
 #include <atomic>
 #include <list>
 #include <vector>
+#include <readerwriterqueue.h>
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
 #include "tensorflow/core/framework/tracking_allocator.h"
@@ -163,24 +164,56 @@ class FreeList {
   }
 
   int PopBatch(int N, void** ret) {
-    if (list_.size() >= N) {
-      for (int i = 0; i < N; ++i) {
-        ret[i] = list_.back();
-        list_.pop_back();
-      }
-      return N;
-    } else {
-      auto loop = list_.size();
-      for (int i = 0; i < loop; ++i) {
-        ret[i] = list_.back();
-        list_.pop_back();
-      }
-      return loop;
+    int count = list_.size();
+    if (count > N) {
+      count = N;
     }
+    for (int i = 0; i < count; ++i) {
+      ret[i] = list_.back();
+      list_.pop_back();
+    }
+
+    return count;
   }
 
  private:
   std::list<void*> list_;
+};
+
+class FreeQueue {
+ public:
+  void Push(void* ptr) {
+    q_.enqueue(ptr);
+  }
+
+  bool TryPop(void** ret) {
+    return q_.try_dequeue(*ret);
+  }
+
+  // PushBatch and PopBatch do not guarantee an ordering.
+  void PushBatch(int N, void** ptrs) {
+    for (int i = 0; i < N; ++i) {
+      q_.enqueue(ptrs[i]);
+    }
+  }
+
+  int PopBatch(int N, void** ret) {
+    int pop_count = 0;
+    while (pop_count < N) {
+      bool succeeded = q_.try_dequeue(ret[pop_count]);
+      if (!succeeded) {
+        break;
+      }
+      ++pop_count;
+    }
+
+    return pop_count;
+  }
+
+ private:
+  // NOTE(TODO): Consider to use concurrentqueue instead,
+  // that we can delete mutex in Bin.
+  moodycamel::ReaderWriterQueue<void*> q_;
 };
 
 template<typename ChunkType>
@@ -266,7 +299,7 @@ class Bin {
 
   size_t BatchAllocate(size_t num, void** ret) {
     mutex_lock l(mu_);
-    auto allocated = free_list_.PopBatch(num, ret);
+    auto allocated = free_queue_.PopBatch(num, ret);
     auto remains = num - allocated;
     if (remains == 0) {
       return num;
@@ -304,7 +337,7 @@ class Bin {
 
   void BatchDeallocate(std::vector<void *> &ptrs) {
     mutex_lock l(mu_);
-    free_list_.PushBatch(ptrs.size(), ptrs.data());
+    free_queue_.PushBatch(ptrs.size(), ptrs.data());
   }
 
   size_t BinSize() const {
@@ -325,7 +358,7 @@ class Bin {
   PageMap<ChunkType>* page_map_ = nullptr GUARDED_BY(mu_);
   Chunk<ChunkType>* current_chunk_ = nullptr GUARDED_BY(mu_);
 
-  FreeList free_list_ GUARDED_BY(mu_);
+  FreeQueue free_queue_ GUARDED_BY(mu_);
   std::vector<Chunk<ChunkType>*> chunks_ GUARDED_BY(mu_);
 };
 
@@ -354,7 +387,7 @@ class Arena {
         bin = it->second;
       }
     }
-    
+
     return bin->BatchAllocate(num, ret);
   }
 
