@@ -582,30 +582,14 @@ class EmbeddingVar : public ResourceBase {
                              emb_config_, device, reader, this, filter_);
   }
 
-  int64 GetSnapshot(std::vector<K>* key_list,
-                    std::vector<V* >* value_list,
-                    std::vector<int64>* version_list,
-                    std::vector<int64>* freq_list,
-                    embedding::Iterator** it = nullptr) {
-    // for Interface Compatible
-    // TODO Multi-tiered Embedding should use iterator in 'GetSnapshot' caller
-    embedding::Iterator* _it = nullptr;
-    it = (it == nullptr) ? &_it : it;
-    return storage_->GetSnapshot(
-        key_list, value_list, version_list,
-        freq_list, emb_config_, filter_, it);
-  }
-
-  int64 GetSnapshotWithoutFetchPersistentEmb(
-      std::vector<K>* key_list,
-      std::vector<V*>* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
-      SsdRecordDescriptor<K>* ssd_rec_desc) {
-    return storage_->
-        GetSnapshotWithoutFetchPersistentEmb(
-            key_list, value_list, version_list,
-            freq_list, emb_config_, ssd_rec_desc);
+  Status Save(const string& tensor_name,
+              const string& prefix,
+              BundleWriter* writer,
+              embedding::ShrinkArgs& shrink_args) {
+    return storage_->Save(tensor_name, prefix,
+                          writer, emb_config_,
+                          shrink_args, value_len_,
+                          default_value_);
   }
 
   mutex* mu() {

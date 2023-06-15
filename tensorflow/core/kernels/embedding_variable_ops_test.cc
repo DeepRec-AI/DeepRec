@@ -118,86 +118,6 @@ std::vector<string> AllTensorKeys(BundleReader* reader) {
   return ret;
 }
 
-TEST(TensorBundleTest, TestEVShrinkL2) {
-  int64 value_size = 3;
-  int64 insert_num = 5;
-  Tensor value(DT_FLOAT, TensorShape({value_size}));
-  test::FillValues<float>(&value, std::vector<float>(value_size, 1.0));
-  //float* fill_v = (float*)malloc(value_size * sizeof(float));
-  EmbeddingConfig emb_config = 
-      EmbeddingConfig(0, 0, 1, 1, "", 0, 0, 99999, 14.0);
-  auto storage = embedding::StorageFactory::Create<int64, float>(
-      embedding::StorageConfig(
-          StorageType::DRAM,
-          "", {1024, 1024, 1024, 1024},
-          "light",
-          emb_config),
-      cpu_allocator(),
-      "name");
-  auto emb_var = new EmbeddingVar<int64, float>("name",
-        storage, emb_config,
-        cpu_allocator());
-  emb_var ->Init(value, 1);
-  
-  for (int64 i=0; i < insert_num; ++i) {
-    ValuePtr<float>* value_ptr = nullptr;
-    Status s = emb_var->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr, i);
-    vflat += vflat.constant((float)i);
-  }
-
-  int size = emb_var->Size();
-  embedding::ShrinkArgs shrink_args;
-  emb_var->Shrink(shrink_args);
-  LOG(INFO) << "Before shrink size:" << size;
-  LOG(INFO) << "After shrink size:" << emb_var->Size();
-
-  ASSERT_EQ(emb_var->Size(), 2);
-}
-
-TEST(TensorBundleTest, TestEVShrinkLockless) {
-
-  int64 value_size = 64;
-  int64 insert_num = 30;
-  Tensor value(DT_FLOAT, TensorShape({value_size}));
-  test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
-  float* fill_v = (float*)malloc(value_size * sizeof(float));
-
-  int steps_to_live = 5;
-  EmbeddingConfig emb_config = EmbeddingConfig(0, 0, 1, 1, "", steps_to_live);
-  auto storage = embedding::StorageFactory::Create<int64, float>(
-      embedding::StorageConfig(
-          StorageType::DRAM,
-          "", {1024, 1024, 1024, 1024},
-          "normal",
-          emb_config),
-      cpu_allocator(),
-      "name");
-  auto emb_var = new EmbeddingVar<int64, float>("name",
-      storage, emb_config,
-      cpu_allocator());
-  emb_var ->Init(value, 1);
-  LOG(INFO) << "size:" << emb_var->Size();
-
-  for (int64 i=0; i < insert_num; ++i) {
-    ValuePtr<float>* value_ptr = nullptr;
-    Status s = emb_var->LookupOrCreateKey(i, &value_ptr);
-    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr, i);
-    emb_var->UpdateVersion(value_ptr, i);
-  }
-
-  int size = emb_var->Size();
-  embedding::ShrinkArgs shrink_args;
-  shrink_args.global_step = insert_num;
-  emb_var->Shrink(shrink_args);
-
-  LOG(INFO) << "Before shrink size:" << size;
-  LOG(INFO) << "After shrink size: " << emb_var->Size();
-
-  ASSERT_EQ(size, insert_num);
-  ASSERT_EQ(emb_var->Size(), steps_to_live);
-}
-
 TEST(EmbeddingVariableTest, TestEmptyEV) {
   int64 value_size = 8;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
@@ -213,7 +133,9 @@ TEST(EmbeddingVariableTest, TestEmptyEV) {
     Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
     BundleWriter writer(Env::Default(), Prefix("foo"));
-    DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
+    embedding::ShrinkArgs shrink_args;
+    shrink_args.global_step = 1;
+    variable->Save("var/part_0", Prefix("foo"), &writer, shrink_args);
     TF_ASSERT_OK(writer.Finish());
 
     {
@@ -288,7 +210,9 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
   LOG(INFO) << "size:" << variable->Size();
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
-  DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
+  embedding::ShrinkArgs shrink_args;
+  shrink_args.global_step = 1;
+  variable->Save("var/part_0", Prefix("foo"), &writer, shrink_args);
   TF_ASSERT_OK(writer.Finish());
 
   {
@@ -364,7 +288,9 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
   LOG(INFO) << "size:" << variable->Size();
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
-  DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
+  embedding::ShrinkArgs shrink_args;
+  shrink_args.global_step = 1;
+  variable->Save("var/part_0", Prefix("foo"), &writer, shrink_args);
   TF_ASSERT_OK(writer.Finish());
 
   {
@@ -444,15 +370,7 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
     t.join();
   }
 
-  std::vector<int64> tot_key_list;
-  std::vector<float* > tot_valueptr_list;
-  std::vector<int64> tot_version_list;
-  std::vector<int64> tot_freq_list;
-  embedding::Iterator* it = nullptr;
-  int64 total_size = variable->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list, &it);
-
   ASSERT_EQ(variable->Size(), 5);
-  ASSERT_EQ(variable->Size(), total_size);
 }
 
 void InsertAndLookup(EmbeddingVar<int64, float>* variable,
@@ -511,9 +429,7 @@ TEST(EmbeddingVariableTest, TestBloomFilter) {
   std::vector<int64> version_list;
   std::vector<int64> freq_list;
 
-  embedding::Iterator* it = nullptr;
-  var->GetSnapshot(&keylist, &valuelist, &version_list, &freq_list, &it);
-  ASSERT_EQ(var->Size(), keylist.size());  
+  ASSERT_EQ(var->Size(), 1);
 }
 
 TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
@@ -1091,63 +1007,6 @@ TEST(EmbeddingVariableTest, TestSizeDBKV) {
   TF_CHECK_OK(hashmap->Remove(2));
   ASSERT_EQ(hashmap->Size(), 98);
   LOG(INFO) << "2 size:" << hashmap->Size();
-}
-
-TEST(EmbeddingVariableTest, TestSSDIterator) {
-  std::string temp_dir = testing::TmpDir();
-  Allocator* alloc = ev_allocator();
-  auto hashmap = new SSDHashKV<int64, float>(temp_dir, alloc);
-  hashmap->SetTotalDims(126);
-  ASSERT_EQ(hashmap->Size(), 0);
-  std::vector<ValuePtr<float>*> value_ptrs;
-  for (int64 i = 0; i < 10; ++i) {
-    auto tmp = new NormalContiguousValuePtr<float>(alloc, 126);
-    tmp->SetValue((float)i, 126);
-    value_ptrs.emplace_back(tmp);
-  }
-  for (int64 i = 0; i < 10; i++) {
-    hashmap->Commit(i, value_ptrs[i]);
-  }
-  embedding::Iterator* it = hashmap->GetIterator();
-  int64 index = 0;
-  float val_p[126] = {0.0};
-  for (it->SeekToFirst(); it->Valid(); it->Next()) {
-    int64 key = -1;
-    it->Key((char*)&key, sizeof(int64));
-    it->Value((char*)val_p, 126 * sizeof(float), 0);
-    ASSERT_EQ(key, index);
-    for (int i = 0; i < 126; i++)
-      ASSERT_EQ(val_p[i], key);
-    index++;
-  }
-}
-
-TEST(EmbeddingVariableTest, TestLevelDBIterator) {
-  auto hashmap = new LevelDBKV<int64, float>(testing::TmpDir());
-  hashmap->SetTotalDims(126);
-  ASSERT_EQ(hashmap->Size(), 0);
-  std::vector<ValuePtr<float>*> value_ptrs;
-  for (int64 i = 0; i < 10; ++i) {
-    ValuePtr<float>* tmp =
-      new NormalContiguousValuePtr<float>(ev_allocator(), 126);
-    tmp->SetValue((float)i, 126);
-    value_ptrs.emplace_back(tmp);
-  }
-  for (int64 i = 0; i < 10; i++) {
-    hashmap->Commit(i, value_ptrs[i]);
-  }
-  embedding::Iterator* it = hashmap->GetIterator();
-  int64 index = 0;
-  float val_p[126] = {0.0};
-  for (it->SeekToFirst(); it->Valid(); it->Next()) {
-    int64 key = -1;
-    it->Key((char*)&key, sizeof(int64));
-    it->Value((char*)val_p, 126 * sizeof(float), 0);
-    ASSERT_EQ(key, index);
-    for (int i = 0; i < 126; i++)
-      ASSERT_EQ(val_p[i], key);
-    index++;
-  }
 }
 
 TEST(EmbeddingVariableTest, TestLRUCachePrefetch) {

@@ -150,59 +150,41 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
     return -1;
   }
 
-  Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>* >* value_ptr_list) override {
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      TF_CHECK_OK(dram_->GetSnapshot(key_list, value_ptr_list));
-    }
-    {
-      mutex_lock l(*(pmem_->get_mutex()));
-      TF_CHECK_OK(pmem_->GetSnapshot(key_list, value_ptr_list));
-    }
-    return Status::OK();
-  }
-
-  Status Shrink(const ShrinkArgs& shrink_args) override {
-    dram_->Shrink(shrink_args);
-    pmem_->Shrink(shrink_args);
-    return Status::OK();
-  }
-
-  void iterator_mutex_lock() override {
-    return;
-  }
-
-  void iterator_mutex_unlock() override {
-    return;
-  }
-
-  int64 GetSnapshot(std::vector<K>* key_list,
-      std::vector<V* >* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
+  Status Save(
+      const string& tensor_name,
+      const string& prefix,
+      BundleWriter* writer,
       const EmbeddingConfig& emb_config,
-      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
-      embedding::Iterator** it) override {
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      std::vector<K> key_list_tmp;
-      TF_CHECK_OK(dram_->GetSnapshot(&key_list_tmp, &value_ptr_list));
-      MultiTierStorage<K, V>::SetListsForCheckpoint(
-          key_list_tmp, value_ptr_list, emb_config,
-          key_list, value_list, version_list, freq_list);
+      ShrinkArgs& shrink_args,
+      int64 value_len,
+      V* default_value) override {
+    std::vector<K> key_list, tmp_pmem_key_list;
+    std::vector<ValuePtr<V>*> value_ptr_list, tmp_pmem_value_list;
+
+    TF_CHECK_OK(dram_->GetSnapshot(&key_list, &value_ptr_list));
+    dram_->Shrink(key_list, value_ptr_list, shrink_args, value_len);
+
+    TF_CHECK_OK(pmem_->GetSnapshot(&tmp_pmem_key_list,
+                                   &tmp_pmem_value_list));
+    pmem_->Shrink(tmp_pmem_key_list, tmp_pmem_value_list,
+                  shrink_args, value_len);
+
+    for (int64 i = 0; i < tmp_pmem_key_list.size(); i++) {
+      Status s = dram_->Contains(tmp_pmem_key_list[i]);
+      if (!s.ok()) {
+        key_list.emplace_back(tmp_pmem_key_list[i]);
+        value_ptr_list.emplace_back(tmp_pmem_value_list[i]);
+      }
     }
-    {
-      mutex_lock l(*(pmem_->get_mutex()));
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      std::vector<K> key_list_tmp;
-      TF_CHECK_OK(pmem_->GetSnapshot(&key_list_tmp, &value_ptr_list));
-      MultiTierStorage<K, V>::SetListsForCheckpoint(
-          key_list_tmp, value_ptr_list, emb_config,
-          key_list, value_list, version_list, freq_list);
-    }
-    return key_list->size();
+
+    TF_CHECK_OK((Storage<K, V>::SaveToCheckpoint(
+        tensor_name, writer,
+        emb_config,
+        value_len, default_value,
+        key_list,
+        value_ptr_list)));
+
+    return Status::OK();
   }
 
   Status Eviction(K* evict_ids, int64 evict_size) override {

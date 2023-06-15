@@ -302,45 +302,67 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     return false;
   }
 
-  void iterator_mutex_lock() override {
-    ssd_->get_mutex()->lock();
-  }
+  Status Save(
+      const string& tensor_name,
+      const string& prefix,
+      BundleWriter* writer,
+      const EmbeddingConfig& emb_config,
+      ShrinkArgs& shrink_args,
+      int64 value_len,
+      V* default_value) override {
+    std::vector<K> key_list, tmp_dram_key_list;
+    std::vector<ValuePtr<V>*> value_ptr_list, tmp_dram_value_list;
+    TF_CHECK_OK(hbm_->GetSnapshot(&key_list, &value_ptr_list));
+    hbm_->Shrink(key_list, value_ptr_list, shrink_args, value_len);
 
-  void iterator_mutex_unlock() override {
-    ssd_->get_mutex()->unlock();
-  }
+    HbmValueIterator<K, V> hbm_value_iter(
+        key_list, value_ptr_list,
+        emb_config.emb_index, Storage<K, V>::alloc_len_,
+        gpu_alloc_);
 
-  Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>* >* value_ptr_list) override {
+    std::vector<ValuePtr<V>*> tmp_hbm_value_ptrs(value_ptr_list.size());
+    for (int64 i = 0; i < value_ptr_list.size(); i++) {
+      ValuePtr<V>* value_ptr = hbm_->CreateValuePtr(value_len);
+      memcpy((char *)value_ptr->GetPtr(),
+             (char *)value_ptr_list[i]->GetPtr(),
+             sizeof(FixedLengthHeader));
+      value_ptr->SetPtr((V*)ValuePosition::NOT_IN_DRAM);
+      value_ptr->SetInitialized(emb_config.primary_emb_index);
+      tmp_hbm_value_ptrs[i] = value_ptr;
+      value_ptr_list[i] = value_ptr;
+    }
+
+    TF_CHECK_OK(dram_->GetSnapshot(&tmp_dram_key_list,
+                                   &tmp_dram_value_list));
+    dram_->Shrink(tmp_dram_key_list, tmp_dram_value_list,
+                  shrink_args, value_len);
+
+    for (int64 i = 0; i < tmp_dram_key_list.size(); i++) {
+      Status s = hbm_->Contains(tmp_dram_key_list[i]);
+      if (!s.ok()) {
+        key_list.emplace_back(tmp_dram_key_list[i]);
+        value_ptr_list.emplace_back(tmp_dram_value_list[i]);
+      }
+    }
+
     {
       mutex_lock l(*(hbm_->get_mutex()));
-      TF_CHECK_OK(hbm_->GetSnapshot(key_list, value_ptr_list));
+      TF_CHECK_OK((Storage<K, V>::SaveToCheckpoint(
+          tensor_name, writer,
+          emb_config,
+          value_len, default_value,
+          key_list,
+          value_ptr_list,
+          &hbm_value_iter)));
     }
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      TF_CHECK_OK(dram_->GetSnapshot(key_list, value_ptr_list));
-    }
-    {
-      mutex_lock l(*(ssd_->get_mutex()));
-      TF_CHECK_OK(ssd_->GetSnapshot(key_list, value_ptr_list));
-    }
-    return Status::OK();
-  }
 
-  int64 GetSnapshot(std::vector<K>* key_list,
-      std::vector<V* >* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
-      const EmbeddingConfig& emb_config,
-      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
-      embedding::Iterator** it) override {
-    LOG(FATAL)<<"HbmDramSsdStorage dosen't support GetSnaoshot.";
-  }
+    for (auto it: tmp_hbm_value_ptrs) {
+      delete it;
+    }
 
-  Status Shrink(const ShrinkArgs& shrink_args) override {
-    hbm_->Shrink(shrink_args);
-    dram_->Shrink(shrink_args);
-    ssd_->Shrink(shrink_args);
+    ssd_->Save(tensor_name, prefix, writer, emb_config,
+               shrink_args, value_len, default_value);
+
     return Status::OK();
   }
 

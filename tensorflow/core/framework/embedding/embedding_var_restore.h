@@ -40,9 +40,7 @@ using GPUDevice = Eigen::GpuDevice;
 template<typename K, typename V>
 class EmbeddingVar;
 
-
 namespace {
-  const int kSavedPartitionNum = 1000;
   const size_t kBufferSize = 8 << 20;
   constexpr char kPartStr[] = "part_";
   

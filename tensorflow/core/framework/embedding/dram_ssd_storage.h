@@ -144,70 +144,21 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return true;
   }
 
-  Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>*>* value_ptr_list) override {
-    {
-     mutex_lock l(*(dram_->get_mutex()));
-      TF_CHECK_OK(dram_->GetSnapshot(key_list, value_ptr_list));
-    }
-    {
-      mutex_lock l(*(ssd_hash_->get_mutex()));
-      TF_CHECK_OK(ssd_hash_->GetSnapshot(key_list, value_ptr_list));
-    }
-    return Status::OK();
-  }
-
-  Status Shrink(const ShrinkArgs& shrink_args) override {
-    dram_->Shrink(shrink_args);
-    ssd_hash_->Shrink(shrink_args);
-    return Status::OK();
-  }
-
-  int64 GetSnapshot(std::vector<K>* key_list,
-      std::vector<V* >* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
+  Status Save(
+      const string& tensor_name,
+      const string& prefix,
+      BundleWriter* writer,
       const EmbeddingConfig& emb_config,
-      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
-      embedding::Iterator** it) override {
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      std::vector<K> key_list_tmp;
-      TF_CHECK_OK(dram_->GetSnapshot(&key_list_tmp, &value_ptr_list));
-      MultiTierStorage<K, V>::SetListsForCheckpoint(
-          key_list_tmp, value_ptr_list, emb_config,
-          key_list, value_list, version_list, freq_list);
-    }
-    {
-      mutex_lock l(*(ssd_hash_->get_mutex()));
-      *it = ssd_hash_->GetIterator();
-    }
-    return key_list->size();
-  }
+      ShrinkArgs& shrink_args,
+      int64 value_len,
+      V* default_value) override {
+    dram_->Save(tensor_name, prefix, writer, emb_config,
+                shrink_args, value_len, default_value);
 
-  int64 GetSnapshotWithoutFetchPersistentEmb(
-      std::vector<K>* key_list,
-      std::vector<V*>* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
-      const EmbeddingConfig& emb_config,
-      SsdRecordDescriptor<K>* ssd_rec_desc) override {
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      std::vector<K> temp_key_list;
-      TF_CHECK_OK(dram_->GetSnapshot(&temp_key_list, &value_ptr_list));
-      MultiTierStorage<K, V>::SetListsForCheckpoint(
-          temp_key_list, value_ptr_list, emb_config,
-          key_list, value_list, version_list,
-          freq_list);
-    }
-    {
-      mutex_lock l(*(ssd_hash_->get_mutex()));
-      ssd_hash_->SetSsdRecordDescriptor(ssd_rec_desc);
-    }
-    return key_list->size() + ssd_rec_desc->key_list.size();
+    ssd_hash_->Save(tensor_name, prefix, writer, emb_config,
+                    shrink_args, value_len, default_value);
+
+    return Status::OK();
   }
 
   Status RestoreSSD(int64 emb_index, int64 emb_slot_num, int64 value_len,

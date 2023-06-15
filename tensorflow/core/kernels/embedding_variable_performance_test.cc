@@ -354,17 +354,10 @@ void PerfSave(Tensor& default_value,
   BundleWriter writer(Env::Default(), Prefix("foo"));
   timespec start, end;
   double total_time = 0.0;
-  if (steps_to_live != 0 || l2_weight_threshold != -1.0) {
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    embedding::ShrinkArgs shrink_args;
-    shrink_args.global_step = 100;
-    ev->Shrink(shrink_args);
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    total_time += (double)(end.tv_sec - start.tv_sec) *
-                  1000000000 + end.tv_nsec - start.tv_nsec;
-  }
+  embedding::ShrinkArgs shrink_args;
+  shrink_args.global_step = 100;
   clock_gettime(CLOCK_MONOTONIC, &start);
-  DumpEmbeddingValues(ev, "var", &writer, &part_offset_tensor);
+  ev->Save("var", Prefix("foo"), &writer, shrink_args);
   clock_gettime(CLOCK_MONOTONIC, &end);
   total_time += (double)(end.tv_sec - start.tv_sec) *
                  1000000000 + end.tv_nsec - start.tv_nsec;

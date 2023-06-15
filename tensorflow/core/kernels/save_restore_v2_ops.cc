@@ -126,19 +126,14 @@ class SaveV2 : public OpKernel {
                    LookupResource(context,
                      HandleFromInput(context, variable_index), &variable));
     const Tensor& global_step = context->input(3);
-    Tensor part_offset_tensor;
-    context->allocate_temp(DT_INT32,
-                           TensorShape({kSavedPartitionNum + 1}),
-                           &part_offset_tensor);
     TGlobalStep global_step_scalar = global_step.scalar<TGlobalStep>()();
     core::ScopedUnref s(variable);
     embedding::ShrinkArgs shrink_args;
     shrink_args.global_step = global_step_scalar;
-    OP_REQUIRES_OK(context, variable->Shrink(shrink_args));
     const Tensor& prefix = context->input(0);
     const string& prefix_string = prefix.scalar<tstring>()();
-    OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,
-        &writer, &part_offset_tensor, prefix_string));
+    OP_REQUIRES_OK(context, variable->Save(tensor_name,
+        prefix_string, &writer, shrink_args));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -304,19 +299,14 @@ class SaveV3 : public OpKernel {
       EmbeddingVar<TKey, TValue>* variable,
       const string& tensor_name, BundleWriter& writer) {
     const Tensor& global_step = context->input(5);
-    Tensor part_offset_tensor;
-    context->allocate_temp(DT_INT32,
-                           TensorShape({kSavedPartitionNum + 1}),
-                           &part_offset_tensor);
     TGlobalStep global_step_scalar = global_step.scalar<TGlobalStep>()();
     core::ScopedUnref s(variable);
     embedding::ShrinkArgs shrink_args;
     shrink_args.global_step = global_step_scalar;
-    OP_REQUIRES_OK(context, variable->Shrink(shrink_args));
     const Tensor& prefix = context->input(0);
     const string& prefix_string = prefix.scalar<tstring>()();
-    OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,
-          &writer, &part_offset_tensor, prefix_string));
+    OP_REQUIRES_OK(context, variable->Save(tensor_name,
+        prefix_string, &writer, shrink_args));
   }
 
   void Compute(OpKernelContext* context) override {
