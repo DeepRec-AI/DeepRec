@@ -330,6 +330,17 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
+        name = "readerwriterqueue_archive",
+        build_file = clean_dep("//third_party:readerwriterqueue.BUILD"),
+        sha256 = "fc68f55bbd49a8b646462695e1777fb8f2c0b4f342d5e6574135211312ba56c1",
+        strip_prefix = "readerwriterqueue-1.0.6",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/cameron314/readerwriterqueue/archive/v1.0.6.tar.gz",
+            "https://github.com/cameron314/readerwriterqueue/archive/v1.0.6.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
         name = "png_archive",                                    # PNG Reference Library License
         build_file = clean_dep("//third_party:png.BUILD"),
         patch_file = [clean_dep("//third_party:png_fix_rpi.patch")],
