@@ -11,6 +11,7 @@ option go_package = "github.com/tensorflow/tensorflow/tensorflow/go/core/protobu
 import "tensorflow/core/framework/cost_graph.proto";
 import "tensorflow/core/framework/graph.proto";
 import "tensorflow/core/framework/step_stats.proto";
+import "tensorflow/core/lib/core/error_codes.proto";
 import "tensorflow/core/protobuf/cluster.proto";
 import "tensorflow/core/protobuf/debug.proto";
 import "tensorflow/core/protobuf/rewriter_config.proto";
@@ -216,11 +217,35 @@ message GPUOptions {
   bool cuda_graph_enable_jit = 11;
 }
 
+// Options passed to the prefetch runner.
+message PrefetchRunnerOptions {
+  // RunOptions for session run prefetch subgraph.
+  RunOptions run_options = 1;
+  // Ops that repeats by prefetch runner for each thread.
+  repeated string fetch_ops = 2;
+  // Op that stops fetch_ops on stop of prefetch runner.
+  string cancel_op = 3;
+  // Op that restarts fetch_ops on start of this runner.
+  string resume_op = 4;
+  // Op that closes the data buffer.
+  string close_op = 5;
+  // (Optional) named_feed_input_ops is in format <feed_op, value_generator_op>
+  // `feed_op` is the consumer op in main graph.
+  // `value_generator_op` is the generator op that produces the value for
+  // `feed_op`.
+  map<string, string> named_feed_input_tensors = 6;
+  // (Optional) Exception types indicating that the prefetching is normally
+  // finished.
+  repeated error.Code closed_exceptions = 7;
+  // (Optional) Exception types indicating that the prefetching can continue.
+  repeated error.Code ignored_exceptions= 8;
+}
+
 // Options passed to the async embedding
 message AsyncEmbeddingOptions {
   // Prefetch threads num
   int32 threads_num = 1;
-  // Prefetch buffer size 
+  // Prefetch buffer size
   int32 capacity = 2;
   // Use stage subgraph thread pool for stage subgraph or not
   bool use_stage_subgraph_thread_pool = 3;

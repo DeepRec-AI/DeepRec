@@ -136,8 +136,8 @@ py_library(
         ":nn",
         ":ops",
         ":platform",
-	    ":prefetch",
-        ":prefetch_runner",
+        ":prefetch",
+        ":prefetch_runner_hook",
         ":proto_ops",
         ":pywrap_tensorflow",
         ":rnn_ops_gen",
@@ -2966,21 +2966,27 @@ py_library(
         ":framework",
         ":framework_ops",
         ":framework_for_generated_wrappers",
+        ":prefetch_runner_hook",
     ],
 )
 
-py_library(
+cc_library(
     name = "prefetch_runner",
-    srcs = ["ops/prefetch_runner.py"],
-    srcs_version = "PY2AND3",
+    srcs = ["ops/prefetch_runner.cc"],
+    hdrs = ["ops/prefetch_runner.h"],
     deps = [
-        ":array_ops",
-        ":clip_ops",
-        ":control_flow_ops",
-        ":tensor_buffer_ops_gen",
-        ":framework",
-        ":framework_for_generated_wrappers",
+        "//tensorflow/c:c_api",
+        "//tensorflow/c:c_api_internal",
+        "//tensorflow/c:tf_status_helper",
+        "//tensorflow/cc:prefetch_runner",
     ],
+    alwayslink = 1,
+)
+
+py_library(
+    name = "prefetch_runner_hook",
+    srcs = ["ops/prefetch_runner_hook.py"],
+    srcs_version = "PY2AND3",
 )
 
 py_library(
@@ -4670,8 +4676,8 @@ py_library(
         ":util",
         ":variable_scope",
         ":variables",
-	":prefetch",
-	":prefetch_runner",
+        ":prefetch",
+        ":prefetch_runner_hook",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/distribute:distribute_coordinator_context",
@@ -5228,6 +5234,7 @@ tf_py_wrap_cc(
         "lib/io/file_io.i",
         "lib/io/py_record_reader.i",
         "lib/io/py_record_writer.i",
+        "ops/prefetch_runner.i",
         "platform/base.i",
         "platform/stacktrace_handler.i",
         "pywrap_tfe.i",
@@ -5257,6 +5264,7 @@ tf_py_wrap_cc(
         ":kernel_registry",
         ":numpy_lib",
         ":safe_ptr",
+        ":prefetch_runner",
         ":py_exception_registry",
         ":py_func_lib",
         ":py_record_reader_lib",
@@ -6293,11 +6301,10 @@ tf_py_test(
     srcs = ["training/async_embedding_stage_test.py"],
     additional_deps = [
         ":training",
-	":prefetch",
-	":prefetch_runner",
-	":variables",
-	":math_ops",
-	"framework",
+        ":prefetch",
+        ":variables",
+        ":math_ops",
+        "framework",
     ],
 )
 
@@ -6647,7 +6654,6 @@ py_test(
         ":embedding_ops",
         ":prefetch",
         #":tensor_buffer_ops_gen",
-        ":prefetch_runner",
         ":state_ops",
         "//tensorflow/contrib/layers:layers_py",
         "//third_party/py/numpy",

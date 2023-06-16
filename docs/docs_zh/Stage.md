@@ -8,18 +8,20 @@
 
 `tf.staged`，对输入的 `features` 进行预取，返回预取后的 tensor。
 
-| 参数                    | 含义                                                         | 默认值                                                 |
-| ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
-| features                | 需要异步化执行的 op，可以是 tensor、list of tensor（list 中每一个元素都是 tensor ） 或者 dict of tensor （dict 中的 key 都是 string，value 都是 tensor） | 必选参数                                               |
-| capacity                | 缓存的 `items`异步化执行结果的最大个数。                     | 1                                                      |
-| num_threads             | 异步化执行 `items`的线程数。                                 | 1                                                      |
-| items                   | `items`依赖的 feed_dict 的 key 的列表                        | None，即 `items`不依赖 feed_dict                       |
-| feed_generator          | `items`依赖的 feed_dict 的 value 的 generator 对象。Python 中一个 generator 对象是一种通过 yield 产生 list 的方法。通过这个 generator 对象，用户可以使用纯 Python 进行灵活的数据预处理，类似于 tensor_pack，接口与用法见示例。 | None，即 `features`不依赖 feed_dict                    |
-| closed_exception_types  | 被识别为正常退出的异常类型                                   | (`tf.errors.OutOfRangeError`, `errors.CancelledError`) |
-| ignored_exception_types | 被识别可忽略跳过的异常类型                                   | ()                                                     |
-| use_stage_subgraph_thread_pool   | 是否在独立线程池上运行Stage子图，需要先创建独立线程池        | False(可选，若为True则必须先创建独立线程池)            |
-| stage_subgraph_thread_pool_id         | 如果开启了在独立线程池上运行Stage子图，用于指定独立线程池索引，需要先创建独立线程池，并打开use_stage_subgraph_thread_pool选项。 | 0，索引范围为[0, 创建的独立线程池数量-1]               |
-| stage_subgraph_stream_id | GPU Multi-Stream 场景下, stage子图执行使用的gpu stream的索引         | 0(可选，0表示stage子图共享计算主图使用的gpu stream, 索引范围为[0, gpu stream总数-1]) |
+| 参数                            | 含义                                                                                                                                        | 默认                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| features                       | 需要异步化执行的 op，可以是 tensor、list of tensor（list 中每一个元素都是 tensor ） 或者 dict of tensor （dict 中的 key 都是 string，value 都是 tensor）| 必选参数                                                                  |
+| feed_dict                      | 将stage子图元素映射为对应tensor的字典                                                                                                           | {}                                                                      |
+| capacity                       | 缓存的 `items`异步化执行结果的最大个数                                                                                                           | 1                                                                       |
+| num_threads                    | 异步化执行 `items`的线程数                                                                                                                     | 1                                                                       |
+| num_clients                    | 消耗预取结果的消费者数量                                                                                                                        | 1                                                                       |
+| timeout_millis                 | 预取结果等待缓存区可用的最大等待时间，超时后本次预取结果将会被丢弃                                                                                      | 300000 ms                                                               |
+| closed_exception_types         | 被识别为正常退出的异常类型                                                                                                                      | (`tf.errors.OUT_OF_RANGE`,)                                              |
+| ignored_exception_types        | 被识别可忽略跳过的异常类型                                                                                                                      | ()                                                                       |
+| use_stage_subgraph_thread_pool | 是否在独立线程池上运行Stage子图，需要先创建独立线程池                                                                                               | False(若为True则必须先创建独立线程池)                                         |
+| stage_subgraph_thread_pool_id  | 如果开启了在独立线程池上运行Stage子图，用于指定独立线程池索引，需要先创建独立线程池，并打开use_stage_subgraph_thread_pool选项                               | 0，索引范围为[0, 创建的独立线程池数量-1]                                       |
+| stage_subgraph_stream_id       | GPU Multi-Stream 场景下, stage子图执行使用的gpu stream的索引                                                                                    | 0 (0表示stage子图共享计算主图使用的gpu stream, 索引范围为[0, gpu stream总数-1]) |
+| name                           | 预取操作的名称                                                                                                                                | None (表示自动生成)                                                        |
 
 Session中加入`tf.make_prefetch_hook()`hook
 

@@ -61,6 +61,11 @@ class SessionInterface(object):
     """The TensorFlow process to which this session will connect."""
     raise NotImplementedError('sess_str')
 
+  @property
+  def c_session(self):
+    """The underlying Session"""
+    raise NotImplementedError('c_session')
+
   def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
     """Runs operations in the session. See `BaseSession.run()` for details."""
     raise NotImplementedError('run')
@@ -787,6 +792,10 @@ class BaseSession(SessionInterface):
   @property
   def sess_str(self):
     return self._target
+
+  @property
+  def c_session(self):
+    return self._session
 
   def as_default(self):
     """Returns a context manager that makes this object the default session.
