@@ -2132,7 +2132,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       result = sess.run(tires)
       del os.environ["TF_SSDHASH_ASYNC_COMPACTION"]
       del os.environ["TF_MULTI_TIER_EV_EVICTION_THREADS"]
-      print(result)
       for i in range(0, 6):
         if i == 2:
           self.assertEqual(result[i], 1)
@@ -2142,7 +2141,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertEqual(result[i], 0)
       sess.run(emb, {ids:[3]})
       result = sess.run(tires)
-      print(result)
       for i in range(0, 5):
         self.assertEqual(result[i], 0)
 

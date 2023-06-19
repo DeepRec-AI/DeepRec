@@ -18,6 +18,7 @@ limitations under the License.
 
 #if GOOGLE_CUDA
 namespace tensorflow {
+namespace embedding {
 
 template<class V>
 __global__ void BatchCopy(V** batch, V* val_base, int value_len,
@@ -26,6 +27,11 @@ __global__ void BatchCopy(V** batch, V* val_base, int value_len,
 template<class V>
 __global__ void BatchUnpack(V** dev_value_address, V* memcpy_buffer_gpu,
     int value_len, int limit);
+
+template<class V>
+__global__ void CopyEmbedding(V** batch, V** batch_data_space,
+    int total_dims, int limit);
+} //namespace embedding
 
 template<class V>
 __global__ void SparseApplyAdagradGPU(V** a, V** v, const V* g, V lr,
@@ -53,11 +59,6 @@ template<class V>
 __global__ void SparseApplyAdamWGPU(V** var, V** m, V** v,
     const V* g, V alpha, V beta1, V beta2, V epsilon,
     V weight_decay, int embedding_dim, long long int limit);
-
-template<class V>
-__global__ void CopyEmbedding(V** batch, V** batch_data_space,
-    int total_dims, int limit);
-
 }  // namespace tensorflow
 
 #endif  // GOOGLE_CUDA

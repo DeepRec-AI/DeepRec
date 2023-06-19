@@ -19,6 +19,7 @@ limitations under the License.
 #include "tensorflow/core/framework/register_types.h"
 
 namespace tensorflow {
+namespace embedding {
 template<class V>
 __global__ void BatchCopy(V** batch, V* val_base, int value_len,
     int limit) {
@@ -56,6 +57,24 @@ TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_int32(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_int64(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
+
+template<class V>
+__global__ void CopyEmbedding(V** batch, V** batch_data_space,
+    int total_dims, int limit) {
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  int item_id = i / total_dims;
+  int item_pos = i % total_dims;
+
+  if (i < limit  * total_dims) {
+    *(batch_data_space[item_id] + item_pos) = *(batch[item_id] + item_pos);
+  }
+}
+
+#define REGISTER_KERNELS_ALL_INDEX(T) \
+   template __global__ void CopyEmbedding<T>(T**, T**, int, int);
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+}  // namespace embedding
 
 template<class V>
 __global__ void SparseApplyAdagradGPU(V** a, V** v, const V* g, V lr,
@@ -198,23 +217,6 @@ __global__ void SparseApplyAdamWGPU(V** var, V** m, V** v,
     T, T, T, T, int, long long int);
 TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-
-template<class V>
-__global__ void CopyEmbedding(V** batch, V** batch_data_space,
-    int total_dims, int limit) {
-  int i = blockDim.x * blockIdx.x + threadIdx.x;
-  int item_id = i / total_dims;
-  int item_pos = i % total_dims;
-
-  if (i < limit  * total_dims) {
-    *(batch_data_space[item_id] + item_pos) = *(batch[item_id] + item_pos);
-  }
-}
-
-#define REGISTER_KERNELS_ALL_INDEX(T) \
-   template __global__ void CopyEmbedding<T>(T**, T**, int, int);
-TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 }  // namespace tensorflow
 #endif  // GOOGLE_CUDA

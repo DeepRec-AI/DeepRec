@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
 #include "tensorflow/core/framework/embedding/single_tier_storage.h"
 #include "tensorflow/core/framework/embedding/hbm_storage_iterator.h"
+#include "tensorflow/core/framework/embedding/intra_thread_copy_id_allocator.h"
 #include "tensorflow/core/platform/stream_executor.h"
 
 namespace tensorflow {
@@ -41,7 +42,8 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
       : gpu_alloc_(gpu_alloc),
         MultiTierStorage<K, V>(sc, name) {
     hbm_ = new HbmStorageWithCpuKv<K, V>(sc, gpu_alloc, lc);
-    dram_ = new DramStorage<K, V>(sc, cpu_alloc, lc, new LocklessHashMapCPU<K, V>(gpu_alloc));
+    dram_ = new DramStorage<K, V>(sc, cpu_alloc, lc,
+        new LocklessHashMapCPU<K, V>(gpu_alloc));
   }
 
   ~HbmDramStorage() override {
@@ -54,10 +56,32 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
 
   Status Get(K key, ValuePtr<V>** value_ptr) override {
     Status s = hbm_->Get(key, value_ptr);
-    if (!s.ok()) {
-      s = dram_->Get(key, value_ptr);
+    if (s.ok()) {
+      return s;
+    }
+    s = dram_->Get(key, value_ptr);
+    if (s.ok()) {
+      AddCopyBackFlagToValuePtr(value_ptr, COPYBACK);
+      return s;
     }
     return s;
+  }
+
+  void BatchGet(const EmbeddingVarContext<GPUDevice>& ctx,
+                const K* keys,
+                ValuePtr<V>** value_ptr_list,
+                int64 num_of_keys,
+                int64 value_len) override {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    std::vector<std::list<int64>>
+        copyback_cursor_list(num_worker_threads + 1);
+
+    BatchGetValuePtrs(ctx, keys, value_ptr_list, num_of_keys,
+                      copyback_cursor_list);
+
+    CopyEmbeddingsFromDramToHbm(
+        ctx, keys, value_ptr_list, copyback_cursor_list[0],
+        value_len);
   }
 
   void Insert(K key, ValuePtr<V>* value_ptr) override {
@@ -84,18 +108,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     {
       mutex_lock l(memory_pool_mu_);
       gpu_value_ptr->SetPtr(embedding_mem_pool_->Allocate());
-    }
-    s = dram_->Get(key, value_ptr);
-    if (s.ok()) {
-      // copy dram value to hbm
-      V* cpu_data_address = (*value_ptr)->GetValue(0, 0);
-      V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
-      cudaMemcpy(gpu_data_address, cpu_data_address,
-          size * sizeof(V), cudaMemcpyHostToDevice);
       *value_ptr = gpu_value_ptr;
-      memcpy(gpu_value_ptr->GetPtr(),
-             (*value_ptr)->GetPtr(),
-             sizeof(FixedLengthHeader));
     }
 
     s = hbm_->TryInsert(key, *value_ptr);
@@ -435,6 +448,105 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
   void SetTotalDims(int64 total_dims) override {
     dram_->SetTotalDims(total_dims);
   }
+ private:
+  void BatchGetValuePtrs(const EmbeddingVarContext<GPUDevice>& ctx,
+                         const K* keys,
+                         ValuePtr<V>** value_ptr_list,
+                         int64 num_of_keys,
+                         std::vector<std::list<int64>>& copyback_cursor_list) {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    IntraThreadCopyIdAllocator thread_copy_id_alloc(num_worker_threads);
+    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
+    auto do_work = [this, keys, value_ptr_list, &thread_copy_id_alloc,
+                    main_thread_id, &copyback_cursor_list]
+        (int64 start, int64 limit) {
+      int copy_id =
+          thread_copy_id_alloc.GetCopyIdOfThread(main_thread_id);
+      for (int64 i = start; i < limit; i++) {
+        Status s = Get(keys[i], &value_ptr_list[i]);
+        if (s.ok()) {
+          int64 copyback_flag =
+              (int64)value_ptr_list[i] >> copyback_flag_offset_bits_;
+          RemoveCopyBackFlagInValuePtr(&value_ptr_list[i]);
+          if (copyback_flag == CopyBackFlag::COPYBACK) {
+            copyback_cursor_list[copy_id].emplace_back(i);
+          }
+        } else {
+          value_ptr_list[i] = nullptr;
+        }
+      }
+    };
+    auto worker_threads = ctx.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          1000, do_work);
+
+    for (int i = 1; i < worker_threads->num_threads + 1; i++) {
+      if (copyback_cursor_list[i].size()>0) {
+        copyback_cursor_list[0].splice(copyback_cursor_list[0].end(),
+                                       copyback_cursor_list[i]);
+      }
+    }
+  }
+
+  void CopyEmbeddingsFromDramToHbm(const EmbeddingVarContext<GPUDevice>& ctx,
+                                   const K* keys,
+                                   ValuePtr<V>** value_ptr_list,
+                                   std::list<int64>& copyback_cursors,
+                                   int64 value_len) {
+    int64 total = copyback_cursors.size();
+    std::vector<ValuePtr<V>*> gpu_value_ptrs(total);
+    std::vector<K> copyback_keys(total);
+    std::vector<int64> memory_index(total);
+    //Create Hbm ValuePtrs.
+    {
+      int64 i = 0;
+      auto it = copyback_cursors.cbegin();
+      //Mutex with eviction thread
+      mutex_lock l(memory_pool_mu_);
+      for ( ; it != copyback_cursors.cend(); ++it, ++i) {
+        int64 j = *it;
+        memory_index[i] = j;
+        ValuePtr<V>* gpu_value_ptr = hbm_->CreateValuePtr(value_len);
+        V* val_ptr = embedding_mem_pool_->Allocate();
+        bool flag = gpu_value_ptr->SetPtr(val_ptr);
+        if (!flag) {
+          embedding_mem_pool_->Deallocate(val_ptr);
+        }
+        memcpy((char *)gpu_value_ptr->GetPtr(),
+               (char *)value_ptr_list[j]->GetPtr(),
+               sizeof(FixedLengthHeader));
+        gpu_value_ptrs[i] = gpu_value_ptr;
+        copyback_keys[i] = keys[*it];
+      }
+    }
+    MultiTierStorage<K, V>::CopyEmbeddingsFromDramToHbm(
+        ctx, keys, value_ptr_list, copyback_cursors,
+        memory_index, gpu_value_ptrs, value_len);
+
+    //Insert copyback ids to hbm hash table.
+    auto do_insert = [this, copyback_keys, gpu_value_ptrs]
+        (int64 start, int64 limit) {
+      for (int64 i = start; i < limit; i++)
+        hbm_->Insert(copyback_keys[i], gpu_value_ptrs[i]);
+    };
+    auto worker_threads = ctx.worker_threads;
+    Shard(worker_threads->num_threads, worker_threads->workers,
+          total, 100000, do_insert);
+  }
+
+  void AddCopyBackFlagToValuePtr(
+      ValuePtr<V>** value_ptr, CopyBackFlag copyback_flag) {
+    int64 tmp = ((int64)copyback_flag) << copyback_flag_offset_bits_;
+    tmp = ((int64)*value_ptr) | tmp;
+    *value_ptr = reinterpret_cast<ValuePtr<V>*>(tmp);
+  }
+
+  void RemoveCopyBackFlagInValuePtr(ValuePtr<V>** value_ptr) {
+    int64 tmp = (1L << (copyback_flag_offset_bits_)) - 1;
+    tmp = ((int64)*value_ptr) & tmp;
+    *value_ptr = reinterpret_cast<ValuePtr<V>*>(tmp);
+  }
 
  private:
   HbmStorageWithCpuKv<K, V>* hbm_ = nullptr;
@@ -442,6 +554,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
   EmbeddingMemoryPool<V>* embedding_mem_pool_ = nullptr;
   Allocator* gpu_alloc_;
   mutex memory_pool_mu_; //ensure thread safety of embedding_mem_pool_
+  const int copyback_flag_offset_bits_ = 60;
 };
 } // embedding
 } // tensorflow

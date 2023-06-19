@@ -162,6 +162,14 @@ class EmbeddingVar : public ResourceBase {
     return storage_->Get(key, value_ptr);
   }
 
+  void BatchLookupKey(const EmbeddingVarContext<GPUDevice>& ctx,
+                      const K* keys,
+                      ValuePtr<V>** value_ptr_list,
+                      int64 num_of_keys) {
+    storage_->BatchGet(ctx, keys, value_ptr_list, num_of_keys,
+                       emb_config_.total_num(storage_->GetAllocLen()));
+  }
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr,
                            bool* is_filter, bool indices_as_pointer,
                            int64 count = 1) {
@@ -232,7 +240,7 @@ class EmbeddingVar : public ResourceBase {
   Status Lookup(K key, V* val, V* default_v)  {
     const V* default_value_ptr =
       (default_v == nullptr) ? default_value_ : default_v;
-    return filter_->Lookup(this, key, val, default_value_ptr,
+    return filter_->Lookup(key, val, default_value_ptr,
                            default_value_no_permission_);
   }
 
@@ -244,7 +252,7 @@ class EmbeddingVar : public ResourceBase {
         V* default_v =
             default_value_ +
                 (keys[i] % emb_config_.default_value_dim) * value_len_;
-        filter_->Lookup(this, keys[i],
+        filter_->Lookup(keys[i],
             output + i * value_len_, default_v,
             default_value_no_permission_);
       }
@@ -275,6 +283,65 @@ class EmbeddingVar : public ResourceBase {
           worker_threads->workers, num_of_keys,
           value_len_ * sizeof(V), do_work);
   }
+#if GOOGLE_CUDA
+  void GetEmbeddings(const EmbeddingVarContext<GPUDevice>& context,
+                     const K* keys,
+                     V* output,
+                     int64 num_of_keys) {
+    filter_->BatchLookup(context, keys, output,
+                         num_of_keys, default_value_,
+                         default_value_no_permission_);
+  }
+
+  void BatchLookupOrCreateEmb(
+      const EmbeddingVarContext<GPUDevice>& ctx,
+      V** var_ptr,
+      ValuePtr<V>** value_ptrs,
+      const K* indices,
+      int64 num_of_keys,
+      IntraThreadCopyIdAllocator* thread_copy_id_alloc) {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    std::vector<std::list<int64>> init_cursor_list(
+        num_worker_threads + 1);
+    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
+
+    auto do_work_get_ptrs = [this, value_ptrs, &init_cursor_list,
+        &thread_copy_id_alloc, main_thread_id, var_ptr] (int64 start, int64 limit) {
+      int copy_id =
+          thread_copy_id_alloc->GetCopyIdOfThread(main_thread_id);
+      for (int i = start; i < limit; i++) {
+        bool is_need_set_default_value = false;
+        var_ptr[i] = LookupOrCreateEmb(
+            value_ptrs[i], is_need_set_default_value);
+        if (is_need_set_default_value) {
+          init_cursor_list[copy_id].emplace_back(i);
+        }
+      }
+    };
+    const int64 unit_cost = 1000;
+    auto worker_threads = ctx.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers,
+          num_of_keys, unit_cost, do_work_get_ptrs);
+
+    // Merge copies of init_cursor_list
+    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
+      if (init_cursor_list[i].size() > 0) {
+        init_cursor_list[0].splice(init_cursor_list[0].end(),
+                                   init_cursor_list[i]);
+      }
+    }
+
+    auto stream = ctx.compute_stream;
+    auto event_mgr = ctx.event_mgr;
+
+    SetDefaultValueOfNewFeatures(
+        indices, num_of_keys,
+        init_cursor_list[0],
+        var_ptr, stream, event_mgr,
+        ctx.gpu_device);
+  }
+#endif
 
   void LookupOrCreate(K key, V* val, V* default_v, int count = 1)  {
     const V* default_value_ptr =
@@ -325,7 +392,7 @@ class EmbeddingVar : public ResourceBase {
 #if GOOGLE_CUDA
   void CopyEmbeddingsToBuffer(
       V* val_base, int64 size,
-      int64 slice_elems, V** memcpy_address,
+      V** memcpy_address,
       se::Stream* compute_stream,
       EventMgr* event_mgr,
       const Eigen::GpuDevice& gpu_device);
@@ -333,8 +400,7 @@ class EmbeddingVar : public ResourceBase {
   void SetDefaultValueOfNewFeatures(
       const K* keys, int64 size,
       const std::list<int64>& init_cursor,
-      V** memcpy_address, V* default_values,
-      std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn,
+      V** memcpy_address,
       se::Stream* compute_stream,
       EventMgr* event_mgr,
       const Eigen::GpuDevice& gpu_device);
@@ -745,7 +811,7 @@ class EmbeddingVar : public ResourceBase {
         V* default_v =
             default_value_ +
                 (keys[i] % emb_config_.default_value_dim) * value_len_;
-        filter_->Lookup(this, keys[i],
+        filter_->Lookup(keys[i],
             output + i * value_len_, default_v,
             default_value_no_permission_);
       }

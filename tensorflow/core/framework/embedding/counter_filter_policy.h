@@ -28,7 +28,7 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
       : config_(config), ev_(ev){
   }
 
-  Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+  Status Lookup(K key, V* val, const V* default_value_ptr,
       const V* default_value_no_permission) override {
     ValuePtr<V>* value_ptr = nullptr;
     Status s = ev_->LookupKey(key, &value_ptr);
@@ -40,6 +40,41 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
     }
     return Status::OK();
   }
+
+#if GOOGLE_CUDA
+  void BatchLookup(const EmbeddingVarContext<GPUDevice>& ctx,
+                   const K* keys, V* output,
+                   int64 num_of_keys,
+                   V* default_value_ptr,
+                   V* default_value_no_permission) override {
+    std::vector<ValuePtr<V>*> value_ptr_list(num_of_keys, nullptr);
+    ev_->BatchLookupKey(ctx, keys, value_ptr_list.data(), num_of_keys);
+    std::vector<V*> embedding_ptr(num_of_keys, nullptr);
+    auto do_work = [this, keys, value_ptr_list, &embedding_ptr,
+                    default_value_ptr, default_value_no_permission]
+        (int64 start, int64 limit) {
+      for (int i = start; i < limit; i++) {
+        ValuePtr<V>* value_ptr = value_ptr_list[i];
+        int64 freq = GetFreq(keys[i], value_ptr);
+        if (value_ptr != nullptr && freq >= config_.filter_freq) {
+          embedding_ptr[i] =
+              ev_->LookupOrCreateEmb(value_ptr, default_value_ptr);
+        } else {
+          embedding_ptr[i] = default_value_no_permission;
+        }
+      }
+    };
+    auto worker_threads = ctx.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          1000, do_work);
+    auto stream = ctx.compute_stream;
+    auto event_mgr = ctx.event_mgr;
+    ev_->CopyEmbeddingsToBuffer(
+        output, num_of_keys, embedding_ptr.data(),
+        stream, event_mgr, ctx.gpu_device);
+  }
+#endif //GOOGLE_CUDA
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
                       ValuePtr<V>** value_ptr, int count,

@@ -34,6 +34,7 @@ class BatchCache {
     update((K*)t.data(), t.NumElements(),
            nullptr, (int64*)counts_tensor.data());
   }
+
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
   virtual size_t get_cached_ids(K* cached_ids, size_t k_size,
                                 int64* cached_versions,

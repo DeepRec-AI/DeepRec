@@ -132,15 +132,6 @@ class KvResourceLookupIDOp : public OpKernel {
       auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
       Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
           100, do_work);
-
-      if (ev->IsMultiLevel()) {
-        ev->storage()->Schedule([ev, indices]() {
-          embedding::BatchCache<TKey>* cache = ev->Cache();
-          if (cache) {
-            cache->add_to_prefetch_list(indices);
-          }
-        });
-      }
     }
   }
 };
@@ -279,7 +270,6 @@ class KvResourceLookupIDGPUOp : public OpKernel {
       ev->SetDefaultValueOfNewFeatures(
           indices_flat.data(), indices_size,
           init_cursor_list[0], memcpy_address,
-          default_v, get_default_v_fn,
           stream, event_mgr,
           c->eigen_gpu_device());
 
@@ -290,14 +280,6 @@ class KvResourceLookupIDGPUOp : public OpKernel {
           event_mgr, c->eigen_gpu_device(),
           worker_threads, out_base);
 
-      if (ev->IsMultiLevel()) {
-        ev->storage()->Schedule([ev, indices]() {
-          embedding::BatchCache<TKey>* cache = ev->Cache();
-          if (cache) {
-            cache->add_to_prefetch_list(indices);
-          }
-        });
-      }
       delete[] memcpy_address;
     }
   }
@@ -427,14 +409,6 @@ class KvResourceCollectEmbeddingOp : public OpKernel {
       Shard(worker_threads->num_threads,
             worker_threads->workers, indices_size,
             slice_bytes, do_work);
-      if (ev->IsMultiLevel()) {
-        ev->storage()->Schedule([ev, indices]() {
-          embedding::BatchCache<TKey>* cache = ev->Cache();
-          if (cache) {
-            cache->add_to_cache(indices);
-          }
-        });
-      }
     }
   }
 
@@ -570,19 +544,11 @@ class KvResourceCollectEmbeddingGPUOp : public OpKernel {
       auto event_mgr = c->device()->tensorflow_gpu_device_info()->event_mgr;
       ev->CopyEmbeddingsToBuffer(
           out_base, indices_size,
-          slice_elems, memcpy_address,
+          memcpy_address,
           stream, event_mgr,
           c->eigen_gpu_device());
 
       delete[] memcpy_address;
-      if (ev->IsMultiLevel()) {
-        ev->storage()->Schedule([ev, indices]() {
-          embedding::BatchCache<TKey>* cache = ev->Cache();
-          if (cache) {
-            cache->add_to_cache(indices);
-          }
-        });
-      }
     }
   }
 
@@ -705,33 +671,13 @@ TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_CPU)
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-template <typename Device, typename TKey, typename TValue>
+template <typename Device, typename TKey, typename TValue, bool has_counts>
 class KvResourceGatherGPUOp : public OpKernel {
  public:
   explicit KvResourceGatherGPUOp(OpKernelConstruction* c) : OpKernel(c) {
     OP_REQUIRES_OK(c,
         c->GetAttr("is_use_default_value_tensor",
           &is_use_default_value_tensor_));
-    if (is_use_default_value_tensor_) {
-      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
-                            int64 total_dim, int64 len) {
-        return default_v + len * index;
-      };
-    } else {
-      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
-                            int64 total_dim, int64 len) {
-        return default_v + len * (id % total_dim) ;
-      };
-    }
-    if (c->num_inputs() == 4) {
-      get_count_fn_ = [](const int32* count, int64 index) {
-        return count[index];
-      };
-    } else {
-      get_count_fn_ = [](const int32* count, int64 index) {
-        return 1;
-      };
-    }
     bool is_inference;
     TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
     if (!is_inference) {
@@ -753,10 +699,6 @@ class KvResourceGatherGPUOp : public OpKernel {
     }
   }
 
-  ~KvResourceGatherGPUOp() {
-    delete[] occupy_flag_;
-  }
-
   void Compute(OpKernelContext* c) override {
     EmbeddingVar<TKey, TValue>* ev = nullptr;
     OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
@@ -770,22 +712,6 @@ class KvResourceGatherGPUOp : public OpKernel {
 
     Tensor* out = nullptr;
     OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
-
-    int32* counts = nullptr;
-    if (c->num_inputs() == 4)
-      counts = (int32*)c->input(3).data();
-
-    int64 num_threads = c->device()
-                         ->tensorflow_cpu_worker_threads()
-                         ->num_threads;
-    if (occupy_flag_ == nullptr) {
-      mutex_lock l(m_init_occupy_flag_);
-      //double check
-      if (occupy_flag_ == nullptr) {
-        occupy_flag_ = new bool[num_threads];
-        memset(occupy_flag_, 0, sizeof(bool) * num_threads);
-      }
-    }
 
     if (N > 0) {
       auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
@@ -828,103 +754,23 @@ class KvResourceGatherGPUOp : public OpKernel {
               indices_size, device);
         }
       } else {
-        TValue** memcpy_address = new TValue*[indices_size];
-        TKey* indices_host = new TKey[N];
+        Tensor indices_host(indices.dtype(), indices.shape());
         //Copy ids from GPU to CPU for CPU Lookup.
         auto stream = c->op_device_context()->stream();
         auto event_mgr = c->device()->tensorflow_gpu_device_info()->event_mgr;
         se::DeviceMemoryBase gpu_src(
             const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
-        stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
+        stream->ThenMemcpy(indices_host.data(), gpu_src, N * sizeof(TKey));
         SyncWithEventMgr(stream, event_mgr);
-        auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-        std::vector<std::list<int64>> init_cursor_list(
-                                          worker_threads->num_threads + 1);
-        std::vector<std::list<int64>> copyback_cursor_list(
-                                          worker_threads->num_threads + 1);
-        uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
-        auto do_work = [this, indices_host,
-            out_base, slice_elems, c, ev,
-            memcpy_address, &init_cursor_list,
-            &copyback_cursor_list, main_thread_id,
-            num_threads] (int64 start, int64 limit) {
-          uint64 thread_id = Env::Default()->GetCurrentThreadId();
-          int64 position;
-          if (thread_id == main_thread_id) {
-            position = num_threads;
-          } else {
-            position = -1;
-            {
-              spin_rd_lock l(mu_);
-              auto iter = hash_map_.find(thread_id);
-              if (iter != hash_map_.end()) {
-                position = iter->second;
-              }
-            }
 
-            if (position == -1) {
-              // bind a new thread to a local cursor_list
-              position = thread_id % num_threads;
-              while (!__sync_bool_compare_and_swap(&(occupy_flag_[position]),
-                                                   false, true)) {
-                position = (position + 1) % num_threads;
-              }
-              {
-                spin_wr_lock l(mu_);
-                hash_map_.insert(std::pair<uint64, int64>(thread_id, position));
-              }
-            }
-          }
-          ev->LookupWithFreqBatch(indices_host, memcpy_address,
-                                  start, limit, init_cursor_list[position],
-                                  copyback_cursor_list[position]);
-        };
-        Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
-            slice_bytes, do_work);
-        for (int i = 1; i < worker_threads->num_threads + 1; i++) {
-          if (init_cursor_list[i].size()>0) {
-            init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                       init_cursor_list[i]);
-          }
-          if (copyback_cursor_list[i].size()>0) {
-            copyback_cursor_list[0].splice(copyback_cursor_list[0].end(),
-                                           copyback_cursor_list[i]);
-          }
-        }
-        //Pointers in memcpy_address here will 
-        //be cast to ValuePtr<Tvalue>* in this funcation.
-        ev->AllocateMemoryForNewFeatures(
-            memcpy_address,
-            init_cursor_list[0]);
-
-        ev->SetDefaultValueOfNewFeatures(
-            indices_host, indices_size,
-            init_cursor_list[0], memcpy_address,
-            default_v, get_default_v_fn_,
-            stream, event_mgr,
-            c->eigen_gpu_device());
-
-        ev->CopyEmbeddingsFromCPUToGPU(
-            indices_host,
-            copyback_cursor_list[0],
-            memcpy_address,
-            stream, event_mgr,
-            c->eigen_gpu_device(),
-            worker_threads);
-
-        ev->CopyEmbeddingsToBuffer(
-            out_base, indices_size,
-            slice_elems, memcpy_address,
-            stream, event_mgr,
-            c->eigen_gpu_device());
-        delete []memcpy_address;
-
-        if (ev->IsMultiLevel()) {
-          ev->storage()->Schedule([ev, indices_host, N]() {
-            embedding::BatchCache<TKey>* cache = ev->Cache();
-            cache->update(indices_host, N);
-            delete []indices_host;
-          });
+        EmbeddingVarContext<GPUDevice> ev_ctx(c);
+        ev->GetEmbeddings(ev_ctx, (TKey*)indices_host.data(),
+                          out_base, N);
+        if (has_counts) {
+          const Tensor& indices_counts = c->input(2);
+          ev->UpdateCache(indices_host, indices_counts, true);
+        } else {
+          ev->UpdateCache(indices_host, true);
         }
       }
     }
@@ -932,17 +778,10 @@ class KvResourceGatherGPUOp : public OpKernel {
 
   private:
     bool is_use_default_value_tensor_;
-    std::function<
-      TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
-    std::function<int32(int32*, int64)> get_count_fn_;
     std::function<void(EmbeddingVar<TKey, TValue>* ev, const TKey* key,
                       TValue* val, TValue* default_v, int32 default_v_num,
                       bool is_use_default_value_tensor,
                       size_t n, const Eigen::GpuDevice& device)> lookup_fn_;
-    std::map<uint64, int64> hash_map_;
-    mutable easy_spinrwlock_t mu_ = EASY_SPINRWLOCK_INITIALIZER;
-    bool* occupy_flag_ = nullptr;
-    mutex m_init_occupy_flag_;
 };
 
 #define REGISTER_KERNELS(dev, ktype, vtype)                       \
@@ -950,7 +789,7 @@ class KvResourceGatherGPUOp : public OpKernel {
                               .Device(DEVICE_##dev)               \
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceGatherGPUOp<GPUDevice, ktype, vtype>)
+                          KvResourceGatherGPUOp<GPUDevice, ktype, vtype, false>)
 
 #define REGISTER_KERNELS_ALL(dev, type)                           \
   REGISTER_KERNELS(dev, int32, type);                             \
@@ -967,7 +806,7 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU);
                               .HostMemory("counts")               \
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceGatherGPUOp<GPUDevice, ktype, vtype>)
+                          KvResourceGatherGPUOp<GPUDevice, ktype, vtype, true>)
 
 #define REGISTER_KERNELS_ALL(dev, type)                           \
   REGISTER_KERNELS(dev, int32, type);                             \

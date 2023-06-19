@@ -45,9 +45,7 @@ void SyncWithEventMgr(se::Stream* stream,
 template <class K, class V>
 void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
     const K* keys, int64 size, const std::list<int64>& init_cursor,
-    V** memcpy_address, V* default_values,
-    std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn,
-    se::Stream* compute_stream, EventMgr* event_mgr,
+    V** memcpy_address, se::Stream* compute_stream, EventMgr* event_mgr,
     const Eigen::GpuDevice& gpu_device) {
   if (init_cursor.size() > 0) {
     int64 total = init_cursor.size();
@@ -67,15 +65,17 @@ void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
       value_address[i] =
           *((V**)((char*)(value_ptr->GetPtr()) + sizeof(FixedLengthHeader))) +
           storage_->GetOffset(emb_config_.emb_index);
-      default_value_address[i] = get_default_v_fn(
-          default_values, keys[*it], *it, GetDefaultValueDim(), ValueLen());
+      default_value_address[i] =
+          default_value_ +
+          (keys[i] % emb_config_.default_value_dim) % value_len_;
     }
     DeviceMemoryBase gpu_dst_ptr(dev_value_address, total * 2 * sizeof(V*));
     compute_stream->ThenMemcpy(&gpu_dst_ptr, value_address,
                                total * 2 * sizeof(V*));
     int block_dim = 128;
     TF_CHECK_OK(GpuLaunchKernel(
-        CopyEmbedding<V>, (total * value_len_ + block_dim - 1) / block_dim,
+        embedding::CopyEmbedding<V>,
+        (total * value_len_ + block_dim - 1) / block_dim,
         block_dim, 0, gpu_device.stream(), dev_default_value_address,
         dev_value_address, value_len_, total));
     SyncWithEventMgr(compute_stream, event_mgr);
@@ -95,9 +95,8 @@ void EmbeddingVar<K, V>::SetDefaultValueOfNewFeatures(
 
 #define REGISTER_KERNELS(ktype, vtype)                                        \
   template void EmbeddingVar<ktype, vtype>::SetDefaultValueOfNewFeatures(     \
-      const ktype*, int64, const std::list<int64>&, vtype**, vtype*,          \
-      std::function<vtype*(vtype*, ktype, int64, int64, int64)>, se::Stream*, \
-      EventMgr*, const Eigen::GpuDevice& gpu_device);
+      const ktype*, int64, const std::list<int64>&, vtype**,                  \
+      se::Stream*, EventMgr*, const Eigen::GpuDevice& gpu_device);
 #define REGISTER_KERNELS_ALL(type) \
   REGISTER_KERNELS(int32, type);   \
   REGISTER_KERNELS(int64, type)
@@ -110,7 +109,7 @@ TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_CPU)
 
 template <class K, class V>
 void EmbeddingVar<K, V>::CopyEmbeddingsToBuffer(
-    V* val_base, int64 size, int64 slice_elems, V** memcpy_address,
+    V* val_base, int64 size, V** memcpy_address,
     se::Stream* compute_stream, EventMgr* event_mgr,
     const Eigen::GpuDevice& gpu_device) {
   int block_dim = 128;
@@ -121,13 +120,14 @@ void EmbeddingVar<K, V>::CopyEmbeddingsToBuffer(
   int limit = size;
   int length = ValueLen();
   TF_CHECK_OK(GpuLaunchKernel(
-      BatchCopy<V>, (limit + block_dim - 1) / block_dim * length, block_dim, 0,
+      embedding::BatchCopy<V>,
+      (limit + block_dim - 1) / block_dim * length, block_dim, 0,
       gpu_device.stream(), dev_value_address, val_base, length, limit));
   SyncWithEventMgr(compute_stream, event_mgr);
 }
 #define REGISTER_KERNELS(ktype, vtype)                              \
   template void EmbeddingVar<ktype, vtype>::CopyEmbeddingsToBuffer( \
-      vtype*, int64, int64, vtype**, se::Stream*, EventMgr*,        \
+      vtype*, int64, vtype**, se::Stream*, EventMgr*,               \
       const Eigen::GpuDevice& gpu_device);
 #define REGISTER_KERNELS_ALL(type) \
   REGISTER_KERNELS(int32, type);   \
@@ -178,7 +178,7 @@ void EmbeddingVar<K, V>::CopyEmbeddingsFromCPUToGPU(
 
     int block_dim = 128;
     TF_CHECK_OK(GpuLaunchKernel(
-        BatchUnpack<V>, (total + block_dim - 1) / block_dim * value_len,
+        embedding::BatchUnpack<V>, (total + block_dim - 1) / block_dim * value_len,
         block_dim, 0, gpu_device.stream(), dev_value_address, memcpy_buffer_gpu,
         value_len, total));
 

@@ -455,14 +455,25 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
   ASSERT_EQ(variable->Size(), total_size);
 }
 
-void InsertAndLookup(EmbeddingVar<int64, int64>* variable, int64 *keys, long ReadLoops, int value_size){
+void InsertAndLookup(EmbeddingVar<int64, float>* variable,
+                     int64 *keys, long ReadLoops, int value_size){
+  float *default_value_fake = (float *)malloc((value_size)*sizeof(float));
+  for (int j = 0; j < value_size; j++) {
+      default_value_fake[j] = -1.0;
+    }
   for (long j = 0; j < ReadLoops; j++) {
-    int64 *val = (int64 *)malloc((value_size+1)*sizeof(int64));
-    variable->LookupOrCreate(keys[j], val, &(keys[j]));
-    variable->LookupOrCreate(keys[j], val, (&keys[j]+1));
-    ASSERT_EQ(keys[j] , val[0]);
+    float *val = (float *)malloc((value_size+1)*sizeof(float));
+    float *default_value = (float *)malloc((value_size)*sizeof(float));
+    for (int k = 0; k < value_size; k++) {
+      default_value[k] = (float)keys[j];
+    }
+    variable->LookupOrCreate(keys[j], val, default_value);
+    variable->LookupOrCreate(keys[j], val, default_value_fake);
+    ASSERT_EQ(default_value[0] , val[0]);
     free(val);
+    free(default_value);
   }
+  free(default_value_fake);
 }
 
 void MultiBloomFilter(EmbeddingVar<int64, float>* var, int value_size, int64 i) {
@@ -796,11 +807,11 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
 
 TEST(EmbeddingVariableTest, TestInsertAndLookup) {
   int64 value_size = 128;
-  Tensor value(DT_INT64, TensorShape({value_size}));
-  test::FillValues<int64>(&value, std::vector<int64>(value_size, 10));
-  auto storage = embedding::StorageFactory::Create<int64, int64>(
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10));
+  auto storage = embedding::StorageFactory::Create<int64, float>(
       embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
-  auto variable = new EmbeddingVar<int64, int64>("EmbeddingVar",
+  auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
       storage, EmbeddingConfig(), cpu_allocator());
 
   variable->Init(value, 1);
@@ -809,15 +820,11 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
   bool* flag = (bool *)malloc(sizeof(bool)*max);
   srand((unsigned)time(NULL));
   int64 *keys = (int64 *)malloc(sizeof(int64)*InsertLoops);
-  long *counter = (long *)malloc(sizeof(long)*InsertLoops);
 
   for (long i = 0; i < max; i++) {
     flag[i] = 0;
   }
 
-  for (long i = 0; i < InsertLoops; i++) {
-    counter[i] = 1;
-  }
   int index = 0;
   while (index < InsertLoops) {
     long j = rand() % max;
