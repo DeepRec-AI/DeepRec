@@ -1605,15 +1605,65 @@ class KvResourceExportOp : public OpKernel {
 #define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
 TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
 #undef REGISTER_KERNELS_CPU
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+template<typename Device, typename TKey, typename TValue>
+class KvResourceExportGPUOp : public OpKernel {
+ public:
+  explicit KvResourceExportGPUOp(OpKernelConstruction *ctx) : OpKernel(ctx) {}
+
+  void Compute(OpKernelContext *ctx) override {
+    EmbeddingVar<TKey, TValue> *ev = nullptr;
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+
+    int64 total_size = ev->Size();
+
+    // Create an output tensor
+    Tensor *keys_output_tensor = NULL;
+    Tensor *values_output_tensor = NULL;
+    Tensor *versions_output_tensor = NULL;
+    Tensor *freq_output_tensor = NULL;
+
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          0, TensorShape({total_size}), &keys_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          1, TensorShape({total_size, ev->ValueLen()}),
+          &values_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          2, TensorShape({0}),
+          &versions_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          3, TensorShape({0}),
+          &freq_output_tensor));
+
+    auto keys_flat = keys_output_tensor->flat<TKey>();
+    TKey* key_base = &keys_flat(0);
+    auto values_flat = values_output_tensor->flat<TValue>();
+    TValue* value_base = &values_flat(0);
+
+    auto device = ctx->eigen_device<Device>();
+    ev->GetSnapshot(key_base, value_base, device);
+  }
+};
+
+#define REGISTER_KERNELS(dev, ktype, vtype)                    \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
+                            .Device(DEVICE_##dev)              \
+                            .TypeConstraint<ktype>("Tkeys")    \
+                            .TypeConstraint<vtype>("Tvalues"), \
+                          KvResourceExportGPUOp<GPUDevice, ktype, vtype>);
+#define REGISTER_KERNELS_ALL(dev, type)                        \
+  REGISTER_KERNELS(dev, int32, type)                           \
+  REGISTER_KERNELS(dev, int64, type)
 #define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
 TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
 #undef REGISTER_KERNELS_GPU
-#endif  // GOOGLE_CUDA
-
 #undef REGISTER_KERNELS_ALL
 #undef REGISTER_KERNELS
+#endif  // GOOGLE_CUDA
 
 template<typename TKey, typename TValue>
 class KvResourceGeneratePartitionedTensorOp : public OpKernel {

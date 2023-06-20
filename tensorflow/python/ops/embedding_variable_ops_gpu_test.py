@@ -203,7 +203,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
       sess.run([init])
       sess.run([emb])
       # Unimplement GPUHashMapKV::Size() {return 0;}
-      self.assertAllEqual([0, 3], sess.run(shape))
+      self.assertAllEqual([6, 3], sess.run(shape))
 
   def testEmbeddingVariableForSparseColumnSharedEmbeddingCol(self):
     columns_list=[]
@@ -481,6 +481,31 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 6):
           self.assertAllClose(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForSaver(self):
+    print("testEmbeddingVariableForSaver")
+    checkpoint_directory = self.get_temp_dir()
+    with ops.device("/gpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.HBM)),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,-7], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    with self.test_session(force_gpu=True) as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      print(sess.run([emb, train_op,loss]))
+      model_path = os.path.join(checkpoint_directory, "model.ckpt")
+      print(saver.save(sess, model_path))
 
 if __name__ == "__main__":
   googletest.main()
