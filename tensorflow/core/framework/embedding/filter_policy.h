@@ -27,10 +27,10 @@ struct RestoreBuffer {
   char* freq_buffer = nullptr;
 
   ~RestoreBuffer() {
-    delete key_buffer;
-    delete value_buffer;
-    delete version_buffer;
-    delete freq_buffer;
+    delete []key_buffer;
+    delete []value_buffer;
+    delete []version_buffer;
+    delete []freq_buffer;
   }
 };
 
