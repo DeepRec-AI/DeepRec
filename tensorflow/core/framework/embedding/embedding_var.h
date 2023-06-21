@@ -798,6 +798,9 @@ class EmbeddingVar : public ResourceBase {
       TypedAllocator::Deallocate(alloc_, default_value_no_permission_,
           value_len_);
     }
+    if (filter_) {
+      delete filter_;
+    }
   }
 
  private:
