@@ -742,7 +742,7 @@ cc_library(
     hdrs = ["training/prefetch_runner.h"],
     deps = [
         ":coordinator",
-        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_base_no_ops",
     ],
 )
 
