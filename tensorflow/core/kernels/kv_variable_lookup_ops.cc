@@ -678,26 +678,7 @@ class KvResourceGatherGPUOp : public OpKernel {
     OP_REQUIRES_OK(c,
         c->GetAttr("is_use_default_value_tensor",
           &is_use_default_value_tensor_));
-    bool is_inference;
-    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
-    if (!is_inference) {
-      lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, const TKey* key,
-                      TValue* val, TValue* default_v, int32 default_v_num,
-                      bool is_use_default_value_tensor,
-                      size_t n, const Eigen::GpuDevice& device) {
-        ev->LookupOrCreate(key, val, default_v, default_v_num,
-            is_use_default_value_tensor, n, device);
-      };
-    } else {
-      lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, const TKey* key,
-                      TValue* val, TValue* default_v, int32 default_v_num,
-                      bool is_use_default_value_tensor,
-                      size_t n, const Eigen::GpuDevice& device) {
-        ev->Lookup(key, val, default_v, default_v_num,
-            is_use_default_value_tensor, n, device);
-      };
     }
-  }
 
   void Compute(OpKernelContext* c) override {
     EmbeddingVar<TKey, TValue>* ev = nullptr;
@@ -736,6 +717,7 @@ class KvResourceGatherGPUOp : public OpKernel {
               "MultiLevel EV's Cache size ", ev->CacheSize(),
               " should large than IDs in batch ", N));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
+      EmbeddingVarContext<GPUDevice> ev_ctx(c);
       if (ev->IsSingleHbm()) {
         const TKey* key_base = &indices_flat(0);
         const Device& device = c->eigen_device<Device>();
@@ -745,13 +727,9 @@ class KvResourceGatherGPUOp : public OpKernel {
           auto default_values_matrix = default_values.shaped<TValue, 2>(
               {default_value_num, ev->ValueLen()});
           TValue* default_v_base = &default_values_matrix(0, 0);
-          lookup_fn_(ev, key_base, out_base, default_v_base,
-              default_value_num, is_use_default_value_tensor_,
-              indices_size, device);
+	        ev->GetEmbeddings(ev_ctx, key_base, out_base, N);
         } else {
-          lookup_fn_(ev, key_base, out_base, ev->GetDefaultValuePtr(),
-              ev->GetDefaultValueDim(), is_use_default_value_tensor_,
-              indices_size, device);
+	        ev->GetEmbeddings(ev_ctx, key_base, out_base, N);
         }
       } else {
         Tensor indices_host(indices.dtype(), indices.shape());
@@ -778,10 +756,6 @@ class KvResourceGatherGPUOp : public OpKernel {
 
   private:
     bool is_use_default_value_tensor_;
-    std::function<void(EmbeddingVar<TKey, TValue>* ev, const TKey* key,
-                      TValue* val, TValue* default_v, int32 default_v_num,
-                      bool is_use_default_value_tensor,
-                      size_t n, const Eigen::GpuDevice& device)> lookup_fn_;
 };
 
 #define REGISTER_KERNELS(dev, ktype, vtype)                       \
@@ -943,4 +917,3 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_ALL)
 #endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow
-

@@ -44,8 +44,9 @@ __device__ Eigen::half impl_rsqrt(Eigen::half x) {
   return __float2half(rsqrt(__half2float(x)));
 }
 
-template <typename Value>
-__global__ void kv_sparse_apply_adagrad_kernel(int32* item_idxs,
+template <typename TKey, typename Value>
+__global__ void kv_sparse_apply_adagrad_kernel(const TKey* key_base,
+                                               int32* item_idxs,
                                                int64 dim,
                                                Value** d_banks,
                                                bool** d_flags,
@@ -72,13 +73,15 @@ __global__ void kv_sparse_apply_adagrad_kernel(int32* item_idxs,
   if (var_default_v != nullptr && var_stored == false) {
     d_flags[var_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[var_slot_offset][offset_in_bank * dim + id] = var_default_v[(item_idx % var_default_v_num) * dim + id];
+      d_banks[var_slot_offset][offset_in_bank * dim + id] = 
+          var_default_v[(*(key_base + item_idx) % var_default_v_num) * dim + id];
     }
   }
   if (acc_default_v != nullptr && acc_stored == false) {
     d_flags[acc_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[acc_slot_offset][offset_in_bank * dim + id] = acc_default_v[(item_idx % acc_default_v_num) * dim + id];
+      d_banks[acc_slot_offset][offset_in_bank * dim + id] = 
+          acc_default_v[(*(key_base + item_idx) % acc_default_v_num) * dim + id];
     }
   }
   for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
@@ -106,9 +109,9 @@ struct KvSparseApplyAdagrad<GPUDevice, TKey, T> {
     auto const block_size = 256;
     auto const grid_size = num_items;
     GPUHashTable<TKey, T>* hashtable = var->HashTable();
-    TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_adagrad_kernel<T>,
+    TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_adagrad_kernel<TKey, T>,
                                 grid_size, block_size, 0, device.stream(),
-                                item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
+                                key_base, item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
                                 hashtable->d_existence_flag_ptrs,
                                 var->EmbIdx(), accum->EmbIdx(),
                                 var->SlotNum(), hashtable->initial_bank_size,
@@ -234,8 +237,9 @@ T blockReduceSum(T val)
   return val;
 }
 
-template <typename Value>
-__global__ void kv_sparse_apply_ftrl_kernel(int32* item_idxs,
+template <typename TKey, typename Value>
+__global__ void kv_sparse_apply_ftrl_kernel(const TKey* key_base,
+                                            int32* item_idxs,
                                             int64 dim,
                                             Value** d_banks,
                                             bool** d_flags,
@@ -275,19 +279,22 @@ __global__ void kv_sparse_apply_ftrl_kernel(int32* item_idxs,
   if (var_default_v != nullptr && var_stored == false) {
     d_flags[var_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[var_slot_offset][offset_in_bank * dim + id] = var_default_v[(item_idx % var_default_v_num) * dim + id];
+      d_banks[var_slot_offset][offset_in_bank * dim + id] = 
+          var_default_v[(*(key_base + item_idx) % var_default_v_num) * dim + id];
     }
   }
   if (acc_default_v != nullptr && acc_stored == false) {
     d_flags[acc_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[acc_slot_offset][offset_in_bank * dim + id] = acc_default_v[(item_idx % acc_default_v_num) * dim + id];
+      d_banks[acc_slot_offset][offset_in_bank * dim + id] = 
+          acc_default_v[(*(key_base + item_idx) % acc_default_v_num) * dim + id];
     }
   }
   if (linear_default_v != nullptr && linear_stored == false) {
     d_flags[linear_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[linear_slot_offset][offset_in_bank * dim + id] = linear_default_v[(item_idx % linear_default_v_num) * dim + id];
+      d_banks[linear_slot_offset][offset_in_bank * dim + id] = 
+          linear_default_v[(*(key_base + item_idx) % linear_default_v_num) * dim + id];
     }
   }
   Value linear_tmp = 0;
@@ -363,9 +370,9 @@ struct KvSparseApplyFtrl<GPUDevice, TKey, T> {
     auto const block_size = 256;
     auto const grid_size = num_items;
     auto hashtable = var->HashTable();
-    TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_ftrl_kernel<T>,
+    TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_ftrl_kernel<TKey, T>,
                                 grid_size, block_size, (var->ValueLen()) * sizeof(T), device.stream(),
-                                item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
+                                key_base, item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
                                 hashtable->d_existence_flag_ptrs,
                                 var->EmbIdx(), accum->EmbIdx(), linear->EmbIdx(),
                                 var->SlotNum(), hashtable->initial_bank_size,
@@ -376,8 +383,9 @@ struct KvSparseApplyFtrl<GPUDevice, TKey, T> {
   }
 };
 
-template <typename T>
-__global__ void KvSparseApplyAdamAsyncKernel(int32 *item_idxs,
+template <typename TKey, typename T>
+__global__ void KvSparseApplyAdamAsyncKernel(const TKey* key_base,
+                                              int32 *item_idxs,
                                               int64 dim,
                                               T **d_banks,
                                               bool **d_flags,
@@ -424,19 +432,22 @@ __global__ void KvSparseApplyAdamAsyncKernel(int32 *item_idxs,
   if (var_default_v != nullptr && var_stored == false) {
     d_flags[var_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[var_slot_offset][offset_in_bank*dim + id] = var_default_v[(item_idx%var_default_v_num)*dim + id];
+      d_banks[var_slot_offset][offset_in_bank*dim + id] = 
+          var_default_v[(*(key_base + item_idx)%var_default_v_num)*dim + id];
     }
   }
   if (v_default_v != nullptr && v_stored == false) {
     d_flags[v_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[v_slot_offset][offset_in_bank*dim + id] = v_default_v[(item_idx%v_default_v_num)*dim + id];
+      d_banks[v_slot_offset][offset_in_bank*dim + id] = 
+          v_default_v[(*(key_base + item_idx)%v_default_v_num)*dim + id];
     }
   }
   if (m_default_v != nullptr && m_stored == false) {
     d_flags[m_slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[m_slot_offset][offset_in_bank*dim + id] = m_default_v[(item_idx%m_default_v_num)*dim + id];
+      d_banks[m_slot_offset][offset_in_bank*dim + id] = 
+          m_default_v[(*(key_base + item_idx)%m_default_v_num)*dim + id];
     }
   }
 
@@ -494,9 +505,10 @@ struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep> {
       auto const block_size = 256;
       auto const grid_size = N;
       auto hashtable = var->HashTable();
-      TF_CHECK_OK(GpuLaunchKernel(KvSparseApplyAdamAsyncKernel<T>,
+      TF_CHECK_OK(GpuLaunchKernel(KvSparseApplyAdamAsyncKernel<Tindex, T>,
                             grid_size, block_size, 0, d.stream(),
-                            item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
+                            indices_vec.data(), item_idxs, var->ValueLen(), 
+                            hashtable->d_bank_ptrs,
                             hashtable->d_existence_flag_ptrs, var->EmbIdx(),
                             v->EmbIdx(), m->EmbIdx(), var->SlotNum(),
                             hashtable->initial_bank_size, beta1_scalar.data(),

@@ -120,7 +120,6 @@ def sequence_input_layer(
                 None, default_name=column._var_scope_name
             ):
                 if group_name != "":
-                    group_name_set.add(group_name)
                     output_tensors.append(None)  # placeholder
                     group_embedding_list.append(index)
                     embedding_columns.append(column)

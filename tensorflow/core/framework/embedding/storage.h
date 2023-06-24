@@ -124,13 +124,11 @@ class Storage {
       const DeviceBase::CpuWorkerThreads* worker_threads) = 0;
 
   virtual void BatchLookupOrCreate(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
-      size_t n, const Eigen::GpuDevice& device) {}
+      int32 default_v_num, size_t n, const Eigen::GpuDevice& device) {}
   virtual void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
       const Eigen::GpuDevice& device) {}
-  virtual void BatchLookup(const K* keys, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
-      size_t n, const Eigen::GpuDevice& device) {}
+  virtual void BatchLookup(const Eigen::GpuDevice& device, const K* keys, V* val,
+                           size_t n, const V* default_v) {}
   virtual void ImportToHbm(const std::vector<K>& keys,
       const std::vector<V>& values, const Eigen::GpuDevice* device,
       const EmbeddingConfig& emb_config) {};

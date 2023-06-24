@@ -73,11 +73,12 @@ class GPUHashTable {
 
 namespace functor {
 
-template <typename Device, typename Key, typename V>
+template <typename HashTable, typename Key, typename V>
 struct KvLookupKey {
   void operator()(const Key* key_first, V* value_first, int32 num_items,
-                  int32 dimension, GPUStaticHashTable<Key, V>* hash_table,
-                  cudaStream_t stream);
+                  int32 dimension, int32 slot_idx, int32 slot_num,
+                  HashTable* hash_table,
+                  const V* default_v, int32 default_v_num, cudaStream_t stream);
 };
 
 template <typename Device, typename Key, typename V>
@@ -99,7 +100,7 @@ template <typename Device, typename Key, typename Value>
 struct KvLookupCreateEmb {
   void operator()(const Key* key_first, Value* val, Value* default_v, int64 dim,
                   int32* item_idxs, int32 num_items, int32 slot_idx,
-                  int32 default_v_num, bool is_use_default_value_tensor,
+                  int32 default_v_num,
                   Value** d_banks, bool** d_flags, int32 slot_num,
                   int32 bank_size, cudaStream_t stream);
 };

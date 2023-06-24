@@ -106,36 +106,38 @@ __global__ void ComputeSparseGradFn(
   // each thread corresponding to one element in the embedding vector
   const int tid = tile.thread_rank();
 
-  for (int idx = 0; idx < num_lookups; ++idx) {
-    const int value_offset = args[idx].offset_indices_[bid];
-    int feature_num;
-    if (bid == (batch_size - 1)) {
-      feature_num = args[idx].nnz_ - value_offset;
-    } else {
-      feature_num = args[idx].offset_indices_[bid + 1] - value_offset;
-    }
+  if (bid < batch_size && tid < dimension ) {
+    for (int idx = 0; idx < num_lookups; ++idx) {
+      const int value_offset = args[idx].offset_indices_[bid];
+      int feature_num;
+      if (bid == (batch_size - 1)) {
+        feature_num = args[idx].nnz_ - value_offset;
+      } else {
+        feature_num = args[idx].offset_indices_[bid + 1] - value_offset;
+      }
 
-    if (feature_num > 0) {
-      float grad = args[idx].grads_[bid * dimension + tid];
-      grad = CombineGrad<combiner>(grad, feature_num);
-      for (int i = 0; i < feature_num; i++) {
-        float grad_i = grad;
-        if (max_norm > 0.0f) {
-          int64_t indices = int(args[idx].sp_values_[value_offset + i]);
-          float emb_element =
-              args[idx].emb_variable_[indices * dimension + tid];
-          if (tid == 0) {
-            l2_sum = 0.0f;
+      if (feature_num > 0) {
+        float grad = args[idx].grads_[bid * dimension + tid];
+        grad = CombineGrad<combiner>(grad, feature_num);
+        for (int i = 0; i < feature_num; i++) {
+          float grad_i = grad;
+          if (max_norm > 0.0f) {
+            int64_t indices = int(args[idx].sp_values_[value_offset + i]);
+            float emb_element =
+                args[idx].emb_variable_[indices * dimension + tid];
+            if (tid == 0) {
+              l2_sum = 0.0f;
+            }
+            tile.shfl(l2_sum, 0);
+            atomicAdd(&l2_sum, emb_element * emb_element);
+            tile.sync();
+            float l2_norm = sqrtf(l2_sum);
+            if (l2_norm > max_norm) {
+              grad_i *= max_norm / l2_norm;
+            }
           }
-          tile.shfl(l2_sum, 0);
-          atomicAdd(&l2_sum, emb_element * emb_element);
-          tile.sync();
-          float l2_norm = sqrtf(l2_sum);
-          if (l2_norm > max_norm) {
-            grad_i *= max_norm / l2_norm;
-          }
+          args[idx].grads_output_[(value_offset + i) * dimension + tid] = grad_i;
         }
-        args[idx].grads_output_[(value_offset + i) * dimension + tid] = grad_i;
       }
     }
   }

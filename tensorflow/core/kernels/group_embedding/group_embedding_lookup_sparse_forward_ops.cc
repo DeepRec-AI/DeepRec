@@ -16,6 +16,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/embedding_var.h"
+#include "tensorflow/core/framework/embedding/embedding_var_context.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/resource_mgr.h"
@@ -27,9 +28,9 @@ namespace tensorflow {
   using GroupLookupBaseCpuOp<TKey, TValue>::m_num_lookup;                  \
   using GroupLookupBaseCpuOp<TKey, TValue>::m_dimension;                   \
   using GroupLookupBaseCpuOp<TKey, TValue>::m_is_use_default_value_tensor; \
-  using GroupLookupBaseCpuOp<TKey, TValue>::m_is_sequence;                 \
-  using GroupLookupBaseCpuOp<TKey, TValue>::m_get_default_v_fn;            \
-  using GroupLookupBaseCpuOp<TKey, TValue>::m_lookup_fn;
+  using GroupLookupBaseCpuOp<TKey, TValue>::m_is_sequence;
+
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 template <typename TKey, typename TValue>
 class GroupEmbeddingVariableLookupCpuOp
@@ -39,36 +40,9 @@ class GroupEmbeddingVariableLookupCpuOp
  public:
   explicit GroupEmbeddingVariableLookupCpuOp(OpKernelConstruction *c)
       : GroupLookupBaseCpuOp<TKey, TValue>(c) {
-    bool is_inference;
-    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
-
-    if (!is_inference) {
-      m_lookup_fn = [](EmbeddingVar<TKey, TValue> *ev, TKey key, TValue *val,
-                       TValue *default_v, int count) {
-        ev->LookupOrCreate(key, val, default_v, count);
-        return Status::OK();
-      };
-    } else {
-      m_lookup_fn = [](EmbeddingVar<TKey, TValue> *ev, TKey key, TValue *val,
-                       TValue *default_v, int count) {
-        ev->LookupOrCreate(key, val, default_v);
-        return Status::OK();
-      };
-    }
 
     OP_REQUIRES_OK(c, c->GetAttr("is_use_default_value_tensor",
                                  &m_is_use_default_value_tensor));
-
-    if (m_is_use_default_value_tensor) {
-      m_get_default_v_fn = [](TValue *default_v, TKey id, int64 index,
-                              int64 total_dim,
-                              int64 len) { return default_v + len * index; };
-    } else {
-      m_get_default_v_fn = [](TValue *default_v, TKey id, int64 index,
-                              int64 total_dim, int64 len) {
-        return default_v + len * (id % total_dim);
-      };
-    }
   }
 
   void Compute(OpKernelContext *ctx) override {
@@ -137,14 +111,6 @@ class GroupEmbeddingVariableLookupCpuOp
         batch_nums[k] += batch_nums[k - 1];
       }
 
-      TValue *default_v = nullptr;
-      if (m_is_use_default_value_tensor) {
-        default_v =
-            reinterpret_cast<TValue *>(ctx->input(m_num_lookup * 4 + 1).data());
-      } else {
-        default_v = embedding_var->GetDefaultValuePtr();
-      }
-
       // Stage 2
       Tensor unique_embedding;
       unique_shape.AppendShape({static_cast<int64>(m_dimension)});
@@ -154,30 +120,13 @@ class GroupEmbeddingVariableLookupCpuOp
           ctx, ctx->allocate_temp(DataTypeToEnum<TValue>::v(), unique_shape,
                                   &unique_embedding, attr));
       auto unique_embedding_data = unique_embedding.flat<TValue>().data();
-
-      int slice_bytes = unique_nnz * m_dimension * 1000;
-      auto do_lookup = [this, ctx, embedding_var, unique, default_v,
-                        unique_embedding_data](int64 start, int64 end) {
-        for (int k = start; k < end; ++k) {
-          TValue *default_v_ptr = m_get_default_v_fn(
-              default_v, unique[k], k, embedding_var->GetDefaultValueDim(),
-              embedding_var->ValueLen());
-          OP_REQUIRES_OK(ctx,
-                         m_lookup_fn(embedding_var, unique[k],
-                                     unique_embedding_data + k * m_dimension,
-                                     default_v_ptr, 1 /*count*/));
-        }
-      };
-      Shard(worker_threads->num_threads, worker_threads->workers, unique_nnz,
-            slice_bytes /*cost*/, do_lookup);
-
-      if (embedding_var->IsMultiLevel()) {
-        embedding::BatchCache<TKey> *cache = embedding_var->Cache();
-        embedding_var->storage()->Schedule(
-            [embedding_var, sp_values_tensor] {
-              embedding::BatchCache<TKey> *cache = embedding_var->Cache();
-              cache->update(sp_values_tensor);
-            });
+      EmbeddingVarContext<CPUDevice> ev_ctx(ctx); 
+      if (m_is_use_default_value_tensor) {
+        embedding_var->GetEmbeddings(ev_ctx, unique, unique_embedding_data,
+            unique_nnz, reinterpret_cast<TValue *>(ctx->input(m_num_lookup * 4 + 1).data()));
+      } else {
+        embedding_var->GetEmbeddings(ev_ctx, unique, unique_embedding_data, unique_nnz);
+        embedding_var->UpdateCache(unique_tensor, unique_counter, true/*called_by_gather*/);
       }
 
       std::vector<TValue> default_weights(nnz, 1.0);
@@ -205,7 +154,7 @@ class GroupEmbeddingVariableLookupCpuOp
                                                &gather_embedding_tensor));
       auto gather_embedding = gather_embedding_tensor->flat<TValue>().data();
 
-      slice_bytes = nnz / batch_size * m_dimension * 1000;
+      int slice_bytes = nnz / batch_size * m_dimension * 1000;
       // todo: clean these redundant code
       if (this->m_combiner == "mean") {
         auto embedding_var_mean_combiner = [this, &gather_embedding, batch_nums,
