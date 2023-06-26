@@ -27,11 +27,12 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/env_var.h"
 
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define ARENA_ARRAY_SIZE 1024
+#define ARENA_ARRAY_SIZE 128
 
 namespace tensorflow {
 
@@ -465,7 +466,7 @@ class ThreadLocalBin {
     }
   }
 
-private:
+ private:
   void FlushBackToArena(int num) {
     std::unordered_map<Bin<ChunkType>*, std::vector<void *>> bin_ptr_map;
     for (int i = 0; i < num; i++) {
@@ -480,7 +481,7 @@ private:
     }
   }
 
-private:
+ private:
   size_t t_bin_size_;
   PageMap<ChunkType> *page_map_ = nullptr; // not owned
   Arena<ChunkType> *arena_ = nullptr; // not owned
@@ -544,9 +545,17 @@ class EVAllocatorImpl {
     pthread_key_create(&key_, ThreadLocalCacheCleanup);
     page_map_ = new PageMap<ChunkType>();
     page_map_->Init();
-    arenas_ = new std::vector<Arena<ChunkType>>(ARENA_ARRAY_SIZE, page_map_);
+
+    int64 arena_array_size = ARENA_ARRAY_SIZE;
+    Status s = ReadInt64FromEnvVar("ARENA_ARRAY_SIZE",
+        ARENA_ARRAY_SIZE, &arena_array_size);
+    if (!s.ok()) {
+      LOG(ERROR) << "Read ARENA_ARRAY_SIZE env error: " << s.error_message();
+    }
+    LOG(INFO) << "EVAllocator set arena array size: " << arena_array_size;
+
+    arenas_ = new std::vector<Arena<ChunkType>>(arena_array_size, page_map_);
     arena_cur_index = 0;
-    
   }
 
   ~EVAllocatorImpl() {

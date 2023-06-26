@@ -43,7 +43,7 @@ public:
      : Chunk<CPUChunk>(chunk_size, slot_size) {} 
 
   ~CPUChunk() {
-    delete start_;
+    port::AlignedFree(start_);
   }
  
   void GetMemBlock() override {
