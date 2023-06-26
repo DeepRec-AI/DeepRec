@@ -50,6 +50,11 @@ class FilterPolicy {
                            int64 num_of_keys,
                            V* default_value_ptr,
                            V* default_value_no_permission) = 0;
+
+  virtual void BatchLookupOrCreateKey(
+      const EmbeddingVarContext<GPUDevice>& ctx,
+      const K* keys, ValuePtr<V>** value_ptrs_list,
+      int64 num_of_keys) = 0;
 #endif //GOOGLE_CUDA
 
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val,
@@ -70,6 +75,8 @@ class FilterPolicy {
                 int64 partition_num,
                 bool is_filter,
                 V* default_values) = 0;
+
+  virtual bool is_admit(K key, ValuePtr<V>* value_ptr) = 0;
 };
 } // tensorflow
 

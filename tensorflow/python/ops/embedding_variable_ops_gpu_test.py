@@ -503,7 +503,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
-        sess.run([train_op], {ids:[1,2,3]})
+        sess.run([train_op], {ids:[1,1,2,3]})
         sess.run([train_op], {ids:[1,2,4]})
         sess.run([train_op], {ids:[1,2,2]})
         sess.run([train_op], {ids:[1,2,5]})

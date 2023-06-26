@@ -2180,7 +2180,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
               self.assertEqual(result[i], 0)
 
         sess.run([train_op], {ids:[3, 5]})
-        sess.run([train_op], {ids:[4]})
+        sess.run([train_op], {ids:[4, 4]})
         r1 = sess.run(emb, {ids:[1,2,4,5]})
         r2 = sess.run(emb, {ids:[3]})
         r = r1.tolist() + r2.tolist()
@@ -2248,8 +2248,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
               self.assertEqual(result[i], 0)
 
         r1 = sess.run(emb, {ids:[1,2,5,6]})
-        r2 = sess.run(emb, {ids:[4]})
-        r3 = sess.run(emb, {ids:[3]})
+        r2 = sess.run(emb, {ids:[4, 4]})
+        r3 = sess.run(emb, {ids:[3, 3]})
         r = r1.tolist() + r2.tolist() + r3.tolist()
         return r
 
@@ -2500,6 +2500,51 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertAllEqual(emb_ori[:,0:2], emb_val)
           self.assertAllEqual(emb_ori_2[:,0:2], emb_val_2)
     del os.environ["TF_EV_RESTORE_CUSTOM_DIM"]
+
+  def testCPUFbjOpt(self):
+    print("testCPUFbjOpt")
+    os.environ["TF_EMBEDDING_FBJ_OPT"] = "True"
+    self._OpitmizerTestTemplate("Adagrad")
+    del os.environ["TF_EMBEDDING_FBJ_OPT"]
+  
+
+  def testCPUFbjOptWithCounterFilter(self):
+    print("testCPUFbjOpt")
+    os.environ["TF_EMBEDDING_FBJ_OPT"] = "True"
+    self._CounterFilterTestTemplate("Adagrad")
+    del os.environ["TF_EMBEDDING_FBJ_OPT"]
+  
+  def testCPUFbjOptWithBloomFilter(self):
+    print("testCPUFbjOptWithBloomFilter")
+    os.environ["TF_EMBEDDING_FBJ_OPT"] = "True"
+    var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CBFFilter(
+                                      filter_freq=3,
+                                      max_element_size = 5,
+                                      false_positive_probability = 0.01)))
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      for val in emb1.tolist()[0]:
+        self.assertEqual(val, .0)
+      emb1, top, l = sess.run([emb, train_op, loss])
+      for val in emb1.tolist()[0]:
+        self.assertNotEqual(val, 1.0)
+    del os.environ["TF_EMBEDDING_FBJ_OPT"]
 
 if __name__ == "__main__":
   googletest.main()

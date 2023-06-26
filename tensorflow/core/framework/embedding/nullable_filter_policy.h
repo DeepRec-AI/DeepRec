@@ -80,6 +80,35 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
         output, num_of_keys, embedding_ptr.data(),
         stream, event_mgr, ctx.gpu_device);
   }
+
+  void BatchLookupOrCreateKey(const EmbeddingVarContext<GPUDevice>& ctx,
+                              const K* keys, ValuePtr<V>** value_ptrs,
+                              int64 num_of_keys) {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    std::vector<std::list<int64>>
+        not_found_cursor_list(num_worker_threads + 1);
+    ev_->BatchLookupOrCreateKey(ctx, keys, value_ptrs,
+                                num_of_keys, not_found_cursor_list);
+    std::vector<V*> var_ptrs(num_of_keys);
+    auto do_work = [this, value_ptrs, &var_ptrs]
+        (int64 start, int64 limit) {
+      for (int i = start; i < limit; i++) {
+        bool is_need_set_default_value = false;
+        var_ptrs[i] = ev_->LookupOrCreateEmb(
+            value_ptrs[i], is_need_set_default_value);
+      }
+    };
+    auto worker_threads = ctx.worker_threads;
+    Shard(worker_threads->num_threads,
+          worker_threads->workers, num_of_keys,
+          1000, do_work);
+
+    ev_->SetDefaultValueOfNewFeatures(
+        keys, num_of_keys,
+        not_found_cursor_list[0],
+        var_ptrs.data(), ctx.compute_stream,
+        ctx.event_mgr, ctx.gpu_device);
+  }
 #endif //GOOGLE_CUDA
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
@@ -193,6 +222,10 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
       }
     }
     return Status::OK();
+  }
+
+  bool is_admit(K key, ValuePtr<V>* value_ptr) override {
+    return true;
   }
 
  private:

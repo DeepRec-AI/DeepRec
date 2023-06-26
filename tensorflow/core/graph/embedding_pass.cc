@@ -34,19 +34,17 @@ void VLogGraphDebugString(Graph* g) {
 // Embedding ForwardBackward Joint Optimization, should before smart-stage
 class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPass {
  public:
-  EmbeddingForwardBackwardJointOptimizationPass() : GraphOptimizationPass() {
-    tensorflow::ReadBoolFromEnvVar("TF_EMBEDDING_FBJ_OPT",
-                                   /*default_val=*/false, &embedding_fbj_opt_);
-    if (!embedding_fbj_opt_) {
-      VLOG(2) << "Graph Optimization Pass TF_EMBEDDING_FBJ_OPT is off.";
-    } else {
-      VLOG(2) << "Graph Optimization Pass TF_EMBEDDING_FBJ_OPT is on.";
-    }
-  }
+  EmbeddingForwardBackwardJointOptimizationPass() : GraphOptimizationPass() {}
 
   Status Run(const GraphOptimizationPassOptions& options) override {
-    if (!embedding_fbj_opt_) {
+    bool embedding_fbj_opt = false;
+    tensorflow::ReadBoolFromEnvVar("TF_EMBEDDING_FBJ_OPT",
+                                   /*default_val=*/false, &embedding_fbj_opt);
+    if (!embedding_fbj_opt) {
+      VLOG(2) << "Graph Optimization Pass TF_EMBEDDING_FBJ_OPT is off.";
       return Status::OK();
+    } else {
+      VLOG(2) << "Graph Optimization Pass TF_EMBEDDING_FBJ_OPT is on.";
     }
 
     if (options.graph == nullptr) {
@@ -147,7 +145,7 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
       } else if (0 == e->src_output() && e->dst()->type_string() == "Reshape") {
         Node* reshape = e->dst();
         for (const Edge *e : reshape->out_edges()) {
-          if (0 == e->src_output() && e->dst()->type_string() == "Unique") {
+          if (0 == e->src_output() && e->dst()->IsUnique()) {
             TF_RETURN_IF_ERROR(GetApplyOpNode(e->dst(), apply_node));
             *apply_edge = const_cast<Edge*>(e);
           }
@@ -215,9 +213,6 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
     g->RemoveNode(node);
     return Status::OK();
   }
-
- private:
-  bool embedding_fbj_opt_ = false;
 };
 
 REGISTER_OPTIMIZATION(OptimizationPassRegistry::PRE_PLACEMENT, 23,

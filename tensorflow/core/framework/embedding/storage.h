@@ -63,11 +63,21 @@ class Storage {
   TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
+#if GOOGLE_CUDA
   virtual void BatchGet(const EmbeddingVarContext<GPUDevice>& ctx,
                         const K* key,
                         ValuePtr<V>** value_ptr_list,
                         int64 num_of_keys,
                         int64 value_len) {}
+
+  virtual void BatchGetOrCreate(
+      const EmbeddingVarContext<GPUDevice>& ctx,
+      const K* key,
+      ValuePtr<V>** value_ptr_list,
+      int64 num_of_keys,
+      int64 value_len,
+      std::vector<std::list<int64>>& not_found_cursor_list) {}
+#endif //GOOGLE_CUDA
   virtual Status Contains(K key) = 0;
   virtual void Insert(K key, ValuePtr<V>** value_ptr, size_t alloc_len) = 0;
   virtual void InsertToDram(K key, ValuePtr<V>** value_ptr,
@@ -199,12 +209,9 @@ class Storage {
 
   virtual void UpdateCache(const Tensor& indices) {}
 
-  virtual void UpdateCache(const K* indices,
-                           int64 num_indices,
-                           const Tensor& indices_counts) {}
+  virtual void AddToCachePrefetchList(const Tensor& indices) {}
 
-  virtual void UpdateCache(const K* keys,
-                           int64 num_indices) {}
+  virtual void AddToCache(const Tensor& indices) {}
 
  protected:
   int64 alloc_len_ = 0;

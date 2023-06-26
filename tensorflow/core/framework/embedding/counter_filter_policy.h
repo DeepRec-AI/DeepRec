@@ -74,6 +74,16 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
         output, num_of_keys, embedding_ptr.data(),
         stream, event_mgr, ctx.gpu_device);
   }
+
+  void BatchLookupOrCreateKey(const EmbeddingVarContext<GPUDevice>& ctx,
+                              const K* keys, ValuePtr<V>** value_ptrs_list,
+                              int64 num_of_keys) override {
+    int num_worker_threads = ctx.worker_threads->num_threads;
+    std::vector<std::list<int64>>
+        not_found_cursor_list(num_worker_threads + 1);
+    ev_->BatchLookupOrCreateKey(ctx, keys, value_ptrs_list,
+                                num_of_keys, not_found_cursor_list);
+  }
 #endif //GOOGLE_CUDA
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
@@ -198,6 +208,10 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
       }
     }
     return Status::OK();
+  }
+
+  bool is_admit(K key, ValuePtr<V>* value_ptr) override {
+    return (GetFreq(key, value_ptr) >= config_.filter_freq);
   }
 
  private:
