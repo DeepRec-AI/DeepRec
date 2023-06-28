@@ -4332,6 +4332,7 @@ class GroupEmbeddingScope(group_embedding_column.GroupEmbeddingScopeBase):
         sequence_lengths[index] = fc_utils.sequence_length_from_sparse_tensor(
             sp_id)
         is_sequence = True
+      sp_id, _ = _prune_invalid_ids(sp_id, None)
       sp_ids.append(sp_id)
       combiners.append(ec.combiner)
       with variable_scope.variable_scope(ec._var_scope_name):

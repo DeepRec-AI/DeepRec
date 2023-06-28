@@ -326,9 +326,14 @@ class EmbeddingVar : public ResourceBase {
                      const K* keys,
                      V* output,
                      int64 num_of_keys) {
-    filter_->BatchLookup(context, keys, output,
-                         num_of_keys, default_value_,
-                         default_value_no_permission_);
+    if (IsSingleHbm()) {
+      storage_->BatchLookup(context.gpu_device, keys, 
+		            output, num_of_keys, default_value_);
+    } else {
+      filter_->BatchLookup(context, keys, output,
+                           num_of_keys, default_value_,
+                           default_value_no_permission_);
+    }
   }
 
   void GetOrCreateKey(const EmbeddingVarContext<GPUDevice>& context,
@@ -811,10 +816,9 @@ class EmbeddingVar : public ResourceBase {
   }
 
   void LookupOrCreate(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
-      size_t n, const Eigen::GpuDevice& device) {
+      int32 default_v_num, size_t n, const Eigen::GpuDevice& device) {
     storage_->BatchLookupOrCreate(key, val, default_v, default_v_num,
-        is_use_default_value_tensor, n, device);
+        n, device);
   }
 
   void LookupOrCreateKey(const K* key, int32* item_idxs, size_t n,
@@ -823,10 +827,10 @@ class EmbeddingVar : public ResourceBase {
   }
 
   void Lookup(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
+      int32 default_v_num,
       size_t n, const Eigen::GpuDevice& device) {
     storage_->BatchLookup(key, val, default_v, default_v_num,
-        is_use_default_value_tensor, n, device);
+        n, device);
   }
   
   int32 SlotNum() {

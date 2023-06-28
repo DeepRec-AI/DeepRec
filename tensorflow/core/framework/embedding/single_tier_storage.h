@@ -444,10 +444,10 @@ class HbmStorage : public SingleTierStorage<K, V> {
   }
 
   void BatchLookupOrCreate(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
+      int32 default_v_num,
       size_t n, const Eigen::GpuDevice& device) override {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(key, val, default_v, default_v_num,
-        is_use_default_value_tensor, n, device);
+        n, device);
   }
 
   void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
@@ -455,11 +455,9 @@ class HbmStorage : public SingleTierStorage<K, V> {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreateKeys(key, n, item_idxs, device);
   }
 
-  void BatchLookup(const K* key, V* val, V* default_v,
-      int32 default_v_num, bool is_use_default_value_tensor,
-      size_t n, const Eigen::GpuDevice& device) override {
-    SingleTierStorage<K, V>::kv_->BatchLookup(key, val, default_v, default_v_num,
-        is_use_default_value_tensor, n, device);
+  void BatchLookup(const Eigen::GpuDevice& device, const K* keys, V* val,
+                   size_t n, const V* default_v) override {
+    SingleTierStorage<K, V>::kv_->BatchLookup(device, keys, val, n, default_v);
   }
   
   int64 GetSnapshot(std::vector<K>* key_list,

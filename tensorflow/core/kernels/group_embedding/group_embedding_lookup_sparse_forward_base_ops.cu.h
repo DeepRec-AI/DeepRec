@@ -59,22 +59,35 @@ __global__ void SetToIntMaxSTG128(const int batch_size, int* values_offset) {
   }
 }
 
-__global__ void CalcPerElementRowOffset(int batch_size, int nnz,
-                                        int stride, const int64_t* indices,
-                                        volatile int* values_offset) {
+__device__ void FilledEmptyRowNumber(int batch_size, volatile int* values_offset) {
   const int thread_offset = blockIdx.x * blockDim.x + threadIdx.x;
   const int int_max = 0x7fffffff;
+  if (thread_offset > 1) {
+    if (thread_offset < batch_size) {
+        while (values_offset[thread_offset] == int_max) {
+          const int compare = values_offset[thread_offset-1];
+          if (compare != int_max) {
+            atomicMin((int*)values_offset + thread_offset, compare);
+          }
+        }
+      }
+  } else {
+    if (values_offset[thread_offset] == int_max) {
+      values_offset[thread_offset] = 0;
+    }
+  }
+}
+
+__global__ void CalcPerElementRowOffset(int batch_size, int nnz,
+                                        int stride, const int64_t* indices,
+                                        int* values_offset) {
+  const int thread_offset = blockIdx.x * blockDim.x + threadIdx.x;
   if (thread_offset < nnz) {
     const int64_t element_row = indices[stride*thread_offset];
     atomicMin((int*)values_offset + int(element_row), thread_offset);
-    __syncthreads();
-    if (thread_offset < int(batch_size - 1)) {
-      while (values_offset[thread_offset + 1] == int_max) {
-      }
-      const int compare = values_offset[thread_offset + 1];
-      atomicMin((int*)values_offset + thread_offset, compare);
-    }
   }
+  __syncthreads();
+  FilledEmptyRowNumber(batch_size, values_offset);
 }
 
 inline void launch_cal_per_element_row_offset(const int batch_size, int nnz, int stride,
@@ -85,7 +98,6 @@ inline void launch_cal_per_element_row_offset(const int batch_size, int nnz, int
   int blocks = (batch_size - 1) / threads + 1;
 
   SetToIntMaxSTG128<<<blocks, threads, 0, stream>>>(batch_size, offset_indices);
-
   blocks = (nnz - 1) / threads + 1;
   CalcPerElementRowOffset<<<blocks, threads, 0, stream>>>(
       batch_size, nnz, stride, sp_indices, offset_indices);

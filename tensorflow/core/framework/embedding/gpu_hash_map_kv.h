@@ -67,33 +67,37 @@ class GPUHashMapKV : public KVInterface<K, V> {
 
   Status BatchLookupOrCreateKeys(const K* keys, size_t n, int32* item_idxs,
                                  const Eigen::GpuDevice& device) {
-    mutex_lock lock(lock_);
-    int remaining_size =
-        n + *(hash_table_->start_idx) -
-        hash_table_->mem_bank_num * hash_table_->initial_bank_size;
-    if (remaining_size > 0) {
-      Resize(remaining_size);
+    if (n > 0) {
+      mutex_lock lock(lock_);
+      int remaining_size =
+          n + *(hash_table_->start_idx) -
+          hash_table_->mem_bank_num * hash_table_->initial_bank_size;
+      if (remaining_size > 0) {
+        Resize(remaining_size);
+      }
+      functor::KvLookupInsertKey<Eigen::GpuDevice, K, V>()(
+          keys, item_idxs, n, hash_table_, hash_table_->start_idx,
+          device.stream());
     }
-    functor::KvLookupInsertKey<Eigen::GpuDevice, K, V>()(
-        keys, item_idxs, n, hash_table_, hash_table_->start_idx,
-        device.stream());
     return Status::OK();
   }
 
   Status BatchLookupOrCreate(const K* keys, V* val, V* default_v,
-                             int32 default_v_num,
-                             bool is_use_default_value_tensor, size_t n,
+                             int32 default_v_num, size_t n,
                              const Eigen::GpuDevice& device) {
-    int32* item_idxs =
-        TypedAllocator::Allocate<int32>(alloc_, n, AllocationAttributes());
-    BatchLookupOrCreateKeys(keys, n, item_idxs, device);
-    functor::KvLookupCreateEmb<Eigen::GpuDevice, K, V>()(
-        keys, val, default_v, value_len_, item_idxs, n, config_.emb_index,
-        default_v_num, is_use_default_value_tensor, hash_table_->d_bank_ptrs,
-        hash_table_->d_existence_flag_ptrs,
-        (config_.block_num * (1 + config_.slot_num)),
-        hash_table_->initial_bank_size, device.stream());
-    TypedAllocator::Deallocate(alloc_, item_idxs, n);
+    if (n > 0) {
+      int32* item_idxs =
+          TypedAllocator::Allocate<int32>(alloc_, n, AllocationAttributes());
+      BatchLookupOrCreateKeys(keys, n, item_idxs, device);
+      functor::KvLookupCreateEmb<Eigen::GpuDevice, K, V>()(
+          keys, val, default_v, value_len_, item_idxs, n, config_.emb_index,
+          default_v_num, hash_table_->d_bank_ptrs,
+          hash_table_->d_existence_flag_ptrs,
+          (config_.block_num * (1 + config_.slot_num)),
+          hash_table_->initial_bank_size, device.stream());
+      TypedAllocator::Deallocate(alloc_, item_idxs, n);
+    }
+    
     return Status::OK();
   }
 
@@ -256,11 +260,23 @@ class GPUHashMapKV : public KVInterface<K, V> {
 
   GPUHashTable<K, V>* HashTable() override { return hash_table_; }
 
-  Status BatchLookup(const K* keys, V* val, V* default_v, int32 default_v_num,
-                     bool is_use_default_value_tensor, size_t n,
-                     const Eigen::GpuDevice& device) override {
-    functor::KvLookupKey<Eigen::GpuDevice, K, V>()(
-        keys, val, n, value_len_, static_hash_table_, device.stream());
+  Status BatchLookup(const Eigen::GpuDevice& device, const K* keys,
+		      V* val, size_t n, const V* default_v) override {
+    if (n > 0) {
+      if (is_inference_) {
+        functor::KvLookupKey<GPUStaticHashTable<K, V>, K, V>()(
+          keys, val, n, value_len_, config_.emb_index,
+          (config_.block_num * (1 + config_.slot_num)),
+          static_hash_table_, default_v, 
+          config_.default_value_dim, device.stream());   
+      } else {
+        functor::KvLookupKey<GPUHashTable<K, V>, K, V>()(
+          keys, val, n, value_len_, config_.emb_index, 
+          (config_.block_num * (1 + config_.slot_num)),
+          hash_table_, default_v, 
+          config_.default_value_dim, device.stream());
+      }
+    }
     return Status::OK();
   }
 

@@ -25,9 +25,9 @@ namespace tensorflow {
 #define USING_BASE_CLASS_MEMBER                                            \
   using GroupLookupBaseCpuOp<TKey, TValue>::m_num_lookup;                  \
   using GroupLookupBaseCpuOp<TKey, TValue>::m_dimension;                   \
-  using GroupLookupBaseCpuOp<TKey, TValue>::m_is_use_default_value_tensor; \
-  using GroupLookupBaseCpuOp<TKey, TValue>::m_get_default_v_fn;            \
-  using GroupLookupBaseCpuOp<TKey, TValue>::m_lookup_fn;
+  using GroupLookupBaseCpuOp<TKey, TValue>::m_is_use_default_value_tensor;
+
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 template <typename TKey, typename TValue>
 class GroupEmbeddingVariableLookupDenseCpuOp
@@ -38,32 +38,6 @@ class GroupEmbeddingVariableLookupDenseCpuOp
       : GroupLookupBaseCpuOp<TKey, TValue>(c) {
     OP_REQUIRES_OK(c, c->GetAttr("is_use_default_value_tensor",
                                  &m_is_use_default_value_tensor));
-    bool is_inference;
-    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
-
-    if (m_is_use_default_value_tensor) {
-      m_get_default_v_fn = [](TValue* default_v, TKey id, int64 index,
-                              int64 total_dim,
-                              int64 len) { return default_v + len * index; };
-    } else {
-      m_get_default_v_fn = [](TValue* default_v, TKey id, int64 index,
-                              int64 total_dim, int64 len) {
-        return default_v + len * (id % total_dim);
-      };
-    }
-    if (!is_inference) {
-      m_lookup_fn = [](EmbeddingVar<TKey, TValue>* ev, TKey key, TValue* val,
-                       TValue* default_v, int count) {
-        ev->LookupOrCreate(key, val, default_v, count);
-        return Status::OK();
-      };
-    } else {
-      m_lookup_fn = [](EmbeddingVar<TKey, TValue>* ev, TKey key, TValue* val,
-                       TValue* default_v, int count) {
-        ev->LookupOrCreate(key, val, default_v);
-        return Status::OK();
-      };
-    }
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -79,6 +53,7 @@ class GroupEmbeddingVariableLookupDenseCpuOp
       core::ScopedUnref unref_me(embedding_var);
 
       const Tensor& dense_values_tensor = ctx->input(m_num_lookup + i);
+      auto dense_values = dense_values_tensor.flat<TKey>().data();
       int nnz = dense_values_tensor.NumElements();
 
       auto dense_values_tensor_shape = dense_values_tensor.shape();
@@ -98,55 +73,15 @@ class GroupEmbeddingVariableLookupDenseCpuOp
                                   embedding_var->CacheSize(),
                                   " should large than IDs in batch ", nnz));
 
-      // Stage 1
-      Tensor unique_idx_tensor;
-      Tensor unique_tensor;
-      Tensor unique_counter;
-
-      UniqueWithoutAxis<TKey, int32>(
-          ctx, dense_values_tensor, &unique_idx_tensor, &unique_tensor,
-          &unique_counter, 0, this->partition_size_, this->serial_,
-          this->unique_ratio_hint_, this->map_flag_);
-
-      ctx->set_output(m_num_lookup + i, unique_tensor);
-      ctx->set_output(2 * m_num_lookup + i, unique_idx_tensor);
-
-      auto* unique = unique_tensor.flat<TKey>().data();
-      auto* unique_idx = unique_idx_tensor.flat<int>().data();
-
-      TValue* default_v = nullptr;
+      EmbeddingVarContext<CPUDevice> ev_ctx(ctx);
       if (m_is_use_default_value_tensor) {
-        default_v =
-            reinterpret_cast<TValue*>(ctx->input(m_num_lookup * 2).data());
+        embedding_var->GetEmbeddings(ev_ctx, dense_values, gather_embedding,
+            nnz, reinterpret_cast<TValue *>(ctx->input(m_num_lookup * 4 + 1).data()));
       } else {
-        default_v = embedding_var->GetDefaultValuePtr();
+        embedding_var->GetEmbeddings(ev_ctx, dense_values, gather_embedding, nnz);
+        embedding_var->UpdateCache(dense_values_tensor, true);
       }
 
-      int slice_bytes = nnz * m_dimension * 1000;
-      auto do_lookup = [this, ctx, embedding_var, unique, default_v, unique_idx,
-                        gather_embedding](int64 start, int64 end) {
-        for (int k = start; k < end; ++k) {
-          auto indices = unique_idx[k];
-          TKey unique_id = unique[indices];
-          TValue* default_v_ptr = m_get_default_v_fn(
-              default_v, unique_id, indices,
-              embedding_var->GetDefaultValueDim(), embedding_var->ValueLen());
-          OP_REQUIRES_OK(ctx, m_lookup_fn(embedding_var, unique_id,
-                                          gather_embedding + k * m_dimension,
-                                          default_v_ptr, 1 /*count*/));
-        }
-      };
-      Shard(worker_threads->num_threads, worker_threads->workers, nnz,
-            slice_bytes, do_lookup);
-
-      if (embedding_var->IsMultiLevel()) {
-        embedding::BatchCache<TKey>* cache = embedding_var->Cache();
-        embedding_var->storage()->Schedule(
-            [embedding_var, dense_values_tensor] {
-              embedding::BatchCache<TKey>* cache = embedding_var->Cache();
-              cache->update(dense_values_tensor);
-            });
-      }
     }
   }
 };

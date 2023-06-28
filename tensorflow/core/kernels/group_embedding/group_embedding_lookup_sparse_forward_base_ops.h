@@ -43,10 +43,6 @@ class GroupLookupBaseCpuOp : public OpKernel {
   }
 
  protected:
-  std::function<TValue*(TValue*, TKey, int64, int64, int64)> m_get_default_v_fn;
-  std::function<Status(EmbeddingVar<TKey, TValue>* ev, TKey key, TValue* val,
-                       TValue* default_v, int count)>
-      m_lookup_fn;
   // float max_norm_;
   int m_num_lookup;
   int m_dimension;

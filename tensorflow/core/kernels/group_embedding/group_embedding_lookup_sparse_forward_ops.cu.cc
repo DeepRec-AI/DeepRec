@@ -41,25 +41,6 @@ class GroupEmbeddingVarLookupOp
       : GroupEmbeddingLookupForwardBaseOp<TKey, TValue>(c) {
     OP_REQUIRES_OK(c, c->GetAttr("is_use_default_value_tensor",
                                  &is_use_default_value_tensor_));
-    bool is_inference;
-    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
-    if (!is_inference) {
-      lookup_fn_ = [](EmbeddingVar<TFKey, TValue>* ev, const TFKey* key,
-                      TValue* val, TValue* default_v, int32 default_v_num,
-                      bool is_use_default_value_tensor,
-                      size_t n, const Eigen::GpuDevice& device) {
-        ev->LookupOrCreate(key, val, default_v, default_v_num,
-            is_use_default_value_tensor, n, device);
-      };
-    } else {
-      lookup_fn_ = [](EmbeddingVar<TFKey, TValue>* ev, const TFKey* key,
-                      TValue* val, TValue* default_v, int32 default_v_num,
-                      bool is_use_default_value_tensor,
-                      size_t n, const Eigen::GpuDevice& device) {
-        ev->Lookup(key, val, default_v, default_v_num,
-            is_use_default_value_tensor, n, device);
-      };
-    }
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -106,7 +87,8 @@ class GroupEmbeddingVarLookupOp
       OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<TValue>::value,
                                              {N * dimension}, &out_tensor));
       TValue* out_base = out_tensor.flat<TValue>().data();
-
+      
+      EmbeddingVarContext<GPUDevice> ev_ctx(ctx);
       if (ev->IsSingleHbm()) {
         if (is_use_default_value_tensor_) {
           Tensor default_values(ctx->input(5 * this->num_lookups_));
@@ -114,17 +96,13 @@ class GroupEmbeddingVarLookupOp
           auto default_values_matrix =
               default_values.shaped<TValue, 2>({default_value_num, dimension});
           TValue* default_v_base = &default_values_matrix(0, 0);
-          lookup_fn_(ev, key_base, out_base, default_v_base,
-                     default_value_num, is_use_default_value_tensor_, N,
-                     device);
-          
+	        ev->GetEmbeddings(ev_ctx, key_base, out_base, N);
         } else {
-          lookup_fn_(ev, key_base, out_base, ev->GetDefaultValuePtr(),
-                     ev->GetDefaultValueDim(), true, N, device);
+          ev->GetEmbeddings(ev_ctx, key_base, out_base, N);
         }
       } else {
-        Tensor indices_host(
-            sp_values_tensor.dtype(), sp_values_tensor.shape());
+        TensorShape indices_host_shape = sp_values_tensor.shape();
+        Tensor indices_host(sp_indices_tensor.dtype(), indices_host_shape);
         //Copy ids from GPU to CPU for CPU Lookup.
         auto stream = ctx->op_device_context()->stream();
         auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
@@ -132,9 +110,8 @@ class GroupEmbeddingVarLookupOp
         stream->ThenMemcpy(indices_host.data(), gpu_src, N * sizeof(TFKey));
         SyncWithEventMgr(stream, event_mgr);
         EmbeddingVarContext<GPUDevice> ev_ctx(ctx);
-        ev->GetEmbeddings(ev_ctx, (TFKey*)indices_host.data(),
-                          out_base, N);
-        ev->UpdateCache(indices_host);
+        ev->GetEmbeddings(ev_ctx, (TFKey*)indices_host.data(), out_base, N);
+        ev->UpdateCache(indices_host, true);
       }
 
       TensorShape emb_vectors_tensor_shape;
@@ -205,10 +182,6 @@ class GroupEmbeddingVarLookupOp
   }
 
  private:
-  std::function<void(EmbeddingVar<TFKey, TValue>* ev, const TFKey* key,
-                      TValue* val, TValue* default_v, int32 default_v_num,
-                      bool is_use_default_value_tensor,
-                      size_t n, const Eigen::GpuDevice& device)> lookup_fn_;
   bool is_use_default_value_tensor_;
 };
 
