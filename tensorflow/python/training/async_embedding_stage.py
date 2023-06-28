@@ -28,8 +28,8 @@ import re
 @tf_export(v1=["async_embedding_mark_node"])
 def async_embedding_mark_node(embedding_tensor):
     """ mark embedding lookup output
-    Args: 
-    embedding_tensor: output tensor of embedding lookup function, 
+    Args:
+    embedding_tensor: output tensor of embedding lookup function,
     usually it is consumed by hidden layers in the neural network.
     """
     ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, embedding_tensor)
@@ -77,7 +77,7 @@ class AsyncEmbeddingStage:
         logging.info('async embedding stage begin')
         logging.info('async embedding thread num: ' + str(self._threads_num))
         logging.info('async embedding capacity: ' + str(self._capacity))
-        
+
         self._save_graph(graph, "graph_before_async_embedding")
         self._find_start_node(graph)
         self._mark_nodes_status()
@@ -130,7 +130,7 @@ class AsyncEmbeddingStage:
             raise Exception("No boundary ops found")
 
         # travel all inputs node of boundary, remove the node if it is in
-        # candidate_boundary_ops, and collect all no input node 
+        # candidate_boundary_ops, and collect all no input node
         is_visited = set()
         control_flow_nodes = set()
         no_data_input_nodes =set()
@@ -144,7 +144,7 @@ class AsyncEmbeddingStage:
                 # check io staged get node is existed or not
                 if (visit_node.type == "TensorBufferTake"):
                     is_find_io_staged_get = True
-                
+
                 # if meet node in candidate_boundary_ops and is not boundary_node
                 # remove it from candidate_boundary_ops
                 if visit_node != boundary_node and \
@@ -178,9 +178,9 @@ class AsyncEmbeddingStage:
                 candidate_boundary_ops.add(node)
             elif self._is_variable_init_op(node):
                 candidate_boundary_ops.add(node)
-        
+
         self._start_nodes = candidate_boundary_ops
-        
+
     def _mark_nodes_status(self):
         active_stack = list(self._start_nodes)
 
@@ -259,7 +259,7 @@ class AsyncEmbeddingStage:
                                 num_threads=self._threads_num,
                                 capacity=self._capacity,
                                 timeout_millis=1000*60*60*3,
-                                closed_exception_types= (errors.OutOfRangeError,),
+                                closed_exception_types= (errors.OUT_OF_RANGE,),
                                 use_stage_subgraph_thread_pool = self._use_stage_subgraph_thread_pool,
                                 stage_subgraph_thread_pool_id = self._stage_subgraph_thread_pool_id)
 
@@ -289,7 +289,7 @@ class AsyncEmbeddingStage:
                             break
                     if self._stage_put_node is None:
                         raise Exception('no stage put node is found')
-                    
+
                     self._stage_get_node = target_output.op.inputs[0].op
                     logging.info('async embedding stage_get_node: {}'.format(self._stage_get_node.name))
 
@@ -327,7 +327,7 @@ class AsyncEmbeddingStage:
                 control_outputs.add(control_input_node)
             control_inputs.append(self._stage_get_node)
             active_node._control_inputs = control_inputs
-        
+
         # switch inactive node control output from active node to stage put node
         control_outputs = list(control_outputs)
         control_outputs.extend(self._stage_put_node.control_inputs)
@@ -349,7 +349,7 @@ class AsyncEmbeddingStage:
                input_node.type == "Identity" and input_node.inputs[0].op != self._stage_get_node:
                 # skip data edge from inactive variable node to active node
                 return [node]
-        
+
         for control_input in node.control_inputs:
             if control_input != self._stage_get_node and \
                control_input not in self._active_nodes:
@@ -381,20 +381,20 @@ class AsyncEmbeddingStage:
         path += ")"
         path += " --> "
         self._print_one_log(tag, path)
-    
+
     def _check_graph(self):
         visited_nodes = set()
         nodes = self._find_node_cycle_dependent_on_stage(self._stage_get_node, visited_nodes)
         if nodes:
             self._print_ops_path('find node cycle dependent on stage', nodes)
             raise Exception('check graph failed, find node cycle dependent on stage')
-    
+
     def _get_op_device_str(self, op):
         dev_str = op.device
         if dev_str == None:
             return ''
         return dev_str
-        
+
     def _set_op_device(self, op, dev_str):
         origin_device = self._get_op_device_str(op)
         if origin_device == '':
@@ -412,7 +412,7 @@ class AsyncEmbeddingStage:
                     device += '/' + field_
             device += dev_str
         op._set_device(device)
-        
+
     def _place_io_embedding_subgraph_on_cpu(self, graph):
         dev_str = '/device:CPU:0'
 
@@ -463,4 +463,3 @@ class AsyncEmbeddingStage:
         # 5. place stage_closed_nodes on cpu
         for stage_closed_node in stage_closed_nodes:
             self._set_op_device(stage_closed_node, dev_str)
-

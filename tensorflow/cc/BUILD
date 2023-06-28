@@ -737,6 +737,16 @@ tf_cc_binary(
 )
 
 cc_library(
+    name = "prefetch_runner",
+    srcs = ["training/prefetch_runner.cc"],
+    hdrs = ["training/prefetch_runner.h"],
+    deps = [
+        ":coordinator",
+        "//tensorflow/core:core_cpu",
+    ],
+)
+
+cc_library(
     name = "queue_runner",
     srcs = ["training/queue_runner.cc"],
     hdrs = ["training/queue_runner.h"],

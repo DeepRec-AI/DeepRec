@@ -20,16 +20,18 @@ from __future__ import print_function
 
 import collections
 
-from tensorflow.python.framework import sparse_tensor
+from tensorflow.core.protobuf import config_pb2
+from tensorflow.python import pywrap_tensorflow as prefetch_runner
+from tensorflow.python.client.session import _REGISTERED_EXPANSIONS
+from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import gen_tensor_buffer_ops
+from tensorflow.python.ops.prefetch_runner_hook import PrefetchRunnerHook
 from tensorflow.python.util import nest
 from tensorflow.python.util.tf_export import tf_export
-
-
-from tensorflow.python.ops import gen_tensor_buffer_ops
-from tensorflow.python.ops.prefetch_runner import PrefetchRunner
 
 ops.NotDifferentiable('TensorBufferPut')
 ops.NotDifferentiable('TensorBufferTake')
@@ -38,30 +40,64 @@ ops.NotDifferentiable('TensorBufferCancel')
 PREFETCH = "prefetch"
 
 @tf_export(v1=["make_prefetch_hook"])
-def make_prefetch_hook(daemon=True, start=True):
-  """Create PrefetchRunner.Hook for prefetching.
-
-  Args:
-    daemon: (Optional.) Whether the threads should be marked as `daemons`,
-      meaning they don't block program exit.
-    start: (Optional.) If `False` threads would not be started.
+def make_prefetch_hook():
+  """Create PrefetchRunnerHook for prefetching.
 
   Returns:
-    A PrefetchRunner.Hook for prefetching.
+    A PrefetchRunnerHook for prefetching.
   """
-  return PrefetchRunner.Hook(PREFETCH, daemon=daemon, start=start)
+  return PrefetchRunnerHook()
+
+def fill_prefetch_runner_options(options,
+                                 fetch_tensors,
+                                 cancel_fetching,
+                                 resume_fetching,
+                                 close_fetching,
+                                 feed_dict={},
+                                 closed_exception_types=(errors.OUT_OF_RANGE,),
+                                 ignored_exception_types=(),
+                                 use_stage_subgraph_thread_pool=False,
+                                 stage_subgraph_thread_pool_id=0):
+  def _feed_fn(feed, feed_val):
+    for tensor_type, _, feed_fn, _ in _REGISTERED_EXPANSIONS:
+      if isinstance(feed, tensor_type):
+        return feed_fn(feed, feed_val)
+    raise TypeError('Feed argument %r has invalid type %r' % (feed, type(feed)))
+
+  options.run_options.use_stage_subgraph_thread_pool = \
+    use_stage_subgraph_thread_pool
+  options.run_options.stage_subgraph_thread_pool_id = \
+    stage_subgraph_thread_pool_id
+  options.fetch_ops.extend([x.name for x in fetch_tensors])
+  options.cancel_op = cancel_fetching.name
+  options.resume_op = resume_fetching.name
+  options.close_op = close_fetching.name
+
+  feed_dict = nest.flatten_dict_items(feed_dict)
+  for feed, feed_val in feed_dict.items():
+    for subfeed, subfeed_val in _feed_fn(feed, feed_val):
+      if not isinstance(subfeed_val, ops.Tensor):
+        raise TypeError('The value of a feed must be a tf.Tensor object. '
+                        'but ' + str(feed) + ' was feed by '
+                        + str(type(feed_val)))
+      options.named_feed_input_tensors[subfeed.name]=subfeed_val.name
+
+  for err_code in closed_exception_types:
+    options.closed_exceptions.append(err_code)
+
+  for err_code in ignored_exception_types:
+    options.ignored_exceptions.append(err_code)
 
 @tf_export(v1=["staged"])
 def staged(
     features,
-    feed_list=None,
-    feed_generator=None,
+    feed_dict={},
     capacity=1,
     num_threads=1,
     num_clients=1,
     timeout_millis=300000,
-    closed_exception_types=None,
-    ignored_exception_types=None,
+    closed_exception_types=(errors.OUT_OF_RANGE,),
+    ignored_exception_types=(),
     use_stage_subgraph_thread_pool=False,
     stage_subgraph_thread_pool_id = 0,
     stage_subgraph_stream_id = 0,
@@ -70,10 +106,13 @@ def staged(
 
   Args:
     features: Nest structure of tensors to prefetch.
-    feed_list: (Optional.) A list of `feed_dict` keys. See
-      @{tf.Session.run} for details of the allowable feed key types.
-    feed_generator: (Optional.) A generator function lambda sess: iterator
-      that yields a list of `feed_dict` values.
+    feed_dict: (Optional.) A dictionary that maps graph elements to values.
+      Each key in `feed_dict` can be one of the following types:
+      * `tf.Tensor` or `tf.compat.v1.placeholder`: the value should be a tensor.
+      * `tf.SparseTensor`: the value should be a `tf.compat.v1.SparseTensorValue`.
+      * a nested tuple of `Tensor`s or `SparseTensor`s, the value should be a
+        nested tuple with the same structure that maps to their corresponding
+        values as above.
     capacity: (Optional.) Max number of samples to keep in the buffer.
     num_threads: (Optional.) Number of threads for prefetching. 1 by
       default.
@@ -83,7 +122,7 @@ def staged(
       default.
     closed_exception_types: (Optional.) Exception types indicating that the
       prefetching is normally finished. Defaults to
-      `(tf.errors.OutOfRangeError, StopIteration)`.
+      `(errors.OUT_OF_RANGE,)`.
     ignored_exception_types: (Optional.) Exception types indicating that the
       prefetching can continue. Defaults to `()`.
     use_stage_subgraph_thread_pool: (Optional.) Use stage subgraph thread pool
@@ -183,30 +222,30 @@ def staged(
             next_tensor_or_nones.popleft())
     prefetched = nest.pack_sequence_as(
         features, next_tensor_or_sparse_tensor_or_nones)
-  runner = PrefetchRunner(
-      fetch_ops=[fetch_tensors] * num_threads,
-      cancel_op=cancel_fetching,
-      resume_op=resume_fetching,
-      close_op=close_fetching,
-      feed_list=feed_list,
-      feed_generator=feed_generator,
-      closed_exception_types=closed_exception_types,
-      ignored_exception_types=ignored_exception_types,
-      use_stage_subgraph_thread_pool=use_stage_subgraph_thread_pool,
-      stage_subgraph_thread_pool_id=stage_subgraph_thread_pool_id)
-  ops.add_to_collection(PREFETCH, runner)
+
+  runner_options = config_pb2.PrefetchRunnerOptions()
+  fill_prefetch_runner_options(runner_options, [fetch_tensors]*num_threads,
+                               cancel_fetching, resume_fetching,
+                               close_fetching, feed_dict,
+                               closed_exception_types, ignored_exception_types,
+                               use_stage_subgraph_thread_pool,
+                               stage_subgraph_thread_pool_id)
+
+  graph_key = ops.get_default_graph()._graph_key
+  prefetch_runner.TF_RegisterPrefetchRunner(graph_key, name+"_prefetch_runner",
+                                            runner_options)
+
   return prefetched
 
 @tf_export(v1=["prefetch_join"])
 def prefetch_join(
     thread_to_features,
-    feed_list=None,
-    feed_generator=None,
+    feed_dict={},
     capacity=1,
     num_clients=1,
     timeout_millis=300000,
-    closed_exception_types=None,
-    ignored_exception_types=None,
+    closed_exception_types=(errors.OUT_OF_RANGE,),
+    ignored_exception_types=(),
     name=None):
   """Prefetch samples from thread_to_features list.
 
@@ -215,10 +254,13 @@ def prefetch_join(
 
   Args:
     thread_to_features: List of nest structure of tensors for each thread.
-    feed_list: (Optional.) A list of `feed_dict` keys. See
-      @{tf.Session.run} for details of the allowable feed key types.
-    feed_generator: (Optional.) A generator function lambda sess: iterator
-      that yields a list of `feed_dict` values.
+    feed_dict: (Optional.) A dictionary that maps graph elements to values.
+      Each key in `feed_dict` can be one of the following types:
+      * `tf.Tensor` or `tf.compat.v1.placeholder`: the value should be a tensor.
+      * `tf.SparseTensor`: the value should be a `tf.compat.v1.SparseTensorValue`.
+      * a nested tuple of `Tensor`s or `SparseTensor`s, the value should be a
+        nested tuple with the same structure that maps to their corresponding
+        values as above.
     capacity: (Optional.) Max number of samples to keep in the buffer.
     num_clients: (Optional.) Number of clients of prefetched sample. 1 by
       default.
@@ -327,14 +369,18 @@ def prefetch_join(
     prefetched = nest.pack_sequence_as(
         thread_to_features[0], next_tensor_or_sparse_tensor_or_nones)
 
-  runner = PrefetchRunner(
-      fetch_ops=thread_to_fetch_tensors,
-      cancel_op=cancel_fetching,
-      resume_op=resume_fetching,
-      close_op=close_fetching,
-      feed_list=feed_list,
-      feed_generator=feed_generator,
-      closed_exception_types=closed_exception_types,
-      ignored_exception_types=ignored_exception_types)
-  ops.add_to_collection(PREFETCH, runner)
+  runner_options = config_pb2.PrefetchRunnerOptions()
+  fill_prefetch_runner_options(runner_options,
+                               thread_to_fetch_tensors,
+                               cancel_fetching,
+                               resume_fetching,
+                               close_fetching,
+                               feed_dict,
+                               closed_exception_types,
+                               ignored_exception_types,
+                               False, 0)
+  graph_key = ops.get_default_graph()._graph_key
+  prefetch_runner.TF_RegisterPrefetchRunner(graph_key, name+"_prefetch_runner",
+                                            runner_options)
+
   return prefetched
