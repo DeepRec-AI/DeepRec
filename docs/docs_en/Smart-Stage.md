@@ -8,30 +8,116 @@ DeepRec provides the stage feature, which can realize the asynchronous execution
 
 ## Feature
 
-There is a stage in the user's original graph, by enabling the smart stage feature, it automatically optimizes the maximum possible stage range and modifies the actual physical calculation graph (without affecting the Graphdef), improving performance.
-
-
-**Attention**：The prerequisite for this feature is that there is at least one stage in the user's original image
+By enabling the smart stage feature, it automatically optimizes the maximum possible stage range from a certain starting node and modifies the actual physical calculation graph (without affecting the Graphdef), improving performance.
 
 ## API
-ConfigProro defines the following configuration options.
+### 1. Automatically SmartStage (Recommend)
+The premise of automatic SmartStage is that the model uses the `tf.data.Iterator` interface to read sample data from `tf.data.Dataset`.
 
-- CPU scenario
+1. The `tf.SmartStageOptions` interface returns the configuration for executing the stage subgraph, and its parameters are as follows:
 
-```python
-sess_config = tf.ConfigProto()
-sess_config.graph_options.optimizer_options.do_smart_stage = True
-```
-- GPU scenario
+| parameter                      | description                                                                                                                                                                                                                     | default value                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| capacity                       | The maximum number of cached asynchronous execution results.                                                                                                                                                                    | 1                                                                                                                                        |
+| num_threads                    | Number of threads to execute stage subgraph asynchronously.                                                                                                                                                                     | 1                                                                                                                                        |
+| num_client                     | Number of clients of prefetched sample.                                                                                                                                                                                         | 1                                                                                                                                        |
+| timeout_millis                 | Max milliseconds put op can take.                                                                                                                                                                                               | 300000 ms                                                                                                                                |
+| closed_exception_types         | Exception types recognized as graceful exits.                                                                                                                                                                                   | (`tf.errors.OUT_OF_RANGE`,)                                                                                                              |
+| ignored_exception_types        | Exception types that are recognized to be ignored and skipped.                                                                                                                                                                  | ()                                                                                                                                       |
+| use_stage_subgraph_thread_pool | Whether to run the Stage subgraph on an independent thread pool, you need to create an independent thread pool first.                                                                                                           | False (If it is True, a separate thread pool must be created first)                                                                      |
+| stage_subgraph_thread_pool_id  | If you enable the stage subgraph to run on the independent thread pool to specify the independent thread pool index, you need to create an independent thread pool first, and enable the use_stage_subgraph_thread_pool option. | 0, The index range is [0, the number of independent thread pools created - 1]                                                            |
+| stage_subgraph_stream_id       | In the GPU Multi-Stream scenario, the index of gpu stream used by stage subgraph.                                                                                                                                               | 0 (0 means that the stage subgraph shares the gpu stream used by the main graph, the index range is [0, total number of GPU streams -1]) |
+| graph                          | The Graph that needs to be optimized by SmartStage, which is the same as the Graph passed to the Session                                                                                                                        | None (Use default graph)                                                                                                                 |
+| name                           | Name of prefetching operations.                                                                                                                                                                                                 | None (Automatic generated)                                                                                                               |
 
-```python
-sess_config = tf.ConfigProto()
-sess_config.graph_options.optimizer_options.do_smart_stage = True
-sess_config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
-```
+> For how to create an independent thread pool or use GPU Multi-Stream, please refer to [Pipeline-Stage](./Stage.md).
+
+2. The configuration generated by the `tf.SmartStageOptions` interface needs to be assigned to `tf.ConfigProto`.
+    ```python
+    sess_config = tf.ConfigProto()
+    smart_stage_options = tf.SmartStageOptions(capacity=40, num_threads=4)
+    sess_config.graph_options.optimizer_options.smart_stage_options.CopyFrom(smart_stage_options)
+    ```
+
+3. Set the following options in `tf.ConfigProto` to enable SmartStage.
+    - CPU scenario
+    ```python
+    sess_config = tf.ConfigProto()
+    sess_config.graph_options.optimizer_options.do_smart_stage = True
+    ```
+    - GPU scenario
+    ```python
+    sess_config = tf.ConfigProto()
+    sess_config.graph_options.optimizer_options.do_smart_stage = True
+    sess_config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
+    ```
+4. Add `tf.make_prefetch_hook()` hook to Session.
+
+### 2. SmartStage when Graph contains Stage
+The original graph has been manually split using the `tf.staged` interface.
+> For more detail of `tf.staged`, please refer to [Pipeline-Stage](./Stage.md).
+
+1. Set the following options in `tf.ConfigProto` to enable SmartStage.
+    - CPU scenario
+    ```python
+    sess_config = tf.ConfigProto()
+    sess_config.graph_options.optimizer_options.do_smart_stage = True
+    ```
+    - GPU scenario
+    ```python
+    sess_config = tf.ConfigProto()
+    sess_config.graph_options.optimizer_options.do_smart_stage = True
+    sess_config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
+    ```
+2. Add `tf.make_prefetch_hook()` hook to Session.
 
 ## Example
+#### Automatically SmartStage (Recommend)
+```python
+import tensorflow as tf
 
+def parse_csv(value):
+    v = tf.io.decode_csv(value, record_defaults=[[''], ['']])
+    return v
+    
+dataset = tf.data.TextLineDataset('./test_data.csv')
+dataset = dataset.batch(2)
+dataset = dataset.map(parse_csv, num_parallel_calls=2)
+dataset_output_types = tf.data.get_output_types(dataset)
+dataset_output_shapes = tf.data.get_output_shapes(dataset)
+iterator = tf.data.Iterator.from_structure(dataset_output_types, dataset_output_shapes)
+xx = iterator.get_next()
+xx = list(xx)
+
+init_op = iterator.make_initializer(dataset)
+
+var = tf.get_variable("var", shape=[100, 3], initializer=tf.ones_initializer())
+xx[0] = tf.string_to_hash_bucket(xx[0], num_buckets=10)
+xx[0] = tf.nn.embedding_lookup(var, xx[0])
+xx[1]=tf.concat([xx[1], ['xxx']], axis = 0)
+target = tf.concat([tf.as_string(xx[0]), [xx[1], xx[1]]], 0)
+
+config = tf.ConfigProto()
+# enable smart stage
+config.graph_options.optimizer_options.do_smart_stage = True
+smart_stage_options = tf.SmartStageOptions(capacity=1, num_threads=1)
+config.graph_options.optimizer_options.smart_stage_options.CopyFrom(smart_stage_options)
+
+# For GPU training, consider enabling the following options for better performance
+# config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
+    
+# mark target 节点
+tf.train.mark_target_node([target])
+
+scaffold = tf.train.Scaffold(
+    local_init_op=tf.group(tf.local_variables_initializer(), init_op))
+with tf.train.MonitoredTrainingSession(config=config, scaffold=scaffold, 
+                                       hooks=[tf.make_prefetch_hook()]) as sess:
+    for i in range(5):
+        print(sess.run([target]))
+```
+
+#### SmartStage when Graph contains Stage.
 ```python
 import tensorflow as tf
 
@@ -54,6 +140,7 @@ config = tf.ConfigProto()
 config.graph_options.optimizer_options.do_smart_stage = True
 # For GPU training, consider enabling the following options for better performance
 # config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
+
 # mark target node
 tf.train.mark_target_node([target])
 
