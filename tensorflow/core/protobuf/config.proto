@@ -241,6 +241,26 @@ message PrefetchRunnerOptions {
   repeated error.Code ignored_exceptions= 8;
 }
 
+// Options passed to the smart stage pass
+message SmartStageOptions {
+  // Max number of samples to keep in the buffer.
+  int32 capacity = 1;
+  // Number of threads for prefetching.
+  int32 num_threads = 2;
+  // Number of clients of prefetched sample.
+  int32 num_clients = 3;
+  // Max milliseconds put op can take.
+  int32 timeout_millis = 4;
+  // Specifies which stream to use for the Stage subgraph.
+  int32 stage_subgraph_stream_id = 5;
+  // Options passed to the prefetch runner.
+  PrefetchRunnerOptions runner_options = 6;
+  // Key of Graph.
+  string graph_key = 7;
+  // Name of prefetching operations.
+  string name = 8;
+}
+
 // Options passed to the async embedding
 message AsyncEmbeddingOptions {
   // Prefetch threads num
@@ -303,11 +323,12 @@ message OptimizerOptions {
   bool do_op_fusion = 7;
   int32 micro_batch_num = 9;
   bool do_smart_stage = 10;
-  bool stage_subgraph_on_cpu = 11;
-  bool do_async_embedding = 12;
-  AsyncEmbeddingOptions async_embedding_options = 13;
-  bool device_placement_optimization = 14;
-  bool stage_multi_stream = 15;
+  SmartStageOptions smart_stage_options = 11;
+  bool stage_subgraph_on_cpu = 12;
+  bool do_async_embedding = 13;
+  AsyncEmbeddingOptions async_embedding_options = 14;
+  bool device_placement_optimization = 15;
+  bool stage_multi_stream = 16;
 }
 
 message GraphOptions {

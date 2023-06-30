@@ -3504,6 +3504,7 @@ tf_cuda_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
         "//third_party/eigen3",
+        "//tensorflow/cc:prefetch_runner",
         "//tensorflow/core/grappler/utils:functions",
         "//tensorflow/core/profiler:nvtx_utils",
         "//tensorflow/core/profiler/lib:traceme",
