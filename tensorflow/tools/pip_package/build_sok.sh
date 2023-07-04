@@ -17,4 +17,4 @@ export SOK_COMPILE_GPU_SM="70;75;80"
 cd ./bazel-DeepRec/external/hugectr/sparse_operation_kit
 
 "${PYTHON_BIN_PATH:-python}" setup.py bdist_wheel
-pip install ./dist/merlin_sok-1.1.4-cp38-cp38-linux_x86_64.whl
+pip install ./dist/merlin_sok-1.2.0-cp38-cp38-linux_x86_64.whl
