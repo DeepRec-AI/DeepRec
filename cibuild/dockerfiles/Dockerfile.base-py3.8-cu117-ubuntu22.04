@@ -51,7 +51,7 @@ RUN pip install wheel==0.37.1
 
 RUN pip install \
     astor==0.8.1 \
-    numpy==1.16.6 && \
+    numpy==1.16.6 \
     protobuf==3.17.3 && \
     pip install --no-deps \
     keras-preprocessing==1.0.5
