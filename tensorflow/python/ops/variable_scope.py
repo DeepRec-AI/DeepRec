@@ -2343,6 +2343,10 @@ def get_multihash_variable(name,
   if complementary_strategy == 'Q-R':
     if num_of_partitions != 2:
       raise ValueError("the num_of_partitions must be 2 when using Q-R strategy.")
+    if dims[0][0] != dims[1][0]:
+      raise ValueError("The dims must have the same first dimension as \
+        embedding table capacity when using Q-R strategy. Otherwise the \
+        partition may not be complementary.")
     val_Q = get_variable_scope().get_variable(
             _get_default_variable_store(), name +'/multhash_Q',
             shape=dims[0], dtype=dtype,
