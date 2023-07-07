@@ -460,6 +460,29 @@ tf_cuda_cc_test(
     ],
 )
 
+tf_cuda_cc_test(
+    name = "embedding_variable_memory_performance_test",
+    srcs = ["embedding_variable_memory_performance_test.cc"],
+    extra_copts = ["-fexceptions", "-g"],
+    deps = [
+        ":io",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:all_kernels",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:direct_session_internal",
+        "//tensorflow/core/util/tensor_bundle",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:testlib",
+        "//third_party/eigen3",
+        "//tensorflow/core:test_main",
+    ],
+)
+
 cc_library(
     name = "tensor_flag_utils",
     srcs = [
