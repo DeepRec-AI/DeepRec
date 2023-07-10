@@ -110,7 +110,7 @@ class SingleTierStorage : public Storage<K, V> {
   }
 
   virtual void Insert(K key, ValuePtr<V>** value_ptr,
-              size_t alloc_len) override {
+                      size_t alloc_len, bool to_dram = false) override {
     do {
       *value_ptr = layout_creator_->Create(alloc_, alloc_len);
       Status s = kv_->Insert(key, *value_ptr);
@@ -125,11 +125,6 @@ class SingleTierStorage : public Storage<K, V> {
 
   virtual void Insert(K key, ValuePtr<V>* value_ptr) override {
     LOG(FATAL)<<"Unsupport Insert(K, ValuePtr<V>*) in SingleTireStorage.";
-  }
-
-  void InsertToDram(K key, ValuePtr<V>** value_ptr,
-              int64 alloc_len) override {
-    LOG(FATAL)<<"InsertToDram in SingleTierStorage shouldn't be called";
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -304,20 +299,6 @@ class SingleTierStorage : public Storage<K, V> {
     return nullptr;
   }
 
-  void RestoreSsdHashmap(
-      K* key_list, int64* key_file_id_list,
-      int64* key_offset_list, int64 num_of_keys,
-      int64* file_list, int64* invalid_record_count_list,
-      int64* record_count_list, int64 num_of_files,
-      const std::string& ssd_emb_file_name) override {
-    LOG(FATAL)<<"The Storage dosen't have ssd storage.";
-  }
-
-  virtual void ImportToHbm (
-      K* ids, int64 size, int64 value_len, int64 emb_index) override {
-    LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
-  }
-
   Status Shrink(const ShrinkArgs& shrink_args) override {
     mutex_lock l(Storage<K, V>::mu_);
     shrink_policy_->Shrink(shrink_args);
@@ -350,10 +331,6 @@ class SingleTierStorage : public Storage<K, V> {
     return false;
   }
 
-  bool IsUsePersistentStorage() override {
-    return false;
-  }
-
   void iterator_mutex_lock() override {
     return;
   }
@@ -377,7 +354,18 @@ class SingleTierStorage : public Storage<K, V> {
     value_ptr->Destroy(alloc_);
     delete value_ptr;
   }
-
+ protected:
+  virtual Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
+                                 int64 partition_num, int64 value_len, bool is_filter,
+                                 bool is_incr, const EmbeddingConfig& emb_config, 
+                                 const Eigen::GpuDevice* device,
+                                 FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
+                                 RestoreBuffer& restore_buff) override {
+    Status s = filter->Restore(key_num, bucket_num, partition_id,
+                               partition_num, value_len, is_filter,
+                               false/*to_dram*/, is_incr, restore_buff);
+    return s;
+  }
  protected:
   KVInterface<K, V>* kv_;
   ShrinkPolicy<K, V>* shrink_policy_;
@@ -446,8 +434,10 @@ class HbmStorage : public SingleTierStorage<K, V> {
   void BatchLookupOrCreate(const K* key, V* val, V* default_v,
       int32 default_v_num,
       size_t n, const Eigen::GpuDevice& device) override {
-    SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(key, val, default_v, default_v_num,
-        n, device);
+    SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(key, val,
+                                                      default_v,
+                                                      default_v_num,
+                                                      n, device);
   }
 
   void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
@@ -473,20 +463,37 @@ class HbmStorage : public SingleTierStorage<K, V> {
     return key_list->size();
   }
 
-  void ImportToHbm(
-      const std::vector<K>& keys, const std::vector<V>& values,
-      const Eigen::GpuDevice* device,
-      const EmbeddingConfig& emb_config) override {
-    GPUHashMapKV<K, V>* gpu_kv =
-        dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
-    gpu_kv->Import(keys, values, device, emb_config);
-  }
-
   GPUHashTable<K, V>* HashTable() override {
     return SingleTierStorage<K, V>::kv_->HashTable();
   }
-
  protected:
+  Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
+                         int64 partition_num, int64 value_len, bool is_filter,
+                         bool is_incr, const EmbeddingConfig& emb_config,
+                         const Eigen::GpuDevice* device,
+                         FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
+                         RestoreBuffer& restore_buff) override {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    std::vector<K> key_import;
+    std::vector<V> value_import;
+    for (auto i = 0; i < key_num; ++i) {
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      key_import.emplace_back(*(key_buff + i));
+      auto row_offset = value_buff + i * value_len;
+      for (int j = 0; j < value_len; j++) {
+        value_import.emplace_back(*(row_offset + j));
+      }
+    }
+    GPUHashMapKV<K, V>* gpu_kv =
+        dynamic_cast<GPUHashMapKV<K, V>*>(SingleTierStorage<K, V>::kv_);
+    gpu_kv->Import(key_import, value_import, device, emb_config);
+    return Status::OK();
+  }
+
   void SetTotalDims(int64 total_dims) override {}
 };
 
@@ -512,8 +519,9 @@ class HbmStorageWithCpuKv: public SingleTierStorage<K, V> {
     } while (!(SingleTierStorage<K, V>::kv_->Lookup(key, &value_ptr)).ok());
   }
 
-  void Insert(K key, ValuePtr<V>** value_ptr, size_t alloc_len) override {
-    SingleTierStorage<K, V>::Insert(key, value_ptr, alloc_len);
+  void Insert(K key, ValuePtr<V>** value_ptr,
+              size_t alloc_len, bool to_dram = false) override {
+    SingleTierStorage<K, V>::Insert(key, value_ptr, alloc_len, to_dram);
   }
 
   Status TryInsert(K key, ValuePtr<V>* value_ptr) {

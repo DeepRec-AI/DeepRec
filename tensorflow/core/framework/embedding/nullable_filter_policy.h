@@ -28,11 +28,14 @@ class Storage;
 
 template<typename K, typename V, typename EV>
 class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
+ using FilterPolicy<K, V, EV>::ev_;
+ using FilterPolicy<K, V, EV>::config_;
+ using FilterPolicy<K, V, EV>::LookupOrCreateEmbInternal;
+
  public:
   NullableFilterPolicy(const EmbeddingConfig& config,
-      EV* ev, embedding::Storage<K, V>* storage)
-       : config_(config), ev_(ev), storage_(storage) {
-  }
+                       EV* ev, embedding::Storage<K, V>* storage) : 
+      FilterPolicy<K, V, EV>(config, ev), storage_(storage) {}
 
   Status Lookup(K key, V* val, const V* default_value_ptr,
       const V* default_value_no_permission) override {
@@ -143,12 +146,10 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  Status Import(RestoreBuffer& restore_buff,
-                int64 key_num,
-                int bucket_num,
-                int64 partition_id,
-                int64 partition_num,
-                bool is_filter) override {
+  Status Restore(int64 key_num, int bucket_num, int64 partition_id,
+                 int64 partition_num, int64 value_len, bool is_filter,
+                 bool to_dram, bool is_incr,
+                 RestoreBuffer& restore_buff) override {
     K* key_buff = (K*)restore_buff.key_buffer;
     V* value_buff = (V*)restore_buff.value_buffer;
     int64* version_buff = (int64*)restore_buff.version_buffer;
@@ -161,7 +162,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
         continue;
       }
       ValuePtr<V>* value_ptr = nullptr;
-      ev_->CreateKey(key_buff[i], &value_ptr);
+      ev_->CreateKey(key_buff[i], &value_ptr, to_dram);
       if (config_.filter_freq !=0 || ev_->IsMultiLevel()
           || config_.record_freq) {
         value_ptr->SetFreq(freq_buff[i]);
@@ -169,57 +170,8 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
       if (config_.steps_to_live != 0 || config_.record_version) {
         value_ptr->SetStep(version_buff[i]);
       }
-      if (!is_filter) {
-        ev_->LookupOrCreateEmb(value_ptr,
-            value_buff + i * ev_->ValueLen());
-      }else {
-        ev_->LookupOrCreateEmb(value_ptr,
-            ev_->GetDefaultValue(key_buff[i]));
-      }
-    }
-    if (ev_->IsMultiLevel() && !ev_->IsUseHbm() && config_.is_primary()) {
-      ev_->UpdateCache(key_buff, key_num, version_buff, freq_buff);
-    }
-    return Status::OK();
-  }
-
-  Status ImportToDram(RestoreBuffer& restore_buff,
-                int64 key_num,
-                int bucket_num,
-                int64 partition_id,
-                int64 partition_num,
-                bool is_filter,
-                V* default_values) override {
-    K* key_buff = (K*)restore_buff.key_buffer;
-    V* value_buff = (V*)restore_buff.value_buffer;
-    int64* version_buff = (int64*)restore_buff.version_buffer;
-    int64* freq_buff = (int64*)restore_buff.freq_buffer;
-    for (auto i = 0; i < key_num; ++i) {
-      // this can describe by graph(Mod + DynamicPartition),
-      // but memory waste and slow
-      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
-        LOG(INFO) << "skip EV key:" << *(key_buff + i);
-        continue;
-      }
-      ValuePtr<V>* value_ptr = nullptr;
-      ev_->CreateKeyOnDram(key_buff[i], &value_ptr);
-      if (config_.filter_freq !=0 || ev_->IsMultiLevel()
-          || config_.record_freq) {
-        value_ptr->SetFreq(freq_buff[i]);
-      }
-      if (config_.steps_to_live != 0 || config_.record_version) {
-        value_ptr->SetStep(version_buff[i]);
-      }
-      if (!is_filter) {
-        ev_->LookupOrCreateEmb(value_ptr,
-            value_buff + i * ev_->ValueLen(), ev_allocator());
-      } else {
-        ev_->LookupOrCreateEmb(value_ptr,
-            default_values +
-                (key_buff[i] % config_.default_value_dim)
-                * ev_->ValueLen(),
-            ev_allocator());
-      }
+      LookupOrCreateEmbInternal(is_filter, to_dram, i, value_len,
+                                value_ptr, value_buff, key_buff);
     }
     return Status::OK();
   }
@@ -229,9 +181,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
   }
 
  private:
-  EmbeddingConfig config_;
   embedding::Storage<K, V>* storage_;
-  EV* ev_;
 };
 
 } // tensorflow

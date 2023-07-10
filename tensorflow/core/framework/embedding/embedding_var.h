@@ -29,6 +29,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/embedding_var_context.h"
+#include "tensorflow/core/framework/embedding/embedding_var_restore.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/framework/embedding/filter_factory.h"
 #include "tensorflow/core/framework/embedding/gpu_hash_map_kv.h"
@@ -36,6 +37,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/storage.h"
 #include "tensorflow/core/framework/embedding/storage_factory.h"
 #include "tensorflow/core/framework/typed_allocator.h"
+#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 
 namespace tensorflow {
 using CPUDevice = Eigen::ThreadPoolDevice;
@@ -191,14 +193,9 @@ class EmbeddingVar : public ResourceBase {
     return s;
   }
 
-  void CreateKey(K key, ValuePtr<V>** value_ptr) {
+  void CreateKey(K key, ValuePtr<V>** value_ptr, bool to_dram) {
     storage_->Insert(key, value_ptr,
-        emb_config_.total_num(storage_->GetAllocLen()));
-  }
-
-  void CreateKeyOnDram(K key, ValuePtr<V>** value_ptr) {
-    storage_->InsertToDram(key, value_ptr,
-        emb_config_.total_num(storage_->GetAllocLen()));
+        emb_config_.total_num(storage_->GetAllocLen()), to_dram);
   }
 
   void UpdateVersion(ValuePtr<V>* value_ptr, int64 gs) {
@@ -575,122 +572,14 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.DebugString();
   }
 
-  Status Import(RestoreBuffer& restore_buff,
-                int64 key_num,
-                int bucket_num,
-                int64 partition_id,
-                int64 partition_num,
-                bool is_filter,
-                const Eigen::GpuDevice* device) {
-    if (IsMultiLevel() && IsUseHbm()) {
-      Status s = Status::OK();
-#if GOOGLE_CUDA
-      V* default_value_host = nullptr;
-      if (is_filter) {
-        default_value_host = new V[emb_config_.default_value_dim * value_len_];
-        cudaMemcpy(default_value_host, default_value_,
-                   sizeof(V) * emb_config_.default_value_dim * value_len_,
-                   cudaMemcpyDeviceToHost);
-      }
-      s = filter_->ImportToDram(restore_buff, key_num, bucket_num,
-          partition_id, partition_num, is_filter, default_value_host);
-      delete[] default_value_host;
-#endif //GOOGLE_CUDA
-      return s;
-    } else if (IsSingleHbm()) {
-#if GOOGLE_CUDA
-      K* key_buff = (K*)restore_buff.key_buffer;
-      V* value_buff = (V*)restore_buff.value_buffer;
-      std::vector<K> key_import;
-      std::vector<V> value_import;
-      for (auto i = 0; i < key_num; ++ i) {
-        if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
-          LOG(INFO) << "skip EV key:" << *(key_buff + i);
-          continue;
-        }
-        key_import.emplace_back(*(key_buff + i));
-        register auto row_offset = value_buff + i * value_len_;
-        for (int j = 0; j < value_len_; j++) {
-          value_import.emplace_back(*(row_offset + j));
-        }
-      }
-      storage_->ImportToHbm(key_import, value_import, device, emb_config_);
-#endif //GOOGLE_CUDA
-      return Status::OK();
-    } else {
-      return filter_->Import(restore_buff, key_num, bucket_num,
-          partition_id, partition_num, is_filter);
-    }
-  }
-
-  void ImportToHbm(K* ids, int64 size) {
-    storage_->ImportToHbm(ids, size,
-        value_len_, emb_config_.emb_index);
-  }
-
-  void RestoreSsdHashmap(
-      K* key_list, int64* key_file_id_list,
-      int64* key_offset_list, int64 num_of_keys,
-      int64* file_list, int64* invalid_record_count_list,
-      int64* record_count_list, int64 num_of_files,
-      const std::string& ssd_emb_file_name) {
-    storage_->
-        RestoreSsdHashmap(
-            key_list, key_file_id_list,
-            key_offset_list, num_of_keys,
-            file_list, invalid_record_count_list,
-            record_count_list, num_of_files,
-            ssd_emb_file_name);
-  }
-
-  void LoadSsdData(
-      const string& old_file_prefix,
-      K* key_list, int64* key_file_id_list,
-      int64* key_offset_list, int64 num_of_keys) {
-    int64 alloc_len = storage_->ComputeAllocLen(value_len_);
-    for (int64 i = 0; i < num_of_keys; i++) {
-      ValuePtr<V>* value_ptr = nullptr;
-      LookupOrCreateKey(key_list[i], &value_ptr);
-
-      int64 file_id = key_file_id_list[i];
-      int64 key_offset = key_offset_list[i];
-      // Read data from embedding files on SSD. Data are stored in
-      // NormalContiguousValuePtr temporarily.
-      std::stringstream ss;
-      ss <<old_file_prefix << "/" << file_id << ".emb";
-      int fd = open(ss.str().data(), O_RDONLY);
-      char* file_addr =
-          (char*)mmap(nullptr,
-                      sizeof(FixedLengthHeader)
-                          + alloc_len * sizeof(V)
-                          * (emb_config_.slot_num + 1)
-                          + key_offset,
-                      PROT_READ,
-                      MAP_PRIVATE, fd, 0);
-
-      NormalContiguousValuePtr<V> tmp_value_ptr(alloc_,
-          alloc_len * (emb_config_.slot_num + 1));
-      void* ptr = tmp_value_ptr.GetPtr();
-      memcpy(ptr, file_addr + key_offset,
-             sizeof(FixedLengthHeader)
-                 + alloc_len * sizeof(V) * (emb_config_.slot_num + 1));
-      munmap(file_addr,
-             sizeof(FixedLengthHeader)
-                 + alloc_len * sizeof(V)
-                 * (emb_config_.slot_num + 1)
-                 + key_offset);
-      close(fd);
-      //Copy Data to ValuePtr, data of slots are set by primary here.
-      for (int j = 0; j < emb_config_.slot_num + 1; j++) {
-        V* value = tmp_value_ptr.GetValue(j, alloc_len * j);
-        if (value != nullptr) {
-          value_ptr->GetOrAllocate(alloc_, value_len_, value,
-              j, alloc_len * j);
-        }
-      }
-      value_ptr->SetFreq(tmp_value_ptr.GetFreq());
-      value_ptr->SetStep(tmp_value_ptr.GetStep());
-    }
+  void Restore(const std::string& name_string,
+               const std::string& file_name_string, int64 partition_id,
+               int64 partition_num, bool is_incr, BundleReader* reader,
+               bool reset_version = false,
+               const Eigen::GpuDevice* device = nullptr) {
+    return storage_->Restore(name_string, file_name_string, partition_id,
+                             partition_num, value_len_, is_incr, reset_version,
+                             emb_config_, device, reader, this, filter_);
   }
 
   int64 GetSnapshot(std::vector<K>* key_list,
@@ -756,6 +645,10 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.emb_index;
   }
 
+  int64 GetEmbeddingSlotNum() {
+    return emb_config_.slot_num;
+  }
+  
   Allocator* GetAllocator() {
     return alloc_;
   }

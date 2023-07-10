@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/cpu_hash_map_kv.h"
 #include "tensorflow/core/framework/embedding/embedding_var_context.h"
+#include "tensorflow/core/framework/embedding/embedding_var_restore.h"
 #include "tensorflow/core/framework/embedding/eviction_manager.h"
 #include "tensorflow/core/framework/embedding/globalstep_shrink_policy.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
@@ -77,11 +78,6 @@ class MultiTierStorage : public Storage<K, V> {
 
   BatchCache<K>* Cache() override {
     return cache_;
-  }
-
-  void InsertToDram(K key, ValuePtr<V>** value_ptr,
-              int64 alloc_len) override {
-    LOG(FATAL)<<"InsertToDram in MultiTierStorage shouldn't be called";
   }
 
   void InitCache(embedding::CacheStrategy cache_strategy) override {
@@ -182,22 +178,6 @@ class MultiTierStorage : public Storage<K, V> {
     return;
   }
 
-  void RestoreSsdHashmap(
-      K* key_list, int64* key_file_id_list,
-      int64* key_offset_list, int64 num_of_keys,
-      int64* file_list, int64* invalid_record_count_list,
-      int64* record_count_list, int64 num_of_files,
-      const std::string& ssd_emb_file_name) override {
-    LOG(FATAL)<<"The Storage dosen't have ssd storage"
-              <<" or this storage hasn't suppported"
-              <<" RestoreSsdHashmap yet";
-  }
-
-  void ImportToHbm(
-      K* ids, int64 size, int64 value_len, int64 emb_index) override {
-    LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
-  }
-
   bool IsMultiLevel() override {
     return true;
   }
@@ -257,6 +237,10 @@ class MultiTierStorage : public Storage<K, V> {
     });
   }
 
+  virtual bool IsUseHbm() override {
+    return false;
+  }
+
   void AddToCachePrefetchList(const Tensor& indices) override {
     Schedule([this, indices]() {
       cache_->add_to_prefetch_list(indices);
@@ -270,6 +254,37 @@ class MultiTierStorage : public Storage<K, V> {
   }
 
  protected:
+  Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
+                         int64 partition_num, int64 value_len, bool is_filter,
+                         bool is_incr, const EmbeddingConfig& emb_config,
+                         const Eigen::GpuDevice* device,
+                         FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
+                         RestoreBuffer& restore_buff) override {
+    Status s = filter->Restore(key_num, bucket_num, partition_id,
+                               partition_num, value_len, is_filter,
+                               false/*to_dram*/, is_incr, restore_buff);
+ 
+    if (emb_config.is_primary()) {
+      K* key_buff = (K*)restore_buff.key_buffer;
+      V* value_buff = (V*)restore_buff.value_buffer;
+      int64* version_buff = (int64*)restore_buff.version_buffer;
+      int64* freq_buff = (int64*)restore_buff.freq_buffer;
+      if (cache_) {
+        cache_->update(key_buff, key_num, version_buff, freq_buff);
+        auto cache_size = CacheSize();
+        if (cache_->size() > cache_size) {
+          int64 evict_size = cache_->size() - cache_size;
+          std::vector<K> evict_ids(evict_size);
+          size_t true_size =
+              cache_->get_evic_ids(evict_ids.data(), evict_size);
+          Eviction(evict_ids.data(), true_size);
+        }
+      }
+      return s;
+    }
+    return s;
+  }
+ 
   virtual void SetTotalDims(int64 total_dims) = 0;
 
   void DeleteFromEvictionManager() {

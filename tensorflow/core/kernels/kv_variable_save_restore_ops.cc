@@ -258,10 +258,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                    << s.ToString();
       }
 
-      EVRestoreDynamically(
-          ev, name_string, partition_id_, partition_num_, context, &reader,
-          "-partition_offset", "-keys", "-values", "-versions", "-freqs",
-          reset_version_);
+      ev->Restore(name_string, file_name_string, partition_id_, partition_num_, 
+                  false, &reader, reset_version_);
       ev->SetInitialized();
       done();
     };
@@ -374,42 +372,20 @@ class KvResourceImportV3Op: public AsyncOpKernel {
       if (!s.ok()) {
         LOG(FATAL) << "Restore EV failure, create BundleReader error:"
                    << s.ToString();
+        done();
       }
 
-      std::string name_string_temp(name_string);
-      std::string new_str = "_";
-      int64 pos = name_string_temp.find("/");
-      while (pos != std::string::npos) {
-        name_string_temp.replace(pos, 1, new_str.data(), 1);
-        pos = name_string_temp.find("/");
-      }
-      std::string ssd_record_file_name =
-          file_name_string + "-" + name_string_temp + "-ssd_record";
-      //TODO: support change the partition number
-      if (Env::Default()->FileExists(ssd_record_file_name + ".index").ok()) {
-        std::string ssd_emb_file_name =
-            file_name_string + "-" + name_string_temp + "-emb_files";
-        if (ev->IsUsePersistentStorage()) {
-          RestoreSsdRecord(ev, ssd_record_file_name, ssd_emb_file_name);
-        } else {
-          LoadSsdData(ev, ssd_record_file_name, ssd_emb_file_name);
-        }
-      }
       if (ev->IsSingleHbm()) {
 #if GOOGLE_CUDA
         se::cuda::ScopedActivateExecutorContext scoped_activation{
             context->op_device_context()->stream()->parent()};
         const Eigen::GpuDevice& device = context->eigen_gpu_device();
-        EVRestoreDynamically(
-            ev, name_string, partition_id_, partition_num_, context, &reader,
-            "-partition_offset", "-keys", "-values", "-versions", "-freqs",
-            reset_version_, &device);
+        ev->Restore(name_string, file_name_string, partition_id_, partition_num_, 
+                    false, &reader, reset_version_, &device);
 #endif
       } else {
-        EVRestoreDynamically(
-            ev, name_string, partition_id_, partition_num_, context, &reader,
-            "-partition_offset", "-keys", "-values", "-versions", "-freqs",
-            reset_version_, nullptr);
+        ev->Restore(name_string, file_name_string, partition_id_, partition_num_, 
+                    false, &reader, reset_version_, nullptr);
       }
       ev->SetInitialized();
       done();
@@ -495,10 +471,8 @@ class KvResourceIncrImportOp: public AsyncOpKernel {
               << "partition_num:"
               << partition_num_;
 
-    EVRestoreDynamically(
-        ev, name_string, partition_id_, partition_num_, context, &reader,
-        "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values",
-        "-sparse_incr_versions", "-sparse_incr_freqs");
+    ev->Restore(name_string, file_name_string, partition_id_, partition_num_, 
+                true, &reader);
     ev->SetInitialized();
     done();
   }

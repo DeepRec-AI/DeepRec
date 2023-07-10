@@ -17,11 +17,15 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
+#include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
+#include "tensorflow/core/framework/embedding/embedding_var_restore.h"
+#include "tensorflow/core/framework/embedding/filter_policy.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/shrink_policy.h"
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
+
+#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 #include "tensorflow/core/util/work_sharder.h"
 #include "tensorflow/core/framework/device_base.h"
 #if GOOGLE_CUDA
@@ -33,7 +37,8 @@ namespace tensorflow {
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-const int kSavedPartitionNum = 1000;
+template <class K, class V>
+class CheckpointLoader;
 
 template <class V>
 class ValuePtr;
@@ -44,9 +49,6 @@ class EmbeddingVar;
 template <class K>
 struct SsdRecordDescriptor;
 
-template<typename K, typename V, typename EV>
-class FilterPolicy;
-
 template <class K, class V>
 class GPUHashTable;
 
@@ -56,6 +58,7 @@ namespace embedding {
 
 template<typename K, typename V>
 class Storage {
+ friend class CheckpointLoader<K, V>;
  public:
   explicit Storage(const StorageConfig& storage_config)
       : storage_config_(storage_config) {}
@@ -79,9 +82,8 @@ class Storage {
       std::vector<std::list<int64>>& not_found_cursor_list) {}
 #endif //GOOGLE_CUDA
   virtual Status Contains(K key) = 0;
-  virtual void Insert(K key, ValuePtr<V>** value_ptr, size_t alloc_len) = 0;
-  virtual void InsertToDram(K key, ValuePtr<V>** value_ptr,
-                            int64 alloc_len) = 0;
+  virtual void Insert(K key, ValuePtr<V>** value_ptr,
+                      size_t alloc_len, bool to_dram = false) = 0;
   virtual void Insert(K key, ValuePtr<V>* value_ptr) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
   virtual void SetValueLen(int64 value_len) {}
@@ -110,12 +112,6 @@ class Storage {
       const EmbeddingConfig& emb_config,
       SsdRecordDescriptor<K>* ssd_rec_desc) = 0;
   virtual embedding::Iterator* GetIterator() = 0;
-  virtual void RestoreSsdHashmap(
-      K* key_list, int64* key_file_id_list,
-      int64* key_offset_list, int64 num_of_keys,
-      int64* file_list, int64* invalid_record_count_list,
-      int64* record_count_list, int64 num_of_files,
-      const std::string& ssd_emb_file_name) = 0;
   virtual Status Shrink(const ShrinkArgs& shrink_args) = 0;
 
   virtual Status BatchCommit(const std::vector<K>& keys,
@@ -139,9 +135,6 @@ class Storage {
       const Eigen::GpuDevice& device) {}
   virtual void BatchLookup(const Eigen::GpuDevice& device, const K* keys, V* val,
                            size_t n, const V* default_v) {}
-  virtual void ImportToHbm(const std::vector<K>& keys,
-      const std::vector<V>& values, const Eigen::GpuDevice* device,
-      const EmbeddingConfig& emb_config) {};
   virtual GPUHashTable<K, V>* HashTable() {
     return nullptr;
   }
@@ -152,7 +145,7 @@ class Storage {
   virtual bool IsMultiLevel() = 0;
   virtual bool IsUseHbm() = 0;
   virtual bool IsSingleHbm() = 0;
-  virtual bool IsUsePersistentStorage() = 0;
+  virtual bool IsUsePersistentStorage() { return false; };
   virtual void iterator_mutex_lock() = 0;
   virtual void iterator_mutex_unlock() = 0;
   virtual void Schedule(std::function<void()> fn) = 0;
@@ -164,8 +157,6 @@ class Storage {
       const std::vector<ValuePtr<V>*>& value_ptr_list) = 0;
   virtual void AllocateMemoryForNewFeatures(
       ValuePtr<V>** value_ptr_list, int64 num_of_value_ptrs) = 0;
-  virtual void ImportToHbm(K* ids, int64 size, int64 value_len,
-                           int64 emb_index) = 0;
  
   inline mutex* get_mutex() { return &mu_; }
   inline int64 GetAllocLen() { return alloc_len_; }
@@ -210,6 +201,78 @@ class Storage {
   virtual void AddToCachePrefetchList(const Tensor& indices) {}
 
   virtual void AddToCache(const Tensor& indices) {}
+  
+  virtual void Restore(const std::string& name_string,
+                       const std::string& file_name_string, int64 partition_id,
+                       int64 partition_num, int64 value_len, bool is_incr,
+                       bool reset_version, const EmbeddingConfig& emb_config,
+                       const Eigen::GpuDevice* device, BundleReader* reader,
+                       EmbeddingVar<K, V>* ev,
+                       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter) {
+    CheckpointLoader<K, V> restorer(reinterpret_cast<Storage<K, V>*>(this), ev,
+                                    filter, name_string, file_name_string,
+                                    partition_id, partition_num, is_incr,
+                                    reset_version, reader);
+    restorer.RestoreCkpt(emb_config, device);
+  };
+
+ protected:
+  virtual Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
+                                 int64 partition_num, int64 value_len, bool is_filter,
+                                 bool is_incr, const EmbeddingConfig& emb_config,
+                                 const Eigen::GpuDevice* device,
+                                 FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
+                                 RestoreBuffer& restore_buff) {
+    return Status::OK();
+  }
+  
+  virtual Status RestoreSSD(int64 emb_index, int64 emb_slot_num,
+                            int64 value_len,
+                            const std::string& ssd_emb_file_name,
+                            EmbeddingVar<K, V>* ev,
+                            RestoreSSDBuffer<K>& restore_buff) {
+    int64 alloc_len = Storage<K, V>::ComputeAllocLen(value_len);
+    auto* alloc = ev->GetAllocator();
+    for (int64 i = 0; i < restore_buff.num_of_keys; i++) {
+      ValuePtr<V>* value_ptr = nullptr;
+      ev->LookupOrCreateKey(restore_buff.key_list_buf[i], &value_ptr);
+      value_ptr->SetInitialized(emb_index);
+      int64 file_id = restore_buff.key_file_id_list_buf[i];
+      int64 key_offset = restore_buff.key_offset_list_buf[i];
+      // Read data from embedding files on SSD. Data are stored in
+      // NormalContiguousValuePtr temporarily.
+      std::stringstream ss;
+      ss << ssd_emb_file_name << "/" << file_id << ".emb";
+      int fd = open(ss.str().data(), O_RDONLY);
+      char* file_addr = (char*)mmap(nullptr,
+                                    sizeof(FixedLengthHeader) +
+                                    alloc_len * sizeof(V) * (emb_slot_num + 1) +
+                                    key_offset,
+                                    PROT_READ, MAP_PRIVATE, fd, 0);
+
+      NormalContiguousValuePtr<V> tmp_value_ptr(alloc,
+                                                alloc_len * (emb_slot_num + 1));
+      void* ptr = tmp_value_ptr.GetPtr();
+      memcpy(ptr, file_addr + key_offset,
+             sizeof(FixedLengthHeader) +
+              alloc_len * sizeof(V) * (emb_slot_num + 1));
+      munmap(file_addr,
+             sizeof(FixedLengthHeader) +
+             alloc_len * sizeof(V) * (emb_slot_num + 1) +
+             key_offset);
+      close(fd);
+      // Copy Data to ValuePtr, data of slots are set by primary here.
+      for (int j = 0; j < emb_slot_num + 1; j++) {
+        V* value = tmp_value_ptr.GetValue(j, alloc_len * j);
+        if (value != nullptr) {
+          value_ptr->GetOrAllocate(alloc, value_len, value, j, alloc_len * j);
+        }
+      }
+      value_ptr->SetFreq(tmp_value_ptr.GetFreq());
+      value_ptr->SetStep(tmp_value_ptr.GetStep());
+    }
+    return Status::OK();
+  }
 
  protected:
   int64 alloc_len_ = 0;

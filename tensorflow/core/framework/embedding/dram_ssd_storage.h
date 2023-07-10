@@ -69,7 +69,7 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
   }
 
   void Insert(K key, ValuePtr<V>** value_ptr,
-              size_t alloc_len) override {
+              size_t alloc_len, bool to_dram = false) override {
     dram_->Insert(key, value_ptr, alloc_len);
   }
 
@@ -210,27 +210,27 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return key_list->size() + ssd_rec_desc->key_list.size();
   }
 
-  void RestoreSsdHashmap(
-      K* key_list, int64* key_file_id_list,
-      int64* key_offset_list, int64 num_of_keys,
-      int64* file_list, int64* invalid_record_count_list,
-      int64* record_count_list, int64 num_of_files,
-      const std::string& ssd_emb_file_name) override {
+  Status RestoreSSD(int64 emb_index, int64 emb_slot_num, int64 value_len,
+                    const std::string& ssd_emb_file_name, EmbeddingVar<K, V>* ev,
+                    RestoreSSDBuffer<K>& restore_buff) override {
+    int64 alloc_len = Storage<K, V>::ComputeAllocLen(value_len);
     std::map<int64, int64> file_id_map;
-    for (int64 i = 0; i < num_of_files; i++) {
-      file_id_map[file_list[i]] = i;
+    for (int64 i = 0; i < restore_buff.num_of_files; i++) {
+      file_id_map[restore_buff.file_list_buf[i]] = i;
     }
 
-    ssd_hash_->CopyEmbFilesFromCkpt(
-        file_list, invalid_record_count_list,
-        record_count_list, num_of_files,
-        ssd_emb_file_name);
+    ssd_hash_->CopyEmbFilesFromCkpt(restore_buff.file_list_buf,
+                                    restore_buff.invalid_record_count_list_buf,
+                                    restore_buff.record_count_list_buf,
+                                    restore_buff.num_of_files,
+                                    ssd_emb_file_name);
 
-    ssd_hash_->Import(key_list, key_file_id_list,
-                    key_offset_list, num_of_keys,
-                    file_id_map);
+    ssd_hash_->Import(restore_buff.key_list_buf,
+                      restore_buff.key_file_id_list_buf,
+                      restore_buff.key_offset_list_buf,
+                      restore_buff.num_of_keys,
+                      file_id_map);
   }
-
   Status Eviction(K* evict_ids, int64 evict_size) override {
     ValuePtr<V>* value_ptr = nullptr;
     for (int64 i = 0; i < evict_size; ++i) {

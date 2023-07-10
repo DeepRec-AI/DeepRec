@@ -25,6 +25,10 @@ class ValuePtr;
 namespace embedding {
 class Iterator;
 
+namespace {
+  const int kSavedPartitionNum = 1000;
+}
+
 template<class K, class V>
 class PartitionedCheckpointData {
  public:
