@@ -2929,7 +2929,9 @@ cuda_library(
         }),
     visibility = ["//visibility:public"],
     deps = [
+        ":save_restore_tensor",
         "//tensorflow/core:stream_executor",
+        "//tensorflow/core/util/tensor_bundle",
         "//tensorflow/core/kernels:gpu_device_array"] + ["//third_party/eigen3"]
 )
 
@@ -5432,6 +5434,8 @@ tf_kernel_library(
             "@sparsehash_c11//:dense_hash_map",
             "@libcuckoo//:libcuckoo",
             ":unique_ali_op",
+            ":save_restore_tensor",
+            "//tensorflow/core/util/tensor_bundle",
             "@com_github_google_leveldb//:leveldb",] + DYNAMIC_DEPS + mkl_deps() +
            if_cuda(["@cub_archive//:cub",
                     ":fused_embedding_common_cuh",

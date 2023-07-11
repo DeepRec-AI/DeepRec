@@ -68,10 +68,9 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   void Insert(K key, ValuePtr<V>** value_ptr,
-              size_t alloc_len) override {
+              size_t alloc_len, bool to_dram = false) override {
     dram_->Insert(key, value_ptr, alloc_len);
   }
-
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size, CopyBackFlag &need_copyback) override {
     LOG(FATAL)<<"GetOrCreate(K key, ValuePtr<V>** value_ptr, "
@@ -109,12 +108,6 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   bool IsSingleHbm() override {
-    return false;
-  }
-
-  bool IsUsePersistentStorage() override {
-    /*The return value is set to false temporarily,
-      because the corresponding interface is not implemented.*/
     return false;
   }
 

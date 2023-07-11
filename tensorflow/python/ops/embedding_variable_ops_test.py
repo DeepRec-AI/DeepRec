@@ -614,36 +614,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         for i in range(ids[col_name].shape.as_list()[0]):
           self.assertAllEqual(val_list[0][i], val_list[1][i])
 
-  def testEmbeddingVariableForSaveAndRestore(self):
-    print("testEmbeddingVariableForSaveAndRestore")
-    checkpoint_directory = self.get_temp_dir()
-    with ops.device("/cpu:0"):
-      var = variable_scope.get_embedding_variable("var_1",
-              embedding_dim = 3,
-              initializer=init_ops.ones_initializer(dtypes.float32),
-              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
-              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                   storage_path='/tmp/leveldb/')))
-    emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
-    saver = saver_module.Saver(sharded=True)
-    init = variables.global_variables_initializer()
-    with self.test_session() as sess:
-      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
-      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
-      sess.run([init])
-      emb_ori = sess.run(emb)
-      emb_ori = sess.run(emb)
-      emb_ori = sess.run(emb)
-      emb_ori = sess.run(emb)
-      save_path = saver.save(sess, os.path.join(checkpoint_directory, "model.ckpt"), global_step=12345)
-      print(save_path)
-      for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
-        print('loading... ', name, shape)
-
-    with self.test_session() as sess:
-      saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
-      self.assertAllEqual(emb_ori, sess.run(emb))
-
   def testEmbeddingVariableForL2FeatureEvictionFromContribFeatureColumn(self):
     print("testEmbeddingVariableForL2FeatureEvictionFromContribFeatureColumn")
     checkpoint_directory = self.get_temp_dir()
@@ -2413,24 +2383,133 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         sess.run(emb, feed_dict={ids:[3, 3]})
         result = sess.run(tires)
         self.assertAllEqual(result, [0, 1, 0, 1])
+        print(result)
     del os.environ["TF_SSDHASH_ASYNC_COMPACTION"]
     del os.environ["TF_RECORD_FREQ"]
 
-  def testEmbeddingVariableCustomDimForSaveAndRestore(self):
-    print("testEmbeddingVariableCustomForSaveAndRestore")
+  def testEmbeddingVariableForSaveAndRestoreForSingleTier(self):
+    print("testEmbeddingVariableForSaveAndRestoreForSingleTier")
+    checkpoint_directory = self.get_temp_dir()
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2),
+              ev_option = variables.EmbeddingVariableOption(
+                  storage_option=variables.StorageOption(
+                      storage_type=config_pb2.StorageType.DRAM)))
+      
+      var_2 = variable_scope.get_embedding_variable("var_2",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(
+                  storage_option=variables.StorageOption(
+                      storage_type=config_pb2.StorageType.DRAM)))
+
+      emb = embedding_ops.embedding_lookup(var,
+                                           math_ops.cast([0,1,2,5,6,7],
+                                           dtypes.int64))
+      emb_1 = embedding_ops.embedding_lookup(var_2,
+                                             math_ops.cast([0,1,2,5,6,7],
+                                             dtypes.int64))
+      fun = math_ops.multiply(emb, 0.0, name='multiply')
+      fun1 = math_ops.multiply(emb_1, 0.0, name='multiply_1')
+      loss = math_ops.reduce_sum(fun + fun1, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v, gs)
+      saver = saver_module.Saver(sharded=True)
+      init = variables.global_variables_initializer()
+      with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run(train_op)
+        emb_ori = sess.run(emb)
+        emb_ori_2 = sess.run(emb_1)
+        save_path = saver.save(sess, os.path.join(checkpoint_directory, "model.ckpt"), global_step=12345)
+        print(save_path)
+        for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
+          print('loading... ', name, shape)
+
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2),
+              ev_option = variables.EmbeddingVariableOption(
+                  storage_option=variables.StorageOption(
+                      storage_type=config_pb2.StorageType.DRAM)))
+      
+      var_2 = variable_scope.get_embedding_variable("var_2",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(
+                  storage_option=variables.StorageOption(
+                      storage_type=config_pb2.StorageType.DRAM)))
+
+      emb = embedding_ops.embedding_lookup(var,
+                                           math_ops.cast([0,1,2,5,6,7],
+                                           dtypes.int64))
+      emb_1 = embedding_ops.embedding_lookup(var_2,
+                                             math_ops.cast([0,1,2,5,6,7],
+                                             dtypes.int64))
+      saver = saver_module.Saver([var,var_2], sharded=True)
+      graph = ops.get_default_graph()
+      with self.test_session(graph=graph) as sess:
+        saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
+        ret = sess.run(emb)
+        ret_1 = sess.run(emb_1)
+        self.assertAllEqual(emb_ori, ret)
+        self.assertAllEqual(emb_ori_2, ret_1)
+    
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(
+                  storage_option=variables.StorageOption(
+                      storage_type=config_pb2.StorageType.DRAM)))
+      
+      var_2 = variable_scope.get_embedding_variable("var_2",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2),
+              ev_option = variables.EmbeddingVariableOption(
+                  storage_option=variables.StorageOption(
+                      storage_type=config_pb2.StorageType.DRAM)))
+
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+      emb_1 = embedding_ops.embedding_lookup(var_2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+      saver = saver_module.Saver([var,var_2], sharded=True)
+      graph = ops.get_default_graph()
+      with self.test_session(graph=graph) as sess:
+        saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
+        ret = sess.run(emb)
+        ret_1 = sess.run(emb_1)
+        self.assertAllEqual(emb_ori, ret)
+        self.assertAllEqual(emb_ori_2, ret_1)
+
+  def testEmbeddingVariableSaveAndRestoreForMultiTierWithoutHbm(self):
+    print("testEmbeddingVariableSaveAndRestoreForMultiTierWithoutHbm")
     checkpoint_directory = self.get_temp_dir()
     os.environ["TF_EV_RESTORE_CUSTOM_DIM"] = "True"
     with ops.Graph().as_default() as g, ops.device('/cpu:0'):
         var = variable_scope.get_embedding_variable("var_1",
                 embedding_dim = 3,
-                ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                     storage_path='/tmp/leveldb/')))
+                ev_option = variables.EmbeddingVariableOption(
+                    storage_option=variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                            storage_path='/tmp/leveldb/')))
 
         var2 = variable_scope.get_embedding_variable("var_2",
             embedding_dim = 3,
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
-            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path='/tmp/leveldb/')))
+            ev_option = variables.EmbeddingVariableOption(
+                storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                        storage_path='/tmp/leveldb/')))
         
         emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
         emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
@@ -2459,14 +2538,18 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     with ops.Graph().as_default() as g, ops.device('/cpu:0'):
         var = variable_scope.get_embedding_variable("var_1",
                 embedding_dim = 6,
-                ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                     storage_path='/tmp/leveldb/')))
+                ev_option = variables.EmbeddingVariableOption(
+                    storage_option=variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                            storage_path='/tmp/leveldb/')))
 
         var2 = variable_scope.get_embedding_variable("var_2",
             embedding_dim = 5,
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
-            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path='/tmp/leveldb/')))
+            ev_option = variables.EmbeddingVariableOption(
+                storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                        storage_path='/tmp/leveldb/')))
         emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
         emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
         saver = saver_module.Saver([var,var2],sharded=True)
@@ -2481,14 +2564,18 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     with ops.Graph().as_default() as g, ops.device('/cpu:0'):
         var = variable_scope.get_embedding_variable("var_1",
                 embedding_dim = 2,
-                ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                     storage_path='/tmp/leveldb/')))
+                ev_option = variables.EmbeddingVariableOption(
+                    storage_option=variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                            storage_path='/tmp/leveldb/')))                                                         
 
         var2 = variable_scope.get_embedding_variable("var_2",
             embedding_dim = 2,
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
-            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path='/tmp/leveldb/')))
+            ev_option = variables.EmbeddingVariableOption(
+                storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                        storage_path='/tmp/leveldb/')))
         emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
         emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
         saver = saver_module.Saver([var,var2],sharded=True)
@@ -2500,6 +2587,58 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertAllEqual(emb_ori[:,0:2], emb_val)
           self.assertAllEqual(emb_ori_2[:,0:2], emb_val_2)
     del os.environ["TF_EV_RESTORE_CUSTOM_DIM"]
+
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+        var = variable_scope.get_embedding_variable("var_1",
+                embedding_dim = 3,
+                ev_option = variables.EmbeddingVariableOption(
+                    storage_option=variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                            storage_path='/tmp/leveldb/')))
+
+        var2 = variable_scope.get_embedding_variable("var_2",
+            embedding_dim = 3,
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+            ev_option = variables.EmbeddingVariableOption(
+                storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                        storage_path='/tmp/leveldb/')))
+        emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        saver = saver_module.Saver([var,var2],sharded=True)
+        graph = ops.get_default_graph()
+        with self.test_session(graph = graph) as sess:
+          saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
+          emb_val = sess.run(emb)
+          emb_val_2 = sess.run(emb2)
+          self.assertAllEqual(emb_ori, emb_val)
+          self.assertAllEqual(emb_ori_2, emb_val_2)
+
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+        var = variable_scope.get_embedding_variable("var_1",
+                embedding_dim = 3,
+                ev_option = variables.EmbeddingVariableOption(
+                    storage_option=variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                            storage_path='/tmp/leveldb/')))
+
+        var2 = variable_scope.get_embedding_variable("var_2",
+            embedding_dim = 3,
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+            ev_option = variables.EmbeddingVariableOption(
+                storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                        storage_path='/tmp/leveldb/')))
+        emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        saver = saver_module.Saver([var,var2],sharded=True)
+        graph = ops.get_default_graph()
+        with self.test_session(graph = graph) as sess:
+          saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
+          emb_val = sess.run(emb)
+          emb_val_2 = sess.run(emb2)
+          self.assertAllEqual(emb_ori, emb_val)
+          self.assertAllEqual(emb_ori_2, emb_val_2)
 
   def testCPUFbjOpt(self):
     print("testCPUFbjOpt")

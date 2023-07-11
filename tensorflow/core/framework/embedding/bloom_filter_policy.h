@@ -31,9 +31,13 @@ const static std::vector<int64> default_seeds = {
 
 template<typename K, typename V, typename EV>
 class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
+ using FilterPolicy<K, V, EV>::ev_;
+ using FilterPolicy<K, V, EV>::config_;
+
  public:
-  BloomFilterPolicy(const EmbeddingConfig& config, EV* ev)
-      : config_(config), ev_(ev) {
+  BloomFilterPolicy(const EmbeddingConfig& config, EV* ev) :
+      FilterPolicy<K, V, EV>(config, ev) {
+    
     switch (config_.counter_type){
       case DT_UINT64:
         VLOG(2) << "The type of bloom counter is uint64";
@@ -303,16 +307,18 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  Status Import(RestoreBuffer& restore_buff,
-                int64 key_num,
-                int bucket_num,
-                int64 partition_id,
-                int64 partition_num,
-                bool is_filter) override {
+  Status Restore(int64 key_num, int bucket_num, int64 partition_id,
+                 int64 partition_num, int64 value_len, bool is_filter,
+                 bool to_dram, bool is_incr, RestoreBuffer& restore_buff) override {
     K* key_buff = (K*)restore_buff.key_buffer;
     V* value_buff = (V*)restore_buff.value_buffer;
     int64* version_buff = (int64*)restore_buff.version_buffer;
     int64* freq_buff = (int64*)restore_buff.freq_buffer;
+    if (to_dram) {
+      LOG(FATAL)<<"BloomFilter dosen't support ImportToDRAM";
+      return Status::OK();
+    }
+
     for (auto i = 0; i < key_num; ++i) {
       // this can describe by graph(Mod + DynamicPartition),
       // but memory waste and slow
@@ -333,33 +339,19 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
         SetBloomFreq(key_buff[i], freq_buff[i]);
       }
       if (new_freq >= config_.filter_freq){
-        ev_->CreateKey(key_buff[i], &value_ptr);
+        ev_->CreateKey(key_buff[i], &value_ptr, to_dram);
         if (config_.steps_to_live != 0 || config_.record_version) {
           value_ptr->SetStep(version_buff[i]);
         }
         if (!is_filter){
           ev_->LookupOrCreateEmb(value_ptr,
-              value_buff + i * ev_->ValueLen());
+                                 value_buff + i * ev_->ValueLen());
         } else {
           ev_->LookupOrCreateEmb(value_ptr,
-              ev_->GetDefaultValue(key_buff[i]));
+                                 ev_->GetDefaultValue(key_buff[i]));
         }
       }
     }
-    if (ev_->IsMultiLevel() && !ev_->IsUseHbm() && config_.is_primary()) {
-      ev_->UpdateCache(key_buff, key_num, version_buff, freq_buff);
-    }
-    return Status::OK();
-  }
-
-  Status ImportToDram(RestoreBuffer& restore_buff,
-                int64 key_num,
-                int bucket_num,
-                int64 partition_id,
-                int64 partition_num,
-                bool is_filter,
-                V* default_values) override {
-    LOG(FATAL)<<"BloomFilter dosen't support ImportToDRAM";
     return Status::OK();
   }
 
@@ -455,11 +447,8 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
       }
     }
   }
-
  private:
   void* bloom_counter_;
-  EmbeddingConfig config_;
-  EV* ev_;
   std::vector<int64> seeds_;
 };
 } // tensorflow

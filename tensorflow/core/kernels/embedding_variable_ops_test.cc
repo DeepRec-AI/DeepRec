@@ -1357,21 +1357,48 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
       storage, emb_config, cpu_allocator());
   variable->Init(value, 1);
   variable->InitCache(CacheStrategy::LFU);
-  RestoreBuffer buf;
-  buf.key_buffer = new char[6 * sizeof(int64)];
-  buf.version_buffer = new char[6 * sizeof(int64)];
-  buf.freq_buffer = new char[6 * sizeof(int64)];
-  buf.value_buffer = new char[24 * sizeof(float)];
-  for (int i = 1; i < 7; i++) {
-    ((int64*)buf.key_buffer)[i-1] = i;
-    ((int64*)buf.version_buffer)[i-1] = 1;
-    ((int64*)buf.freq_buffer)[i-1] = i * 10;
-  }
-  variable->Import(buf, 6, 1, 0, 1, false, nullptr);
 
-  ASSERT_EQ(variable->storage()->Size(0), 4);
-  ASSERT_EQ(variable->storage()->Size(1), 2);
-  delete storage;
+  Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
+
+  int64 ev_size = 7;
+  int64 cache_size = 3;
+  for (int64 i = 1; i < cache_size; i++) {
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr, i);
+    value_ptr->AddFreq(2);
+  }
+  for (int64 i = cache_size; i < ev_size; i++) {
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr, i);
+    value_ptr->AddFreq(1);
+  }
+
+  LOG(INFO) << "size:" << variable->Size();
+
+  BundleWriter writer(Env::Default(), Prefix("foo"));
+  DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
+  TF_ASSERT_OK(writer.Finish());  
+
+  auto imported_storage= embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(embedding::DRAM_SSDHASH,
+      testing::TmpDir(),
+      size, "normal_contiguous",
+      emb_config),
+      cpu_allocator(),
+      "EmbeddingVar1");
+  auto imported_variable = new EmbeddingVar<int64, float>("EmbeddingVar1",
+      imported_storage, emb_config, cpu_allocator());
+  imported_variable->Init(value, 1);
+  imported_variable->InitCache(CacheStrategy::LFU);
+
+  BundleReader reader(Env::Default(), Prefix("foo"));
+  std::string name_string("var");
+  imported_variable->Restore(name_string, Prefix("foo"), 0, 1, false, &reader, false);
+
+  ASSERT_EQ(imported_storage->Size(0), ev_size - cache_size);
+  ASSERT_EQ(imported_storage->Size(1), 2);
 }
 
 void t1_gpu(KVInterface<int64, float>* hashmap) {
