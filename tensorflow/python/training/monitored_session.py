@@ -491,7 +491,8 @@ def MonitoredTrainingSession(
     save_checkpoint_steps=USE_DEFAULT,
     summary_dir=None,
     save_incremental_checkpoint_secs=None,
-    target_nodes_or_tensors=None):
+    target_nodes_or_tensors=None,
+    saving_listeners=None):
 
   """Creates a `MonitoredSession` for training.
 
@@ -548,6 +549,9 @@ def MonitoredTrainingSession(
       summaries. If None, checkpoint_dir is used instead.
     target_nodes_or_tensors: list of tf.Tensor or tf.Operation indicates
       targets, which determine graph transformation of 'smart-stage'
+    saving_listeners: List of `CheckpointSaverListener` subclass instances. Used
+      for callbacks that run immediately before or after this hook saves the
+      checkpoint.
 
   Returns:
     A `MonitoredSession` object.
@@ -648,6 +652,7 @@ def MonitoredTrainingSession(
               save_steps=save_checkpoint_steps,
               save_secs=save_checkpoint_secs,
               scaffold=scaffold,
+              listeners=saving_listeners,
               incremental_save_secs=save_incremental_checkpoint_secs))
 
   if hooks:
