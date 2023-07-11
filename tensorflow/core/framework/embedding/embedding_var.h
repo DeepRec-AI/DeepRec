@@ -139,8 +139,8 @@ class EmbeddingVar : public ResourceBase {
       memcpy(default_value_, &default_tensor_flat(0),
           default_tensor.TotalBytes());
 
-      default_value_no_permission_ = TypedAllocator::Allocate<V>(alloc_,
-          value_len_, AllocationAttributes());
+      default_value_no_permission_ = TypedAllocator::Allocate<V>(
+          default_value_alloc_, value_len_, AllocationAttributes());
       for (int i = 0; i < value_len_; ++i) {
         default_value_no_permission_[i] = static_cast<V>(
             emb_config_.default_value_no_permission);
@@ -862,7 +862,8 @@ class EmbeddingVar : public ResourceBase {
     TypedAllocator::Deallocate(default_value_alloc_, default_value_,
         value_len_ * emb_config_.default_value_dim);
     if (default_value_no_permission_) {
-      TypedAllocator::Deallocate(alloc_, default_value_no_permission_,
+      TypedAllocator::Deallocate(default_value_alloc_,
+          default_value_no_permission_,
           value_len_);
     }
     if (filter_) {
