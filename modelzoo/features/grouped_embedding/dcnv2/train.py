@@ -28,6 +28,8 @@
 
 import numpy as np
 
+import pyarrow.parquet as pq
+
 from ast import arg
 
 import time
@@ -58,13 +60,15 @@ from tensorflow.python.ops import partitioned_variables
 
 from tensorflow.python.framework import ops
 
+import horovod.tensorflow as hvd
+
 os.environ["TF_GPU_THREAD_MODE"] = "global"
 os.environ["TF_GPU_THREAD_COUNT"] = "16"
 
-import horovod.tensorflow as hvd
+group_embedding_type = os.getenv("COLLECTIVE_STRATEGY", "sok")
+assert group_embedding_type in ["sok", "hb"]
 
-#Enable group_embedding_lookup
-tf.config.experimental.enable_distributed_strategy(strategy="collective")
+from tensorflow.python.distribute.group_embedding_collective_strategy import CollectiveStrategy
 
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -141,6 +145,17 @@ EMBEDDING_DIMENSIONS = {
 }
 
 
+def build_placeholders():
+    r'''Build input placeholders.
+    '''
+    inputs = {}
+    for f in CONTINUOUS_COLUMNS:
+        inputs[f] = tf.placeholder(dtype=tf.float32, shape=[None])
+    for f in CATEGORICAL_COLUMNS:
+        inputs[f] = tf.placeholder(dtype=tf.string, shape=[None])
+    return inputs
+
+
 def transform_numeric(feature):
     r'''Transform numeric features.
 
@@ -181,6 +196,7 @@ def transform_numeric(feature):
 
     return numeric_list
 
+
 def transform_feature_column():
 
     feature_columns = []
@@ -202,7 +218,6 @@ def transform_feature_column():
 
         return minmaxscaler
 
-
     for column_name in CONTINUOUS_COLUMNS:
 
         normalizer_fn = None
@@ -223,11 +238,11 @@ def transform_feature_column():
                                                 filter_option=None)
 
             column = tf.feature_column.categorical_column_with_embedding(
-                key = column_name,
+                key=column_name,
                 dtype=tf.int64,
-                ev_option = ev_opt
+                ev_option=ev_opt
             )
-            
+
             with tf.device("/gpu:0"):
                 weight = tf.feature_column.embedding_column(
                     categorical_column=column,
@@ -239,6 +254,7 @@ def transform_feature_column():
 
     return feature_columns
 
+
 def transform_features(sparse_features, dense_features):
     features = {}
 
@@ -249,22 +265,22 @@ def transform_features(sparse_features, dense_features):
         numeric = dense_features[i]
 
         features[column_name] = numeric
-    
+
     max_value = np.iinfo(dtypes.int64.as_numpy_dtype).max
 
     for i, column_name in enumerate(CATEGORICAL_COLUMNS):
-        category = tf.strings.to_hash_bucket_fast(sparse_features[i], max_value)
-        # ragged_tensor = tf.RaggedTensor.from_row_lengths(
-        #        values=category, row_lengths=tf.ones_like(category))
+        category = tf.strings.to_hash_bucket_fast(
+            sparse_features[i], max_value)
 
         sparse_tensor = fc._to_sparse_input_and_drop_ignore_values(
-                category)
+            category)
 
         sparse_tensor = tf.sparse.reshape(sparse_tensor, (-1, 1))
 
         features[column_name] = sparse_tensor
-    
+
     return features
+
 
 def transform_categorical(feature):
 
@@ -287,33 +303,31 @@ def transform_categorical(feature):
                 ),
                 embedding_dim=EMBEDDING_DIMENSIONS[column_name],
                 ev_option=ev_opt)
-            
 
         category = tf.strings.to_hash_bucket_fast(feature[i], max_value)
 
-
         i = CATEGORICAL_COLUMNS.index(column_name)
-
-        target_gpu = i % hvd.size()
-
-        target_gpu = -1
-
-        embedding_weights.target_gpu = target_gpu
-
-
-        ragged_tensor = tf.RaggedTensor.from_row_lengths(
-            values=category, row_lengths=tf.ones_like(category))
-
-
-        indices.append(ragged_tensor)
 
         variables.append(embedding_weights)
 
+        # Different type of sparse input for sok and hb.
+        if group_embedding_type == "sok":
+            ragged_tensor = tf.RaggedTensor.from_row_lengths(
+                values=category, row_lengths=tf.ones_like(category))
+
+            indices.append(ragged_tensor)
+        else:
+            sparse_tensor = fc._to_sparse_input_and_drop_ignore_values(
+                category)
+
+            sparse_tensor = tf.sparse.reshape(sparse_tensor, (-1, 1))
+
+            indices.append(sparse_tensor)
 
     combiners = ['sum' for _ in range(len(CATEGORICAL_COLUMNS))]
 
-    deep_features = tf.nn.group_embedding_lookup_sparse(variables, indices, combiners)
-
+    deep_features = tf.nn.group_embedding_lookup_sparse(
+        variables, indices, combiners)
 
     return deep_features
 
@@ -339,7 +353,7 @@ def stacked_dcn_v2(features, mlp_dims):
             cross_input_shape = [-1, sum([f.shape[-1] for f in features])]
 
             cross_input = tf.reshape(cross_input, cross_input_shape)
-        
+
         cross_input_sq = tf.layers.dense(
             cross_input,
             cross_input.shape[-1],
@@ -351,9 +365,9 @@ def stacked_dcn_v2(features, mlp_dims):
 
         cross_output = tf.reshape(cross_output, [-1, cross_input.shape[1]])
 
-        
         if args.use_feature_columns:
-            cross_output_dim = (len(CATEGORICAL_COLUMNS+CONTINUOUS_COLUMNS) * (len(CATEGORICAL_COLUMNS+CONTINUOUS_COLUMNS) + 1)) / 2
+            cross_output_dim = (len(CATEGORICAL_COLUMNS+CONTINUOUS_COLUMNS)
+                                * (len(CATEGORICAL_COLUMNS+CONTINUOUS_COLUMNS) + 1)) / 2
         else:
             cross_output_dim = (len(features) * (len(features) + 1)) / 2
 
@@ -396,219 +410,152 @@ def stacked_dcn_v2(features, mlp_dims):
 
 def build_model_input(filename, batch_size, num_epochs):
 
-    def parse_csv(value):
-
+    def parse_parquet(value):
         tf.logging.info('Parsing {}'.format(filename))
+        labels = value.pop(LABEL_COLUMN[0])
+        dense_feature = [value[name] for name in CONTINUOUS_COLUMNS]
 
-        cont_defaults = [[0.0] for i in range(1, 14)]
-
-        cate_defaults = [[' '] for i in range(1, 27)]
-
-        label_defaults = [[0]]
-
-        column_headers = TRAIN_DATA_COLUMNS
-
-        record_defaults = label_defaults + cont_defaults + cate_defaults
-
-        columns = tf.io.decode_csv(value, record_defaults=record_defaults)
-
-        all_columns = collections.OrderedDict(zip(column_headers, columns))
-
-        labels = all_columns.pop(LABEL_COLUMN[0])
-
-        dense_feature = [all_columns[name] for name in CONTINUOUS_COLUMNS]
-
-        sparse_feature = [all_columns[name] for name in CATEGORICAL_COLUMNS]
-
+        sparse_feature = [value[name] for name in CATEGORICAL_COLUMNS]
         return dense_feature, sparse_feature, labels
 
     '''Work Queue Feature'''
-
     if args.workqueue and not args.tf:
-
         from tensorflow.python.ops.work_queue import WorkQueue
-
-        work_queue = WorkQueue([filename])
-
+        work_queue = WorkQueue([filename], num_epochs=num_epochs)
         # For multiple files：
-
         # work_queue = WorkQueue([filename, filename1,filename2,filename3])
-
         files = work_queue.input_dataset()
-
     else:
-
         files = filename
 
-    # Extract lines from input files using the Dataset API.
+    from tensorflow.python.data.experimental.ops import parquet_dataset_ops
 
-    dataset = tf.data.TextLineDataset(files)
-
-    dataset = dataset.shuffle(buffer_size=20000,
-                              seed=args.seed)  # fix seed for reproducing
-
-    dataset = dataset.repeat(num_epochs)
-
-    dataset = dataset.batch(batch_size)
-
-    dataset = dataset.map(parse_csv, num_parallel_calls=28)
-
+    dataset = parquet_dataset_ops.ParquetDataset(files, batch_size=batch_size)
+    dataset = dataset.map(parse_parquet, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
-
     return dataset
 
 
-def main():
+def model_fn(strategy, sparse_feature, dense_feature):
+    with strategy.embedding_scope():
+        if args.use_feature_columns:
 
-    # check dataset and count data set size
+            feature_columns = transform_feature_column()
 
-    print("Checking dataset...")
+            features = transform_features(sparse_feature, dense_feature)
 
-    train_file = args.data_location + '/train.csv'
+            input_features = tf.feature_column.input_layer(
+                features, feature_columns)
+        else:
 
-    if (not os.path.exists(train_file)):
+            deep_features = transform_categorical(sparse_feature)
 
-        print("Dataset does not exist in the given data_location.")
+            wide_features = transform_numeric(dense_feature)
 
-        sys.exit()
+            input_features = deep_features + wide_features
 
-    no_of_training_examples = sum(1 for line in open(train_file))
+    logits = stacked_dcn_v2(features=input_features,
+                            mlp_dims=[1024, 512, 256, 1])
+    return logits
 
-    print("Numbers of training dataset is {}".format(no_of_training_examples))
 
-    # set batch size, eporch & steps
+def main(strategy):
 
-    assert args.batch_size % hvd.size() == 0
+    # set fixed random seed
+    tf.set_random_seed(args.seed)
 
-    batch_size = int(args.batch_size / hvd.size())
+    # assert args.steps % no_of_training_examples == 0
 
-    if args.steps == 0:
+    if args.mode == "train":
+        print("Checking dataset...")
 
-        no_of_epochs = 1
+        train_file = args.data_location + '/train.parquet'
 
-        train_steps = math.ceil(
-            (float(no_of_epochs) * no_of_training_examples) / batch_size)
+        if (not os.path.exists(train_file)):
 
-    else:
+            print("Dataset does not exist in the given data_location.")
+
+            sys.exit()
+
+        batch_size = int(args.batch_size / 4)
+
+        no_of_training_examples = pq.read_table(train_file).num_rows
 
         no_of_epochs = math.ceil(
             (float(batch_size) * args.steps) / no_of_training_examples)
 
         train_steps = args.steps
 
-    print("The training steps is {}".format(train_steps))
+        print("Numbers of training dataset is {}".format(no_of_training_examples))
 
-    # set fixed random seed
+        print("The training steps is {}".format(train_steps))
 
-    tf.set_random_seed(args.seed)
+        # create data pipline of train & test dataset
 
-    # create data pipline of train & test dataset
+        with tf.device('/cpu:0'):
 
-    with tf.device('/cpu:0'):
+            train_dataset = build_model_input(
+                train_file, batch_size, no_of_epochs)
 
-        train_dataset = build_model_input(train_file, batch_size, no_of_epochs)
+            iterator = tf.data.make_one_shot_iterator(train_dataset)
+            next_element = iterator.get_next()
+            dense_feature, sparse_feature, labels = next_element[0], \
+                next_element[1], \
+                next_element[2]
 
-        iterator = tf.data.Iterator.from_structure(train_dataset.output_types,
-                                                   train_dataset.output_shapes)
+        logits = model_fn(strategy, sparse_feature, dense_feature)
+        labels = tf.reshape(labels, (-1, 1))
 
-        next_element = iterator.get_next()
+        loss = tf.reduce_mean(
+            tf.keras.losses.binary_crossentropy(labels, logits))
 
-    train_init_op = iterator.make_initializer(train_dataset)
+        step = tf.train.get_or_create_global_step()
 
-    dense_feature, sparse_feature, labels = next_element[0], next_element[
-        1], next_element[2]
-    
-    input_features = None
+        opt = tf.train.AdagradOptimizer(learning_rate=0.01)
 
-    if args.use_feature_columns:
+        train_op = opt.minimize(loss, global_step=step)
 
-        feature_columns = transform_feature_column()
+        hooks = []
 
-        features = transform_features(sparse_feature, dense_feature)
+        options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 
-        input_features = tf.feature_column.input_layer(features, feature_columns)
-    else:
-        
-        deep_features = transform_categorical(sparse_feature)
+        run_metadata = tf.RunMetadata()
 
-        wide_features = transform_numeric(dense_feature)
+        stop_hook = tf.train.StopAtStepHook(last_step=train_steps)
 
-        input_features = deep_features + wide_features
+        hooks.append(stop_hook)
 
-    logits = stacked_dcn_v2(features=input_features,
-                            mlp_dims=[1024, 512, 256, 1])
+        log_hook = tf.train.LoggingTensorHook({
+            'steps': step,
+            'loss': loss,
+        }, every_n_iter=500)
+        hooks.append(log_hook)
 
-    labels = tf.reshape(labels, (-1, 1))
+        with tf.train.MonitoredTrainingSession(hooks=hooks,
+                                               checkpoint_dir=args.checkpoint,
+                                               config=None) as sess:
 
-    loss = tf.reduce_mean(tf.keras.losses.binary_crossentropy(labels, logits))
+            while not sess.should_stop():
+                sess.run([loss, train_op])
 
-    loss = hvd.allreduce(loss, op=hvd.Sum)
+            print("Training completed.")
 
-    step = tf.train.get_or_create_global_step()
+    elif args.mode == "export":
+        def on_export():
+            sparse_feature, dense_feature = [], []
+            inputs = build_placeholders()
+            for fname, feat in inputs.items():
+                if fname in CONTINUOUS_COLUMNS:
+                    dense_feature.append(feat)
+                elif fname in CATEGORICAL_COLUMNS:
+                    sparse_feature.append(feat)
+            logits = model_fn(strategy, sparse_feature, dense_feature)
+            return tf.saved_model.predict_signature_def(inputs, {'score': logits})
 
-    opt = tf.train.AdagradOptimizer(learning_rate=0.01)
-
-    train_op = opt.minimize(loss, global_step=step)
-
-    # Session config
-
-    sess_config = tf.ConfigProto()
-
-    sess_config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-    sess_config.gpu_options.allow_growth = True
-
-    # # Session hooks
-
-    hooks = []
-
-    # if args.smartstaged and not args.tf:
-
-    #     '''Smart staged Feature'''
-
-    #     next_element = tf.staged(next_element, num_threads=4, capacity=40)
-
-    #     sess_config.graph_options.optimizer_options.do_smart_stage = True
-
-    #     hooks.append(tf.make_prefetch_hook())
-
-    # if args.op_fusion and not args.tf:
-
-    #     '''Auto Graph Fusion'''
-
-    #     sess_config.graph_options.optimizer_options.do_op_fusion = True
-
-    # if args.micro_batch and not args.tf:
-
-    #     '''Auto Mirco Batch'''
-
-    #     sess_config.graph_options.optimizer_options.micro_batch_num = args.micro_batch
-    scaffold = tf.train.Scaffold(local_init_op=tf.group(
-        tf.local_variables_initializer(), train_init_op))
-
-    options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-    run_metadata = tf.RunMetadata()
-
-    stop_hook = tf.train.StopAtStepHook(last_step=train_steps)
-
-    hooks.append(stop_hook)
-
-    log_hook = tf.train.LoggingTensorHook({
-        'steps': step,
-        'loss': loss,
-    }, every_n_iter=500)
-    hooks.append(log_hook)
-
-    with tf.train.MonitoredTrainingSession(master = '',
-                                           hooks=hooks,
-                                           checkpoint_dir=checkpoint_dir,
-                                           scaffold=scaffold,
-                                           config=sess_config) as sess:
-
-        while not sess.should_stop():
-            sess.run([loss, train_op])
-            
-    print("Training completed.")
+        strategy.export_saved_model("./saved_model",
+                                    tf.train.latest_checkpoint(
+                                        args.checkpoint),
+                                    on_export)
 
 
 def boolean_string(string):
@@ -628,6 +575,12 @@ def boolean_string(string):
 def get_arg_parser():
 
     parser = argparse.ArgumentParser()
+
+    parser.add_argument('--checkpoint',
+                        help='Full path to checkpoints input/output. \
+                            Default to ./result/$MODEL_TIMESTAMP',
+                        required=False,
+                        default='./')
 
     parser.add_argument('--data_location',
                         help='Full path of train data',
@@ -654,7 +607,13 @@ def get_arg_parser():
                         type=boolean_string,
                         default=False)
 
-    parser.add_argument('--use_feature_columns', action='store_true')    
+    parser.add_argument('--mode',
+                        help='Mode.',
+                        type=str,
+                        choices=["train", "export"],
+                        default="train")
+
+    parser.add_argument('--use_feature_columns', action='store_true')
 
     return parser
 
@@ -703,4 +662,7 @@ if __name__ == '__main__':
 
     set_env_for_DeepRec()
 
-    main()
+    strategy = CollectiveStrategy()
+
+    with strategy.scope():
+        main(strategy)
