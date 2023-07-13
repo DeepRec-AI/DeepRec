@@ -123,7 +123,7 @@ input:                                  |               |
       - `--data_location`: Full path of train & eval data, default to `./data`.
       - `--steps`: Set the number of steps on train dataset. Default will be set to 1 epoch.
       - `--no_eval`: Do not evaluate trained model by eval dataset.
-      - `--batch_size`: Batch size to train. Default to 512.
+      - `--batch_size`: Batch size to train. Default to 2048.
       - `--output_dir`: Full path to output directory for logs and saved model, default to `./result`.
       - `--checkpoint`: Full path to checkpoints input/output directory, default to `$(OUTPUT_DIR)/model_$(MODEL_NAME)_$(TIMESTAMPS)`
       - `--save_steps`: Set the number of steps on saving checkpoints, zero to close. Default will be set to 0.
@@ -153,21 +153,20 @@ input:                                  |               |
 ## Benchmark
 ### Stand-alone Training
 #### Test Environment
-The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **ecs.hfg7.2xlarge**](https://help.aliyun.com/document_detail/25378.html?spm=5176.2020520101.vmBInfo.instanceType.4a944df5PvCcED#hfg7).
+The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **ecs.g8i.4xlarge**](https://help.aliyun.com/document_detail/25378.html#g8i).
 - Hardware 
-  - Model name:          Intel(R) Xeon(R) Platinum 8369HC CPU @ 3.30GHz
-  - CPU(s):              8
+  - Model name:          Intel(R) Xeon(R) Platinum 8475B
+  - CPU(s):              16
   - Socket(s):           1
-  - Core(s) per socket:  4
+  - Core(s) per socket:  8
   - Thread(s) per core:  2
-  - Memory:              32G
+  - Memory:              64G
 
 - Software
-  - kernel:                 4.18.0-348.2.1.el8_5.x86_64
-  - OS:                     CentOS Linux release 8.5.2111
-  - GCC:                    8.5.0
-  - Docker:                 20.10.12
-  - Python:                 3.6.8
+  - kernel:                 Linux version 5.15.0-58-generic (buildd@lcy02-amd64-101)(AMX patched)
+  - OS:                     Ubuntu 22.04.2 LTS
+  - GCC:                    11.3.0
+  - Docker:                 20.10.21
 
 #### Performance Result
 
@@ -184,23 +183,23 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
         <td rowspan="3">DeepFM</td>
         <td>Community TensorFlow</td>
         <td>FP32</td>
-        <td>0.784695</td>
-        <td>0.781548</td>
-        <td>18848.64(baseline)</td>
+        <td>0.782777</td>
+        <td>0.776113</td>
+        <td>61230.80(baseline)</td>
     </tr>
     <tr>
         <td>DeepRec w/ oneDNN</td>
         <td>FP32</td>
-        <td>0.782755</td>
-        <td>0.777158</td>
-        <td>31260.00(1.65x)</td>
+        <td>0.780460</td>
+        <td>0.773281</td>
+        <td>74380.35(1.22x)</td>
     </tr>
     <tr>
         <td>DeepRec w/ oneDNN</td>
         <td>FP32+BF16</td>
-        <td>0.782659</td>
-        <td>0.776537</td>
-        <td>34627.46(1.84x)</td>
+        <td>0.780460</td>
+        <td>0.775249</td>
+        <td>95107.32(1.55x)</td>
     </tr>
 </table>
 
