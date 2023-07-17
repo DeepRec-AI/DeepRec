@@ -1664,8 +1664,17 @@ def group_embedding_lookup_sparse(params,
                              )
 
     strategy = get_group_lookup_strategy()
-    if strategy == DistStrategy.COLLECTIVE:
-        for (index, param) in enumerate(params):
+    if strategy == DistStrategy.SOK:
+        import horovod.tensorflow as hvd
+        should_shard = False
+        if len(params) > hvd.size():
+          should_shard = True
+          global_size = hvd.size()
+        if should_shard:
+          for (index, param) in enumerate(params):
+            param.target_gpu = index % global_size
+        else:
+          for (index, param) in enumerate(params):
             param.target_gpu = -1
 
         try:
@@ -1676,6 +1685,21 @@ def group_embedding_lookup_sparse(params,
         with ops.name_scope(name, 'group_embedding_lookup', params
                             + sp_ids) as name_scope:
             emb_vec = sok.lookup_sparse(params, sp_ids, combiners=combiners)
+    elif strategy == DistStrategy.HB:
+      emb_vec = []
+      with ops.name_scope(name, 'group_embedding_lookup', params
+                            + sp_ids) as name_scope:
+          for idx, embedding in enumerate(params):
+            if not ignore_weights:
+              sp_weight = sp_weights[idx]
+            else:
+              sp_weight = None
+            emb_vec.append(embedding_lookup_sparse(embedding,
+                                              sp_ids[idx],
+                                              sp_weight,
+                                              combiner=combiners[idx]))
+
+      
     elif strategy == DistStrategy.LOCALIZED:
 
       emb_vec = [None for _ in range(len(params))]
