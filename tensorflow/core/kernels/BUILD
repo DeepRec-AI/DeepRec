@@ -461,8 +461,33 @@ tf_cuda_cc_test(
 )
 
 tf_cuda_cc_test(
-    name = "embedding_variable_memory_performance_test",
-    srcs = ["embedding_variable_memory_performance_test.cc"],
+    name = "embedding_variable_performance_test",
+    srcs = ["embedding_variable_performance_test.cc",
+            "embedding_variable_test.h"],
+    extra_copts = ["-fexceptions", "-g"],
+    deps = [
+        ":io",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:all_kernels",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:direct_session_internal",
+        "//tensorflow/core/util/tensor_bundle",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:testlib",
+        "//third_party/eigen3",
+        "//tensorflow/core:test_main",
+    ],
+)
+
+tf_cuda_cc_test(
+    name = "embedding_variable_memory_test",
+    srcs = ["embedding_variable_memory_test.cc",
+            "embedding_variable_test.h"],
     extra_copts = ["-fexceptions", "-g"],
     deps = [
         ":io",
