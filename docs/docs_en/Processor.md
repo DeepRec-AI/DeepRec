@@ -31,7 +31,7 @@ First, directly [dlopen](https://linux.die.net/man/3/dlopen) in the user framewo
 
 Second, use the header files "**serving/processor/serving/processor.h**" and "**libserving_processor.so**".
 
-**Attention**: If you are not using DeepRec docker, then some additional .so dependencies may be required, including: libiomp5.so，libmklml_intel.so，libstdc++.so.6.
+**Attention**: If you are not using DeepRec docker, then some additional .so dependencies may be required, including: libiomp5.so，libmklml_intel.so，libstdc++.so.6. You can download them directly from [here](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/library/serving_processor_so.tar.gz).
 
 #### C API
 Processor provides the following C API interfaces, and users need to call the following interfaces in their Serving framework.

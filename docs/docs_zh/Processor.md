@@ -30,7 +30,7 @@ Processor的产出是一个独立的so，用户可以很方便的对接到自己
 
 第二，可以结合头文件“**serving/processor/serving/processor.h**”使用，头文件中将Processor相关的API暴露了，通过头文件和“**libserving_processor.so**”来调用serving API也比较方便。
 
-**需要注意**：如果不是使用DeepRec docker，那么可能需要一些额外的so依赖，包括：libiomp5.so，libmklml_intel.so，libstdc++.so.6，用户可以[直接下载](http://tfsmoke1.cn-hangzhou.oss.aliyun-inc.com/deeprec/serving_processor_so.tar.gz)，然后在执行时候Preload这些so。
+**需要注意**：如果不是使用DeepRec docker，那么可能需要一些额外的so依赖，包括：libiomp5.so，libmklml_intel.so，libstdc++.so.6，用户可以[直接下载](https://deeprec-dataset.oss-cn-beijing.aliyuncs.com/library/serving_processor_so.tar.gz)，然后在执行时候Preload这些so。
 
 #### API接口
 Processor提供以下几组C API接口，用户在自己的Serving框架中需要调用下列接口。
