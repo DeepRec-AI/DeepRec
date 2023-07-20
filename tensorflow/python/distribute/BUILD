@@ -11,6 +11,22 @@ package(
 exports_files(["LICENSE"])
 
 py_library(
+    name = "deeprec_collective",
+    srcs = [
+        "group_embedding_collective_strategy.py",
+        "launch.py",
+        "hvd_strategy.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:nccl_ops",
+    ],
+)
+
+py_library(
     name = "distribute_test_lib_pip",
     deps = [
         ":combinations",

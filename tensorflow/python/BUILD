@@ -170,6 +170,7 @@ py_library(
         "//tensorflow/python/compiler",
         "//tensorflow/python/data",
         "//tensorflow/python/distribute",
+        "//tensorflow/python/distribute:deeprec_collective",
         "//tensorflow/python/distribute:combinations",
         "//tensorflow/python/distribute:distribute_config",
         "//tensorflow/python/distribute:estimator_training",

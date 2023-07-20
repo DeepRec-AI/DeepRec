@@ -22,7 +22,8 @@ from enum import Enum, unique
 
 @unique
 class DistStrategy(Enum):
-  COLLECTIVE = "collective"
+  SOK = "sok"
+  HB = "hb"
   DISTRIBUTED = "ps"
   LOCALIZED = "localized"
   UNKNOWN = "unknown"
@@ -31,8 +32,10 @@ _group_lookup_strategy = DistStrategy.LOCALIZED
 
 def set_group_lookup_strategy(strategy):
   def str_to_strategy(strategy):
-    if strategy == "collective":
-      return DistStrategy.COLLECTIVE
+    if strategy == "sok":
+      return DistStrategy.SOK
+    elif strategy == "hb":
+      return DistStrategy.HB
     elif strategy == "ps":
       return DistStrategy.DISTRIBUTED
     elif strategy == "localized":
