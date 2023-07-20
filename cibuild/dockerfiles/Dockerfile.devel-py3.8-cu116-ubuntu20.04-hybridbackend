@@ -1,0 +1,136 @@
+FROM alideeprec/deeprec-build:deeprec-dev-gpu-py38-cu116-ubuntu20.04
+
+RUN apt-get update && \
+    apt-get install -y \
+    --allow-unauthenticated \
+    --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    zlib1g-dev \
+    libhdf5-dev \
+    wget \
+    curl \
+    inetutils-ping \
+    net-tools \
+    unzip \
+    git \
+    vim \
+    cmake \
+    clang-format-7 \
+    openssh-server openssh-client \
+    openmpi-bin openmpi-common libopenmpi-dev libgtk2.0-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN wget -nv -O /opt/openmpi-4.1.1.tar.gz \
+    https://www.open-mpi.org/software/ompi/v4.1/downloads/openmpi-4.1.1.tar.gz && \
+    cd /opt/ && tar -xvzf ./openmpi-4.1.1.tar.gz && \
+    cd openmpi-4.1.1 && ./configure && make && make install
+
+RUN git clone https://github.com/DeepRec-AI/HybridBackend.git /opt/HybridBackend
+
+ENV HYBRIDBACKEND_USE_CXX11_ABI=0 \
+    HYBRIDBACKEND_WITH_ARROW_HDFS=ON \
+    HYBRIDBACKEND_WITH_ARROW_S3=ON \
+    TMP=/tmp
+
+RUN cd /opt/HybridBackend/build/arrow && \
+    ARROW_USE_CXX11_ABI=${HYBRIDBACKEND_USE_CXX11_ABI} \
+    ARROW_HDFS=${HYBRIDBACKEND_WITH_ARROW_HDFS} \
+    ARROW_S3=${HYBRIDBACKEND_WITH_ARROW_S3} \
+    ./build.sh /opt/arrow
+
+RUN pip install -U --no-cache-dir \
+    Cython \
+    nvidia-pyindex \
+    pybind11 \
+    tqdm && \
+    pip install -U --no-cache-dir \
+    nvidia-nsys-cli
+
+ARG TF_REPO=https://github.com/DeepRec-AI/DeepRec.git
+ARG TF_TAG=main
+
+RUN git clone ${TF_REPO} -b ${TF_TAG} /opt/DeepRec
+
+RUN wget -nv -O /opt/DeepRec/install_bazel.sh \
+    http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/bazel-0.26.1-installer-linux-x86_64.sh && \
+    chmod 777 /opt/DeepRec/install_bazel.sh && /opt/DeepRec/install_bazel.sh
+
+
+ENV TF_NEED_CUDA=1 \
+    TF_CUDA_PATHS=/usr,/usr/local/cuda \
+    TF_CUDA_VERSION=11.6 \
+    TF_CUBLAS_VERSION=11 \
+    TF_CUDNN_VERSION=8 \
+    TF_NCCL_VERSION=2 \
+    TF_CUDA_CLANG=0 \
+    TF_DOWNLOAD_CLANG=0 \
+    TF_NEED_TENSORRT=0 \
+    TF_CUDA_COMPUTE_CAPABILITIES="7.0,8.0" \
+    TF_ENABLE_XLA=1 \
+    TF_NEED_MPI=0 \
+    CC_OPT_FLAGS="-march=skylake -Wno-sign-compare" \
+    CXX_OPT_FLAGS="-D_GLIBCXX_USE_CXX11_ABI=0"
+
+RUN cd /opt/DeepRec && \
+    yes "" | bash ./configure || true
+
+RUN --mount=type=cache,target=/var/cache/bazel.tensorflow \
+    cd /opt/DeepRec && \
+    bazel build \
+    --disk_cache=/var/cache/bazel.tensorflow \
+    --config=nogcp \
+    --config=cuda \
+    --config=xla \
+    --verbose_failures \
+    --cxxopt="${CXX_OPT_FLAGS}" \
+    --host_cxxopt="${CXX_OPT_FLAGS}" \
+    --define tensorflow_mkldnn_contraction_kernel=0 \
+    //tensorflow/tools/pip_package:build_pip_package
+
+RUN mkdir -p /src/dist && \
+    cd /opt/DeepRec && \
+    ./bazel-bin/tensorflow/tools/pip_package/build_pip_package \
+    /src/dist --gpu --project_name tensorflow
+
+RUN pip install --no-cache-dir --user \
+    /src/dist/tensorflow-*.whl && \
+    rm -f /src/dist/tensorflow-*.whl
+
+RUN mkdir -p \
+    $(pip show tensorflow | grep Location | cut -d " " -f 2)/tensorflow_core/include/third_party/gpus/cuda/ && \
+    ln -sf /usr/local/cuda/include \
+    $(pip show tensorflow | grep Location | cut -d " " -f 2)/tensorflow_core/include/third_party/gpus/cuda/include
+
+RUN cd /opt/DeepRec/ && \
+    cp tensorflow/core/kernels/gpu_device_array* \
+    $(pip show tensorflow | grep Location | cut -d " " -f 2)/tensorflow_core/include/tensorflow/core/kernels
+
+RUN cd /opt/DeepRec && \
+   bazel build --disk_cache=/var/cache/bazel.tensorflow \
+   -j 16  -c opt --config=opt  //tensorflow/tools/pip_package:build_sok && \
+   ./bazel-bin/tensorflow/tools/pip_package/build_sok
+
+ENV ARROW_INCLUDE=/opt/arrow/include \
+    ARROW_LIB=/opt/arrow/lib \
+    ZSTD_LIB=/opt/arrow/lib
+
+# Configure HybridBackend
+ENV HYBRIDBACKEND_WITH_CUDA=ON \
+    HYBRIDBACKEND_WITH_NCCL=ON \
+    HYBRIDBACKEND_WITH_ARROW_ZEROCOPY=ON \
+    HYBRIDBACKEND_WITH_TENSORFLOW_HALF=OFF \
+    HYBRIDBACKEND_WITH_TENSORFLOW_DISTRO=99881015 \
+    HYBRIDBACKEND_USE_CXX11_ABI=0 \
+    HYBRIDBACKEND_USE_RUFF=1 \
+    HYBRIDBACKEND_WHEEL_ALIAS=-deeprec-cu116 \
+    TF_DISABLE_EV_ALLOCATOR=true
+
+RUN cd /opt/HybridBackend && make -j32
+
+RUN pip install --no-cache-dir --user \
+    /opt/HybridBackend/build/wheel/hybridbackend_deeprec*.whl
+
+RUN rm -rf /opt/DeepRec /opt/HybridBackend && /opt/openmpi-4.1.1.tar.gz
