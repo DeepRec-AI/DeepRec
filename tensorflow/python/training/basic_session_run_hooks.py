@@ -610,9 +610,7 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
         global_step = run_context.session.run(self._global_step_tensor)
         if self._incremental_timer.should_trigger_for_step(global_step):
           self._incremental_timer.update_last_triggered_step(global_step)
-          logging.info("Start Save incremental checkpoints for %d into %s.", global_step, self._incremental_save_path)
-          self._get_incr_saver().incremental_save(run_context.session, self._incremental_save_path, global_step=global_step)
-          logging.info("Finish Save incremental checkpoints for %d into %s.", global_step, self._incremental_save_path)
+          self._incr_save(run_context.session, global_step)
 
 
   def end(self, session):
@@ -665,6 +663,18 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
 
     self._saver = savers[0]
     return savers[0]
+
+  def _incr_save(self, session, step):
+    logging.info("Saving incremental checkpoints for %d into %s.", step,
+                 self._incremental_save_path)
+    for l in self._listeners:
+      l.before_save(session, step)
+
+    self._get_incr_saver().incremental_save(session,
+                                            self._incremental_save_path,
+                                            global_step=step)
+    for l in self._listeners:
+      l.after_save(session, step)
 
   def _get_incr_saver(self):
     if self._scaffold is not None:
