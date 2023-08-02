@@ -56,3 +56,7 @@ enum ValuePosition {
   IN_DRAM = 0;
   NOT_IN_DRAM = 1;
 }
+
+enum IsSetInitialized {
+  NOT_SET_INITAILIZED = 0;
+}

@@ -434,6 +434,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
             with ops.control_dependencies(set_attr_ops + [self._init_op]):
               self._initializer_op = control_flow_ops.no_op()
         
+            self.create_init_op_for_restore(name, initial_value, invalid_key, rank)
+
         self._graph_element = self._handle
         self._cached_value = None
         if not context.executing_eagerly():
@@ -443,6 +445,49 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
 
   def export(self):
     return gen_kv_variable_ops.kv_resource_export(self._handle, Tkeys=self._invalid_key_type)
+
+
+  def create_init_op_for_restore(self, name, initial_value, invalid_key, rank):
+        with ops.control_dependencies(None if self._is_primary else [self._primary._init_op_for_restore]):
+          self._initializer_for_restore = gen_kv_variable_ops.initialize_kv_variable_v2_op(
+              self._handle,
+              self._primary._handle,
+              variables._try_guard_against_uninitialized_dependencies(name, initial_value),
+              ops.convert_to_tensor(invalid_key),
+              initial_num_buckets=config_pb2.IsSetInitialized.NOT_SET_INITAILIZED,
+              slot_num = self._slot_num,
+              shape=initial_value.get_shape()[rank:],
+              steps_to_live=self._steps_to_live,
+              emb_index=self._emb_index, block_num=self.block_num,
+              slot_index=self._slot_index,
+              ht_type=self._ht_type,
+              ht_partition_num=self._ht_partition_num,
+              filter_freq = self._filter_freq,
+              l2_weight_threshold = self._l2_weight_threshold,
+              max_element_size = self._max_element_size,
+              false_positive_probability = self._false_positive_probability,
+              counter_type = self._counter_type,
+              max_freq = 99999,
+              layout = self._layout,
+              storage_type = self._storage_type,
+              storage_path = self._storage_path,
+              storage_size = self._storage_size,
+              default_value_dim = self._default_value_dim,
+              default_value_no_permission = self._default_value_no_permission,
+              record_freq = self._record_freq,
+              record_version = self._record_version,
+              embedding_variable_type=config_pb2.EmbeddingVariableType.IMMUTABLE)
+        set_attr_ops = []
+        if self._is_primary and self._is_multi_tier:
+          with ops.control_dependencies([self._initializer_for_restore]):
+            set_cache_op = gen_kv_variable_ops.kv_resource_init_cache_strategy_op(
+                self._handle,
+                cache_strategy=self._storage_cache_strategy,
+                Tkeys=self._invalid_key_type,
+                dtype=self._dtype)
+          set_attr_ops.append(set_cache_op)
+        with ops.control_dependencies(set_attr_ops + [self._initializer_for_restore]):
+          self._init_op_for_restore = control_flow_ops.no_op()
 
   def need_counts(self):
     return (self._record_freq or (self._filter_freq > 0) or self._is_multi_tier)
@@ -482,6 +527,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           cache_op = op
     elif self._initializer_op.type == "InitializeKvVariableOp":
       init_op = self._initializer_op
+
+    self._init_op_for_restore = g.as_graph_element(
+        ops.prepend_name_scope(
+            variable_def.initialize_op_for_restore,
+            import_scope=import_scope))
     self._trainable = getattr(variable_def, "trainable", True)
     if variable_def.snapshot_name:
       self._cached_value = g.as_graph_element(
@@ -842,6 +892,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       if self._save_slice_info:
         var_def.save_slice_info_def.MergeFrom(
             self._save_slice_info.to_proto(export_scope=export_scope))
+      var_def.initialize_op_for_restore = ops.strip_name_scope(
+          self._init_op_for_restore.name, export_scope)
       return var_def
     else:
       return None

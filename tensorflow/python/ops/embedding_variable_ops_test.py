@@ -2751,5 +2751,70 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         self.assertNotEqual(val, 1.0)
     del os.environ["TF_EMBEDDING_FBJ_OPT"]
 
+  def testSetInitializedWithoutRestore(self):
+    print("testSetInitializedWithoutRestore")
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+          embedding_dim = 3)
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables.global_variables_initializer()
+    saver = saver_module.Saver()
+    with self.test_session() as sess:
+      result = sess.run(var._is_initialized_op)
+      self.assertEqual(False, result)
+      sess.run([init])
+      result = sess.run(var._is_initialized_op)
+      self.assertEqual(True, result)
+
+  def testSetInitializedWithRestore(self):
+    print("testSetInitializedWitRestore")
+    checkpoint_directory = self.get_temp_dir()
+    ckpt_path = os.path.join(checkpoint_directory, "model.ckpt")
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+          embedding_dim = 3)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,2 ,3], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      saver = saver_module.Saver()
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run([init])
+        sess.run(train_op)
+        saver.save(sess, ckpt_path)
+
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+          embedding_dim = 3)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 2, 3], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      saver = saver_module.Saver()
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        result = sess.run(var._is_initialized_op)
+        self.assertEqual(False, result)
+        sess.run([var._initializer_for_restore])
+        result = sess.run(var._is_initialized_op)
+        self.assertEqual(False, result)
+
+        saver.restore(sess, ckpt_path)
+        result = sess.run(var._is_initialized_op)
+        self.assertEqual(True, result)
+
 if __name__ == "__main__":
   googletest.main()

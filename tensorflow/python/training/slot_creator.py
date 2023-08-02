@@ -94,8 +94,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         validate_shape=validate_shape,
         steps_to_live=primary._steps_to_live,
         ht_partition_num=primary._ht_partition_num)
-      slot._init_op._set_attr("embedding_variable_type",
-            attr_value_pb2.AttrValue(i=config_pb2.EmbeddingVariableType.MUTABLE))
+      _set_init_op_embedding_type_attr(slot, config_pb2.EmbeddingVariableType.MUTABLE)
     else:
       filter_strategy = None
       if primary._filter_freq != 0:
@@ -107,7 +106,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         else:
           filter_strategy = variables.CounterFilter(filter_freq=primary._filter_freq)
       if slot_config.slot_type is config_pb2.SlotType.EMBEDDING_VARIABLE:
-        primary._init_op._set_attr("slot_num", attr_value_pb2.AttrValue(i=slot_config.slot_num))
+        _set_init_op_slot_num_attr(primary, slot_config.slot_num)
         primary._slot_num = slot_config.slot_num
         emb_index = primary._emb_index
         if primary.block_num > 1:
@@ -132,8 +131,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
             l2_weight_threshold=primary._l2_weight_threshold,
             filter_strategy=filter_strategy)
         )
-        slot._init_op._set_attr("embedding_variable_type",
-            attr_value_pb2.AttrValue(i=config_pb2.EmbeddingVariableType.MUTABLE))
+        _set_init_op_embedding_type_attr(slot, config_pb2.EmbeddingVariableType.MUTABLE)
       else:
         slot = variable_scope.get_variable(
           scope,
@@ -300,3 +298,13 @@ def create_zeros_slot(primary, name, dtype=None, colocate_with_primary=True, slo
     return create_slot(primary, val, name,
                        colocate_with_primary=colocate_with_primary,
                        slot_config=slot_config)
+
+def _set_init_op_embedding_type_attr(var, embedding_type):
+  var._init_op._set_attr("embedding_variable_type",
+            attr_value_pb2.AttrValue(i=embedding_type))
+  var._initializer_for_restore._set_attr("embedding_variable_type",
+            attr_value_pb2.AttrValue(i=embedding_type))
+
+def _set_init_op_slot_num_attr(var, slot_num):
+  var._init_op._set_attr("slot_num", attr_value_pb2.AttrValue(i=slot_num))
+  var._initializer_for_restore._set_attr("slot_num", attr_value_pb2.AttrValue(i=slot_num))
