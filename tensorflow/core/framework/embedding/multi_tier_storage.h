@@ -93,9 +93,9 @@ class MultiTierStorage : public Storage<K, V> {
     return Status::OK();
   }
 
-  embedding::Iterator* GetIterator() {
-    LOG(FATAL)<<"GetIterator isn't support by MultiTierStorage.";
-    return nullptr;
+  Status GetSnapshot(std::vector<K>* key_list,
+                     std::vector<ValuePtr<V>*>* value_ptr_list) override {
+    LOG(FATAL)<<"Can't get snapshot of MultiTierStorage.";
   }
 
   void CopyEmbeddingsFromCPUToGPU(
@@ -110,72 +110,9 @@ class MultiTierStorage : public Storage<K, V> {
     LOG(FATAL) << "Unsupport CopyEmbeddingsFromCPUToGPU in MultiTierStorage.";
   };
 
-  void SetListsForCheckpoint(
-      const std::vector<K>& input_key_list,
-      const std::vector<ValuePtr<V>*>& input_value_ptr_list,
-      const EmbeddingConfig& emb_config,
-      std::vector<K>* output_key_list,
-      std::vector<V*>* output_value_list,
-      std::vector<int64>* output_version_list,
-      std::vector<int64>* output_freq_list) {
-    for (int64 i = 0; i < input_key_list.size(); ++i) {
-      output_key_list->emplace_back(input_key_list[i]);
-
-      //NormalContiguousValuePtr is used, GetFreq() is valid.
-      int64 dump_freq = input_value_ptr_list[i]->GetFreq();
-      output_freq_list->emplace_back(dump_freq);
-
-      if (emb_config.steps_to_live != 0 || emb_config.record_version) {
-        int64 dump_version = input_value_ptr_list[i]->GetStep();
-        output_version_list->emplace_back(dump_version);
-      }
-
-      V* val = input_value_ptr_list[i]->GetValue(emb_config.emb_index,
-          Storage<K, V>::GetOffset(emb_config.emb_index));
-      V* primary_val = input_value_ptr_list[i]->GetValue(
-          emb_config.primary_emb_index,
-          Storage<K, V>::GetOffset(emb_config.primary_emb_index));
-      /* Classify features into 3 categories:
-        1. filtered
-        2. not involved in backward
-        3. normal
-      */
-      if (primary_val == nullptr) {
-        output_value_list->emplace_back(nullptr);
-      } else {
-        if (val == nullptr) {
-          output_value_list->emplace_back(reinterpret_cast<V*>(-1));
-        } else {
-          output_value_list->emplace_back(val);
-        }
-      }
-    }
-  }
-
-  virtual int64 GetSnapshotWithoutFetchPersistentEmb(
-      std::vector<K>* key_list,
-      std::vector<V* >* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
-      const EmbeddingConfig& emb_config,
-      SsdRecordDescriptor<K>* ssd_rec_desc) override {
-    LOG(FATAL)<<"The Storage dosen't use presisten memory"
-              <<" or this storage hasn't suppported"
-              <<" GetSnapshotWithoutFetchPersistentEmb yet";
-    return -1;
-  }
-
   Status Contains(K key) override {
     LOG(FATAL)<<"Contains is not support in MultiTierStorage.";
     return Status::OK();
-  }
-
-  void iterator_mutex_lock() override {
-    return;
-  }
-
-  void iterator_mutex_unlock() override {
-    return;
   }
 
   bool IsMultiLevel() override {

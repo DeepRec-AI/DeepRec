@@ -38,20 +38,19 @@ class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
         ShrinkPolicy<K, V>(alloc) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(L2WeightShrinkPolicy);
-  
-  void Shrink(const ShrinkArgs& shrink_args) override {
+
+  void Shrink(std::vector<K>& key_list,
+              std::vector<ValuePtr<V>*>& value_list,
+              const ShrinkArgs& shrink_args) override {
     ShrinkPolicy<K, V>::ReleaseValuePtrs();
-    std::vector<K> key_list;
-    std::vector<ValuePtr<V>*> value_list;
-    kv_->GetSnapshot(&key_list, &value_list);
     FilterToDelete(shrink_args.value_len,
                    key_list, value_list);
   }
 
  private:
   void FilterToDelete(int64 value_len,
-                      const std::vector<K>& key_list,
-                      const std::vector<ValuePtr<V>*>& value_list) {
+                      std::vector<K>& key_list,
+                      std::vector<ValuePtr<V>*>& value_list) {
     for (int64 i = 0; i < key_list.size(); ++i) {
       V* val = value_list[i]->GetValue(index_, offset_);
       if (val != nullptr) {
@@ -62,6 +61,7 @@ class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
         l2_weight *= (V)0.5;
         if (l2_weight < (V)l2_weight_threshold_) {
           kv_->Remove(key_list[i]);
+          value_list[i] = (ValuePtr<V>*)ValuePtrStatus::IS_DELETED;
           ShrinkPolicy<K, V>::EmplacePointer(value_list[i]);
         }
       }

@@ -101,6 +101,16 @@ struct EmbeddingConfig {
     return emb_index == primary_emb_index;
   }
 
+  bool is_save_freq() const {
+    return filter_freq != 0 ||
+           record_freq ||
+           normal_fix_flag == 1;
+  }
+
+  bool is_save_version() const {
+    return steps_to_live != 0 || record_version;
+  }
+
   int64 total_num(int alloc_len) {
     return block_num *
            (1 + (1 - normal_fix_flag) * slot_num) *

@@ -111,14 +111,6 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
     return false;
   }
 
-  void iterator_mutex_lock() override {
-    leveldb_->get_mutex()->lock();
-  }
-
-  void iterator_mutex_unlock() override {
-    leveldb_->get_mutex()->unlock();
-  }
-
   int64 Size() const override {
     int64 total_size = dram_->Size();
     total_size += leveldb_->Size();
@@ -145,46 +137,58 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
     return -1;
   }
 
-  Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>*>* value_ptr_list) override {
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      TF_CHECK_OK(dram_->GetSnapshot(key_list, value_ptr_list));
-    }
-    {
-      mutex_lock l(*(leveldb_->get_mutex()));
-      TF_CHECK_OK(leveldb_->GetSnapshot(key_list, value_ptr_list));
-    }
-    return Status::OK();
-  }
-
-  Status Shrink(const ShrinkArgs& shrink_args) override {
-    dram_->Shrink(shrink_args);
-    leveldb_->Shrink(shrink_args);
-    return Status::OK();
-  }
-
-  int64 GetSnapshot(std::vector<K>* key_list,
-      std::vector<V* >* value_list,
-      std::vector<int64>* version_list,
-      std::vector<int64>* freq_list,
+  Status Save(
+      const string& tensor_name,
+      const string& prefix,
+      BundleWriter* writer,
       const EmbeddingConfig& emb_config,
-      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
-      embedding::Iterator** it) override {
-    {
-      mutex_lock l(*(dram_->get_mutex()));
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      std::vector<K> key_list_tmp;
-      TF_CHECK_OK(dram_->GetSnapshot(&key_list_tmp, &value_ptr_list));
-      MultiTierStorage<K, V>::SetListsForCheckpoint(
-          key_list_tmp, value_ptr_list, emb_config,
-          key_list, value_list, version_list, freq_list);
+      ShrinkArgs& shrink_args,
+      int64 value_len,
+      V* default_value) override {
+    std::vector<K> key_list, tmp_leveldb_key_list;
+    std::vector<ValuePtr<V>*> value_ptr_list, tmp_leveldb_value_list;
+    TF_CHECK_OK(dram_->GetSnapshot(&key_list, &value_ptr_list));
+
+    TF_CHECK_OK(leveldb_->GetSnapshot(
+        &tmp_leveldb_key_list, &tmp_leveldb_value_list));
+
+    for (int64 i = 0; i < tmp_leveldb_value_list.size(); i++) {
+      tmp_leveldb_value_list[i]->SetPtr((V*)ValuePosition::NOT_IN_DRAM);
+      tmp_leveldb_value_list[i]->SetInitialized(emb_config.primary_emb_index);
     }
+
+    std::vector<K> leveldb_key_list;
+    for (int64 i = 0; i < tmp_leveldb_key_list.size(); i++) {
+      Status s = dram_->Contains(tmp_leveldb_key_list[i]);
+      if (!s.ok()) {
+        key_list.emplace_back(tmp_leveldb_key_list[i]);
+        leveldb_key_list.emplace_back(tmp_leveldb_key_list[i]);
+        value_ptr_list.emplace_back(tmp_leveldb_value_list[i]);
+      }
+    }
+
+    ValueIterator<V>* value_iter =
+        leveldb_->GetValueIterator(
+            leveldb_key_list, emb_config.emb_index, value_len);
+
     {
       mutex_lock l(*(leveldb_->get_mutex()));
-      *it = leveldb_->GetIterator();
+      TF_CHECK_OK((Storage<K, V>::SaveToCheckpoint(
+          tensor_name, writer,
+          emb_config,
+          value_len, default_value,
+          key_list,
+          value_ptr_list,
+          value_iter)));
     }
-    return key_list->size();
+
+    for (auto it: tmp_leveldb_value_list) {
+      delete it;
+    }
+
+    delete value_iter;
+
+    return Status::OK();
   }
 
   Status Eviction(K* evict_ids, int64 evict_size) override {

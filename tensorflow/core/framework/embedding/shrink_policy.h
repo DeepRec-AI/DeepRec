@@ -45,7 +45,9 @@ class ShrinkPolicy {
 
   TF_DISALLOW_COPY_AND_ASSIGN(ShrinkPolicy);
 
-  virtual void Shrink(const ShrinkArgs& shrink_args) = 0;
+  virtual void Shrink(std::vector<K>& key_list,
+                      std::vector<ValuePtr<V>*>& value_list,
+                      const ShrinkArgs& shrink_args) = 0;
 
  protected:
   void EmplacePointer(ValuePtr<V>* value_ptr) {
@@ -71,7 +73,9 @@ class NonShrinkPolicy: public ShrinkPolicy<K, V> {
   NonShrinkPolicy(): ShrinkPolicy<K, V>(nullptr) {}
   TF_DISALLOW_COPY_AND_ASSIGN(NonShrinkPolicy);
 
-  void Shrink(const ShrinkArgs& shrink_args) {}
+  void Shrink(std::vector<K>& key_list,
+              std::vector<ValuePtr<V>*>& value_list,
+              const ShrinkArgs& shrink_args) override {}
 };
 } // embedding
 } // tensorflow

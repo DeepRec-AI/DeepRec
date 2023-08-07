@@ -73,45 +73,6 @@ class SizeCounter {
   int num_parts_;  
 };
 
-class DBIterator : public Iterator {
- public:
-  DBIterator(leveldb::Iterator* it):it_(it) {}
-  virtual ~DBIterator() {
-    delete it_;
-  };
-  virtual bool Valid() {
-    return it_->Valid();
-  }
-  virtual void SeekToFirst() {
-    return it_->SeekToFirst();
-  }
-  virtual void Next() {
-    return it_->Next();
-  }
-  virtual void Key(char* val, int64 dim) {
-    memcpy(val, it_->key().ToString().data(), dim);
-  }
-  virtual void Value(char* val, int64 dim, int64 value_offset) {
-    memcpy(val,
-           it_->value().ToString().data() +
-               value_offset + sizeof(FixedLengthHeader), dim);
-  }
-  virtual void Freq(char* val, int64 dim) {
-    memcpy(val,
-           it_->value().ToString().data(), sizeof(FixedLengthHeader));
-    *((int64*)val) =
-        reinterpret_cast<FixedLengthHeader*>(val)->GetFreqCounter();
-  }
-  virtual void Version(char* val, int64 dim) {
-    memcpy(val,
-           it_->value().ToString().data(), sizeof(FixedLengthHeader));
-    *((int64*)val) =
-        reinterpret_cast<FixedLengthHeader*>(val)->GetGlobalStep();
-  }
- private:
-  leveldb::Iterator* it_;
-};
-
 template <class K, class V>
 class LevelDBKV : public KVInterface<K, V> {
  public:
@@ -216,14 +177,22 @@ class LevelDBKV : public KVInterface<K, V> {
 
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>*>* value_ptr_list) override {
-    return Status::OK();
-  }
-
-  Iterator* GetIterator() override {
     ReadOptions options;
     options.snapshot = db_->GetSnapshot();
     leveldb::Iterator* it = db_->NewIterator(options);
-    return new DBIterator(it);
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      K key;
+      memcpy((char*)&key, it->key().ToString().data(), sizeof(K));
+      key_list->emplace_back(key);
+      ValuePtr<V>* value_ptr =
+          new NormalGPUValuePtr<V>(ev_allocator(), 1);
+      memcpy((char *)value_ptr->GetPtr(),
+             it->value().ToString().data(),
+             sizeof(FixedLengthHeader));
+      value_ptr_list->emplace_back(value_ptr);
+    }
+    delete it;
+    return Status::OK();
   }
 
   int64 Size() const override {
@@ -245,6 +214,63 @@ class LevelDBKV : public KVInterface<K, V> {
   std::string path_;
   std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn_;
   int total_dims_;
+};
+
+template<class K, class  V>
+class DBValueIterator: public ValueIterator<V> {
+ public:
+  DBValueIterator(
+      const std::vector<K>& key_list,
+      int64 emb_index,
+      int64 value_len,
+      LevelDBKV<K, V>* leveldb_kv)
+      : value_len_(value_len),
+        emb_index_(emb_index),
+        leveldb_kv_(leveldb_kv) {
+    int64 emb_offset = value_len_ * emb_index;
+    std::vector<std::list<K>> keys_parts_vec(kSavedPartitionNum);
+    for (int64 i = 0; i < key_list.size(); i++) {
+      for (int part_id = 0; part_id < kSavedPartitionNum; part_id++) {
+        if (key_list[i] % kSavedPartitionNum == part_id) {
+          keys_parts_vec[part_id].emplace_back(key_list[i]);
+          break;
+        }
+      }
+    }
+
+    for (int64 i = 0; i < kSavedPartitionNum; i++) {
+      keys_.splice(keys_.end(), keys_parts_vec[i]);
+    }
+
+    keys_iter_= keys_.begin();
+  }
+
+  ~DBValueIterator() {
+    delete value_ptr_;
+  }
+
+  V* Next() {
+    if (value_ptr_ != nullptr) {
+      value_ptr_->Destroy(ev_allocator());
+      delete value_ptr_;
+    }
+    K key = *(keys_iter_++);
+
+    Status s = leveldb_kv_->Lookup(key, &value_ptr_);
+    if (!s.ok()) {
+      LOG(FATAL)<<"Not found value in LevelDB when Save.";
+    }
+    return value_ptr_->GetValue(emb_index_, value_len_ * emb_index_);
+  }
+
+ private:
+  int64 value_len_;
+  int64 emb_index_;
+  LevelDBKV<K, V>* leveldb_kv_;
+  std::list<K> keys_;
+  typename std::list<K>::const_iterator keys_iter_;
+  ValuePtr<V>* value_ptr_ = nullptr;
+  int64 key_cursor_ = 0;
 };
 
 } //namespace embedding

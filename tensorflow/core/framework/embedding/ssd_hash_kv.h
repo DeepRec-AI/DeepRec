@@ -22,6 +22,7 @@ limitations under the License.
 
 #include "sparsehash/dense_hash_map_lockless"
 #include "sparsehash/dense_hash_set_lockless"
+#include "tensorflow/core/framework/embedding/ssd_record_descriptor.h"
 #include "tensorflow/core/framework/embedding/emb_file_creator.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
@@ -34,24 +35,6 @@ namespace tensorflow {
 
 template <class V>
 class ValuePtr;
-
-template <class K>
-struct SsdRecordDescriptor {
-  //prefix of embedding file
-  tstring file_prefix;
-  //keys in ssd storage
-  std::vector<K> key_list;
-  //file ids of features
-  std::vector<int64> key_file_id_list;
-  //offsets in the file of features
-  std::vector<int64> key_offset_list;
-   //files in ssd storage
-  std::vector<int64> file_list;
-  //number of invalid records in the file
-  std::vector<int64> invalid_record_count_list;
-  //number of records in the file
-  std::vector<int64> record_count_list;
-};
 
 namespace embedding {
 class EmbPosition {
@@ -83,7 +66,7 @@ class EmbPosition {
 };
 
 template <class K>
-class SSDIterator : public Iterator {
+class SSDIterator {
  public:
   SSDIterator(google::dense_hash_map_lockless<K, EmbPosition*>* hash_map,
               const std::vector<EmbFile*>& emb_files, int64 value_len,
@@ -271,19 +254,13 @@ class SSDHashKV : public KVInterface<K, V> {
     done_ = true;
   }
 
-  Iterator* GetIterator() override {
-    return new SSDIterator<K>(&hash_map_, emb_files_, val_len_,
-        write_buffer_);
-  }
-
   void SetSsdRecordDescriptor(SsdRecordDescriptor<K>* ssd_rec_desc) {
     mutex_lock l(compact_save_mu_);
-    auto ssd_iter =
-        reinterpret_cast<SSDIterator<K>*>(GetIterator());
-    for (ssd_iter->SeekToFirst(); ssd_iter->Valid(); ssd_iter->Next()) {
-      ssd_rec_desc->key_list.emplace_back(ssd_iter->Key());
-      ssd_rec_desc->key_file_id_list.emplace_back(ssd_iter->FileId());
-      ssd_rec_desc->key_offset_list.emplace_back(ssd_iter->Offset());
+    SSDIterator<K> ssd_iter(&hash_map_, emb_files_, val_len_, write_buffer_);
+    for (ssd_iter.SeekToFirst(); ssd_iter.Valid(); ssd_iter.Next()) {
+      ssd_rec_desc->key_list.emplace_back(ssd_iter.Key());
+      ssd_rec_desc->key_file_id_list.emplace_back(ssd_iter.FileId());
+      ssd_rec_desc->key_offset_list.emplace_back(ssd_iter.Offset());
     }
     ssd_rec_desc->file_prefix = path_;
 

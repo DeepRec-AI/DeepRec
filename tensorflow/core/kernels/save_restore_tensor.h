@@ -120,10 +120,6 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
     size_t bytes_limit,
     DumpIterator<T>* dump_iter,
     const TensorShape& dump_tensor_shape,
-    embedding::Iterator* it = nullptr,
-    // -1: save key, x_offset: save embedding(primary or slot offset)
-    // -2: save frequency, -3: save version
-    int64 value_offset = -1,
     bool use_shape = true) {
   bool dump_happened = false;
   size_t bytes_written = 0;
@@ -149,55 +145,7 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
     bytes_written += sizeof(T);
     total_bytes_written += sizeof(T);
   }
-  if (it != nullptr) {
-    int64 size = 0; 
-    if (value_offset < 0) {
-      size = sizeof(T);
-    } else {
-      size = sizeof(T) * dump_tensor_shape.dim_size(1);
-    }
-    char val[size] = {0};
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-      int64 dim = 0;
-      void* start = nullptr;
-      if (value_offset < 0) {
-        if (value_offset == -1){
-          it->Key(val, sizeof(T));
-        } else if (value_offset == -2) {
-          it->Freq(val, sizeof(T));
-        } else {
-          it->Version(val, sizeof(T));
-        }
-        if (bytes_written + sizeof(T) > bytes_limit) {
-          dump_happened = true;
-          writer->AppendSegmentData(dump_buffer, bytes_written);
-          bytes_written = 0;
-          buffer_idx = 0;
-        }
-        key_dump_buffer[buffer_idx] = *((T*)val);
-        buffer_idx++;
-        bytes_written += sizeof(T);
-        total_bytes_written += sizeof(T);
 
-      } else {
-        dim = dump_tensor_shape.dim_size(1);
-        it->Value(val, dim * sizeof(T), value_offset * sizeof(T));
-
-        for (int j = 0; j < dim; ++j) {
-          if (bytes_written + sizeof(T) > bytes_limit) {
-            dump_happened = true;
-            writer->AppendSegmentData(dump_buffer, bytes_written);
-            bytes_written = 0;
-            buffer_idx = 0;
-          }
-          key_dump_buffer[buffer_idx] = *((T*)val + j);
-          buffer_idx++;
-          bytes_written += sizeof(T);
-          total_bytes_written += sizeof(T);
-        }
-      }
-    }
-  }
   if (!dump_happened) {
     VLOG(1) << tensor_name << " only one buffer written, size:" << bytes_written;
     writer->AddCompeleteData(dump_buffer, bytes_written);
