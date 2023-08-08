@@ -1,3 +1,87 @@
+# Release r1.15.5-deeprec2306
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Support StaticGPUHashMap to optimize EmbeddingVariable in inference.
+- Update logic of GroupEmbedding in feature_column API.
+- Refine APIs for foward-backward optimization.
+- Move insertions of new features into the backward process when lti-tier storage. 
+- Move insertion of new features into the backward ops.
+- Modify calculation logic of embedding lookup sparse combiner.
+- Add memory and performance tests of EmbeddingVariable.
+
+### **Graph & Grappler Optimization**
+
+- Support IteratorGetNext for SmartStage as a starting node for searching.
+- Reimplement PrefetchRunner in C++.
+
+### **Runtime Optimization**
+
+- Dispatch expensive ops via multiple threads in theadpool.
+- Enable multi-stream in session_group by default.
+- Support for loading saved_model with device information when use p and multi_stream.
+- Make ARENA_ARRAY_SIZE to be configurable.
+- Optimize EV allocator performance.
+- Integrate HybridBackend in collective training mode.
+
+### **Ops & Hardware Acceleration**
+
+- Disable MatMul fused with LeakyRule when MKL is disabled.
+
+### **Serving**
+
+- Clear virtual_device configurations before load new checkpoint.
+
+### **Environment & Build**
+
+- Update docker images in user documents.
+- Update DEFAULT_CUDA_VERSION and DEFAULT_CUDNN_VERSION in configure.py.
+- Move thirdparties from WORKSPACE to workspace.bzl.
+- Update urls corresponding to colm, ragel, aliyun-oss-sdk and uuid.
+- Update default TF_CUDA_COMPUTE_CAPABILITIES to 7.0,7.5,8.0,8.6.
+- Update SparseOperationKit to v23.5.01 and docker file.
+
+### **BugFix**
+
+- Fix issue of missing params while constructing the ngScope.
+- Fix memory leak to avoid OOM.
+- Fix shape validation in API shared_embedding_columns.
+- Fix the device placement bug of stage_subgraph_on_cpu in distributed.
+- Fix hung issue when using both SOK and SmartStaged simultaneously.
+- Fix bug: init global_step before saving variables
+- Fix bug: reserve input nodes, clear saver devices on demand.
+- Fix memory leak when a graph node is invalid.
+
+### **ModelZoo**
+
+- Add examples and docs to demonstrate Collective Training.
+- Update documents and config files for modelzoo benchmark.
+- Update modelzoo README.
+
+### **Tool & Documents**
+
+- Update cases of configure TF_CUDA_COMPUTE_CAPABILITIES for H100.
+- Update COMMITTERS.md.
+- Update device placement documents.
+- Update document for SmartStage.
+- Update session_group documents.
+- Update the download link of the library that Processor depends on.
+- Update sok to 1.20.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2306-cpu-py38-ubuntu20.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2306-gpu-py38-cu116-ubuntu20.04`
+
 # Release r1.15.5-deeprec2304
 
 ## **Major Features and Improvements**
