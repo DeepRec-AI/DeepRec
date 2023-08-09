@@ -47,8 +47,7 @@ class EvictionManager {
           "EVICTION_MANAGER", 3, /*low_latency_hint=*/false));
   }
   
-  ~EvictionManager() {
-  }
+  ~EvictionManager() {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(EvictionManager);
 
@@ -124,8 +123,8 @@ class EvictionManager {
   int64 num_of_threads_;
   int64 num_of_active_threads_;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
-  std::unique_ptr<thread::ThreadPool> thread_pool_;
   std::map<MultiTierStorage<K,V>*, StorageItem<K, V>*> storage_table_;
+  std::unique_ptr<thread::ThreadPool> thread_pool_;
   mutex mu_;
 };
 
