@@ -1369,13 +1369,12 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         ],
     )
 
-    http_archive(
+    new_git_repository(
         name = "hugectr",                                     # Apache License 2.0
-        build_file = "//third_party:hugectr.BUILD",
-        strip_prefix = "HugeCTR-23.06.00",
-        urls = [
-            "https://github.com/NVIDIA-Merlin/HugeCTR/archive/refs/tags/v23.06.00.tar.gz",
-        ],
+	build_file = "//third_party:hugectr.BUILD",
+	commit = "869028c1c32bdcda2f18efc88d54f0527ed28d6d",
+	init_submodules = True,
+	remote = "https://github.com/NVIDIA-Merlin/HugeCTR.git",
     )
 
 def tf_bind():
