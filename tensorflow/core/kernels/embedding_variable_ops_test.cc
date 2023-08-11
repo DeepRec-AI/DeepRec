@@ -1191,6 +1191,7 @@ TEST(EmbeddingVariableTest, TestLFUCache) {
 }
 
 TEST(EmbeddingVariableTest, TestCacheRestore) {
+  setenv("TF_SSDHASH_ASYNC_COMPACTION", "false", 1);
   int64 value_size = 4;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
@@ -1237,8 +1238,11 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
   LOG(INFO) << "size:" << variable->Size();
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
-  DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
-  TF_ASSERT_OK(writer.Finish());  
+  embedding::ShrinkArgs shrink_args;
+  shrink_args.global_step = 1;
+  variable->Save("var/part_0", Prefix("foo"), &writer, shrink_args);
+  TF_ASSERT_OK(writer.Finish());
+  variable->Unref();
 
   auto imported_storage= embedding::StorageFactory::Create<int64, float>(
       embedding::StorageConfig(embedding::DRAM_SSDHASH,
@@ -1258,6 +1262,7 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
 
   ASSERT_EQ(imported_storage->Size(0), ev_size - cache_size);
   ASSERT_EQ(imported_storage->Size(1), 2);
+  delete imported_storage;
 }
 
 void t1_gpu(KVInterface<int64, float>* hashmap) {
@@ -1703,7 +1708,50 @@ TEST(EmbeddingVariableTest, TestLookupRemoveConcurrency) {
    for (auto &t : insert_threads) {
      t.join();
    }
- }
+}
+
+TEST(EmbeddingVariableTest, TestInsertAndGetSnapshot) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  auto emb_config = EmbeddingConfig(
+      /*emb_index = */0, /*primary_emb_index = */0,
+      /*block_num = */1, /*slot_num = */0,
+      /*name = */"", /*steps_to_live = */0,
+      /*filter_freq = */0, /*max_freq = */999999,
+      /*l2_weight_threshold = */-1.0, /*layout = */"normal",
+      /*max_element_size = */0, /*false_positive_probability = */-1.0,
+      /*counter_type = */DT_UINT64);
+  auto storage = embedding::StorageFactory::Create<int64, float>(
+      embedding::StorageConfig(), cpu_allocator(), "EmbeddingVar");
+  auto var = new EmbeddingVar<int64, float>("EmbeddingVar",
+      storage,
+      emb_config,
+      cpu_allocator());
+  var->Init(value, 1);
+  float* set_value = (float*)malloc(value_size * sizeof(float));
+  //Insertion
+  for (int i = 0; i < 100; i++) {
+    for (int j = 0; j < value_size; j++) {
+      set_value[j] = i + j;
+    }
+    var->Insert(i, set_value);
+  }
+  free(set_value);
+  //GetSnapshot
+  std::vector<int64> key_list;
+  std::vector<float*> value_ptr_list;
+  std::vector<int64> version_list;
+  std::vector<int64> freq_list;
+  var->GetSnapshot(&key_list, &value_ptr_list,
+                  &version_list, &freq_list);
+  for (int i = 0; i < key_list.size(); i++) {
+    ASSERT_EQ(key_list[i], i);
+    for (int j = 0; j < value_size; j++) {
+      ASSERT_EQ(value_ptr_list[i][j], i + j);
+    }
+  }
+}
 
 } // namespace
 } // namespace embedding

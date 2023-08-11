@@ -186,6 +186,13 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
+  Status Insert(K key, V* value) {
+    ValuePtr<V>* value_ptr = nullptr;
+    CreateKey(key, &value_ptr, true);
+    LookupOrCreateEmb(value_ptr, value);
+    return Status::OK();
+  }
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr) {
     Status s = storage_->GetOrCreate(key, value_ptr,
         emb_config_.total_num(storage_->GetAllocLen()));
@@ -590,6 +597,34 @@ class EmbeddingVar : public ResourceBase {
                           writer, emb_config_,
                           shrink_args, value_len_,
                           default_value_);
+  }
+
+  void GetSnapshot(std::vector<K>* key_list,
+                   std::vector<V*>* value_list,
+                   std::vector<int64>* version_list,
+                   std::vector<int64>* freq_list) {
+    std::vector<ValuePtr<V>*> value_ptr_list;
+    storage_->GetSnapshot(key_list, &value_ptr_list);
+    bool is_save_freq = emb_config_.is_save_freq();
+    bool is_save_version = emb_config_.is_save_version();
+    for (int64 i = 0; i < key_list->size(); i++) {
+      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index, 0);
+      if (val != nullptr) {
+        value_list->emplace_back(val);
+      } else {
+        value_list->emplace_back(default_value_);
+      }
+
+      if(is_save_version) {
+        int64 dump_version = value_ptr_list[i]->GetStep();
+        version_list->emplace_back(dump_version);
+      }
+
+      if(is_save_freq) {
+        int64 dump_freq = value_ptr_list[i]->GetFreq();
+        freq_list->emplace_back(dump_freq);
+      }
+    }
   }
 
   mutex* mu() {
