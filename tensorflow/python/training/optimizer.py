@@ -243,8 +243,7 @@ def _get_processor(v):
   if v.op.type == "KvVarHandleOp":
     from tensorflow.core.framework import attr_value_pb2
     from tensorflow.core.framework.embedding import config_pb2
-    v._init_op._set_attr("embedding_variable_type",
-        attr_value_pb2.AttrValue(i=config_pb2.EmbeddingVariableType.MUTABLE))
+    slot_creator._set_init_op_embedding_type_attr(v, config_pb2.EmbeddingVariableType.MUTABLE)
     return _DenseResourceVariableProcessor(v)
   if isinstance(v, variables.Variable):
     return _RefVariableProcessor(v)

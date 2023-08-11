@@ -81,10 +81,12 @@ class MultiTierStorage : public Storage<K, V> {
   }
 
   void InitCache(embedding::CacheStrategy cache_strategy) override {
-    cache_ = CacheFactory::Create<K>(cache_strategy, name_);
-    eviction_manager_ = EvictionManagerCreator::Create<K, V>();
-    eviction_manager_->AddStorage(this);
-    cache_thread_pool_ = CacheThreadPoolCreator::Create();
+    if (cache_ == nullptr) {
+      cache_ = CacheFactory::Create<K>(cache_strategy, name_);
+      eviction_manager_ = EvictionManagerCreator::Create<K, V>();
+      eviction_manager_->AddStorage(this);
+      cache_thread_pool_ = CacheThreadPoolCreator::Create();
+    }
   }
 
   Status BatchCommit(const std::vector<K>& keys,

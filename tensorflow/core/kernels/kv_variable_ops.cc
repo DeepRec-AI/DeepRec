@@ -43,11 +43,6 @@ limitations under the License.
 
 namespace tensorflow {
 
-namespace {
-const int64 kEmbeddingVarUseDB = -214;
-const int64 kInitializableEmbeddingVarUseDB = -215;
-}
-
 Status MoveMatchingFiles(
     Env* env,
     const tstring& pattern,
@@ -207,6 +202,15 @@ class InitializeKvVariableOp : public OpKernel {
         (embedding_var_type ==
          embedding::EmbeddingVariableType::IMMUTABLE);
 
+    //initial_num_buckets is useless, so is used to set is_set_initialized_.
+    int64 initial_num_buckets = 0;
+    OP_REQUIRES_OK(c, c->GetAttr("initial_num_buckets", &initial_num_buckets));
+    is_set_initialized_ = true;
+    if (initial_num_buckets ==
+        embedding::IsSetInitialized::NOT_SET_INITAILIZED) {
+      is_set_initialized_ = false;
+    }
+
     int64 storage_type = 0;
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
@@ -263,15 +267,10 @@ class InitializeKvVariableOp : public OpKernel {
                                   " should be DRAM when layout is 'compact'."));
     }
 
-    if (steps_to_live_ == kEmbeddingVarUseDB ||
-        steps_to_live_ == kInitializableEmbeddingVarUseDB) {
-      LOG(INFO) << "hashmap use db";
-      //use_db_ = true;
-    } else {
-      OP_REQUIRES(c, steps_to_live_ >= 0,
-          errors::InvalidArgument(
+    OP_REQUIRES(c, steps_to_live_ >= 0,
+        errors::InvalidArgument(
             "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
-    }
+
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     if (embedding::StorageType::LEVELDB == storage_type_) {
       ht_type_ = "leveldb_kv";
@@ -406,7 +405,7 @@ class InitializeKvVariableOp : public OpKernel {
       core::ScopedUnref unref_me(primary_variable);
     }
     core::ScopedUnref unref_me(ev);
-    if (steps_to_live_ != kEmbeddingVarUseDB) {
+    if (is_set_initialized_) {
       ev->SetInitialized();
     }
   }
@@ -436,6 +435,7 @@ class InitializeKvVariableOp : public OpKernel {
   bool record_freq_;
   bool record_version_;
   bool is_inference_;
+  bool is_set_initialized_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
