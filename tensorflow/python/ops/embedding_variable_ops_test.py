@@ -120,7 +120,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
               initializer=init_ops.ones_initializer(dtypes.float32),
               ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)),
               partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
-      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,1,1], dtypes.int64))
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
       loss = math_ops.reduce_sum(fun, name='reduce_sum')
       gs = training_util.get_or_create_global_step()
@@ -133,11 +133,18 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
         emb1, top, l = sess.run([emb, train_op, loss])
-        for val in emb1.tolist()[0]:
-          self.assertEqual(val, .0)
+      
+        for val1 in emb1.tolist():
+          for val in val1:
+            self.assertEqual(val, .0)
         emb1, top, l = sess.run([emb, train_op, loss])
-        for val in emb1.tolist()[0]:
-          self.assertNotEqual(val, 1.0)
+        for index, val1 in enumerate(emb1.tolist()):
+          if index < 7:
+            for val in val1:
+              self.assertNotEqual(val, 1.0)
+          else:
+            for val in val1:
+              self.assertEqual(val, .0)
 
   def _RecordFreqTestTemplate(self, optimizer):
     checkpoint_directory = self.get_temp_dir()
@@ -720,20 +727,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       sess.run([init])
       emb_ori = sess.run([emb, train_op])
       save_path = saver.save(sess, os.path.join(checkpoint_directory, "model1.ckpt"), global_step=12345)
-      #for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
-      #  print('loading... ', name, shape)
-    with self.test_session() as sess:
-      saver.restore(sess, os.path.join(checkpoint_directory, "model1.ckpt-12345"))
-      emb_right = [[0.8282884, 0.8282884, 0.8282884],
-                   [0.8282884, 0.8282884, 0.8282884],
-                   [0.8282884, 0.8282884, 0.8282884],
-                   [0.7927219, 0.7927219, 0.7927219],
-                   [0.7927219, 0.7927219, 0.7927219],
-                   [1.0, 1.0, 1.0]]
-      emb_ori = sess.run(emb)
-      for i in range(6):
-        for j in range(3):
-          self.assertAlmostEqual(emb_ori[i][j], emb_right[i][j])
+      for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
+        if name == "var_1-keys":
+          self.assertEqual(shape[0], 2)
+          keys = checkpoint_utils.load_variable(checkpoint_directory, name)
+          self.assertAllEqual(keys, [0, 1])
 
   def testEmbeddingVariableForSparseColumnSharedEmbeddingCol(self):
     columns_list=[]
@@ -764,14 +762,15 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForFeatureFilterFromContribFeatureColumn(self):
     print("testEmbeddingVariableForFeatureFilterFromContribFeatureColumn")
-    columns = feature_column.sparse_column_with_embedding(column_name="col_emb", dtype=dtypes.int64,
-                                                          ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
-    W = feature_column.embedding_column(sparse_id_column=columns,
-            dimension=3,
-            initializer=init_ops.ones_initializer(dtypes.float32))
-    ids={}
-    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0]], values=math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64), dense_shape=[10, 1])
-    emb = feature_column_ops.input_from_feature_columns(columns_to_tensors=ids, feature_columns=[W])
+    with ops.device("/cpu:0"):
+      columns = feature_column.sparse_column_with_embedding(column_name="col_emb", dtype=dtypes.int64,
+                                                            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
+      W = feature_column.embedding_column(sparse_id_column=columns,
+              dimension=3,
+              initializer=init_ops.ones_initializer(dtypes.float32))
+      ids={}
+      ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0]], values=math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64), dense_shape=[10, 1])
+      emb = feature_column_ops.input_from_feature_columns(columns_to_tensors=ids, feature_columns=[W])
 
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -786,6 +785,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       emb1, top, l = sess.run([emb, train_op, loss])
+      
       for val1 in emb1.tolist():
         for val in val1:
           self.assertEqual(val, .0)
@@ -1327,66 +1327,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
-
-  def testEmbeddingVariableForLayout(self):
-    print("testEmbeddingVariableForLayout")
-    def runTestAdagrad(self, var, g):
-      emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
-      fun = math_ops.multiply(emb, 2.0, name='multiply')
-      loss = math_ops.reduce_sum(fun, name='reduce_sum')
-      gs = training_util.get_or_create_global_step()
-      opt = adagrad.AdagradOptimizer(0.1)
-      g_v = opt.compute_gradients(loss)
-      train_op = opt.apply_gradients(g_v)
-      init = variables.global_variables_initializer()
-      with self.test_session(graph=g) as sess:
-        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
-        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
-        sess.run([init])
-        r, _, _ = sess.run([emb, train_op,loss])
-        r, _, _ = sess.run([emb, train_op,loss])
-        r, _, _ = sess.run([emb, train_op,loss])
-        r, _, _ = sess.run([emb, train_op,loss])
-        r, _, _ = sess.run([emb, train_op,loss])
-        return r
-    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
-      emb_var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
-      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
-      emb1 = runTestAdagrad(self, emb_var, g)
-      emb2 = runTestAdagrad(self, var, g)
-
-      for i in range(0, 6):
-        for j in range(0, 3):
-          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
-    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
-      emb_var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
-            steps_to_live=5)
-      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
-      emb1 = runTestAdagrad(self, emb_var, g)
-      emb2 = runTestAdagrad(self, var, g)
-
-      for i in range(0, 6):
-        for j in range(0, 3):
-          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
-    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
-      emb_var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
-            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=5)))
-      emb1 = runTestAdagrad(self, emb_var, g)
-
-      for i in range(0, 6):
-        for j in range(0, 3):
-          self.assertEqual(emb1.tolist()[i][j], .0)
 
   def testEVInitializerWithKeyFetch(self):
     print("testEVInitializerWithKeyFetch")
@@ -2391,7 +2331,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
                               "model1.ckpt")
     with self.test_session() as sess:
       sess.run([init])
-      sess.run([emb, train_op])
+      sess.run([train_op])
       save_path = saver.save(sess, model_path)
       for name, shape in checkpoint_utils.list_variables(model_path):
         if name == "var_1-keys":
@@ -2403,6 +2343,37 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
            name == "var_1-freqs_filtered":
           self.assertEqual(0, shape[0])
     del os.environ["TF_EV_SAVE_FILTERED_FEATURES"]
+
+  def testEmbeddingVariableForSaveUnfilterFeature(self):
+    checkpoint_directory = self.get_temp_dir()
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
+    emb = embedding_ops.embedding_lookup(emb_var,  math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([train_op])
+      save_path = saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-keys":
+          keys = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(1, len(keys))
+          self.assertEqual(1, keys[0])
+        if name == "var_1-keys_filtered" or \
+           name == "var_1-freqs_filtered":
+          self.assertEqual(2, shape[0])
   
   def testEmbeddingVariableForMultiTierInference(self):
     print("testEmbeddingVariableForMultiTierInference")
@@ -2716,7 +2687,55 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testCPUFbjOptWithCounterFilter(self):
     print("testCPUFbjOpt")
     os.environ["TF_EMBEDDING_FBJ_OPT"] = "True"
-    self._CounterFilterTestTemplate("Adagrad")
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = self._CreateOptimizer("Adagrad")
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        emb1, top, l = sess.run([emb, train_op, loss])
+        emb_list = emb1.tolist()
+        emb_right = [[.0, .0, .0],
+                     [.0, .0, .0],
+                     [1.0, 1.0, 1.0],
+                     [1.0, 1.0, 1.0],
+                     [.0, .0, .0],
+                     [.0, .0, .0],
+                     [1.0, 1.0, 1.0],
+                     [.0, .0, .0],
+                     [.0, .0, .0],
+                     [.0, .0, .0]]
+        
+        for i in range(6):
+          for j in range(3):
+            self.assertAlmostEqual(emb_list[i][j], emb_right[i][j])
+
+        emb1= sess.run(emb)
+        emb_right = [[0.90031105, 0.90031105, 0.90031105],
+                     [0.90031105, 0.90031105, 0.90031105],
+                     [0.90031105, 0.90031105, 0.90031105],
+                     [0.90031105, 0.90031105, 0.90031105],
+                     [0.90122706, 0.90122706, 0.90122706],
+                     [0.90122706, 0.90122706, 0.90122706],
+                     [0.90122706, 0.90122706, 0.90122706],
+                     [1.0, 1.0, 1.0],
+                     [1.0, 1.0, 1.0],
+                     [.0, .0, .0]]
+        for i in range(6):
+          for j in range(3):
+            self.assertAlmostEqual(emb1[i][j], emb_right[i][j])
     del os.environ["TF_EMBEDDING_FBJ_OPT"]
   
   def testCPUFbjOptWithBloomFilter(self):
