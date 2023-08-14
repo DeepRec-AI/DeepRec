@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/embedding_config.h"
 #include "tensorflow/core/framework/embedding/emb_file.h"
+#include "tensorflow/core/framework/embedding/feature_descriptor.h"
 
 namespace tensorflow {
 
@@ -45,9 +46,6 @@ struct RestoreBuffer {
 template<typename K>
 class RestoreSSDBuffer;
 
-template <typename V>
-class ValuePtr;
-
 template<typename K, typename V, typename EV>
 class FilterPolicy {
  public:
@@ -55,7 +53,7 @@ class FilterPolicy {
       config_(config), ev_(ev) {}
 
   virtual void LookupOrCreate(K key, V* val,
-      const V* default_value_ptr, ValuePtr<V>** value_ptr,
+      const V* default_value_ptr, void** value_ptr,
       int count, const V* default_value_no_permission) = 0;
 
   virtual Status Lookup(K key, V* val, const V* default_value_ptr,
@@ -70,52 +68,24 @@ class FilterPolicy {
 
   virtual void BatchLookupOrCreateKey(
       const EmbeddingVarContext<GPUDevice>& ctx,
-      const K* keys, ValuePtr<V>** value_ptrs_list,
+      const K* keys, void** value_ptrs_list,
       int64 num_of_keys) = 0;
 #endif //GOOGLE_CUDA
 
-  virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val,
+  virtual Status LookupOrCreateKey(K key, void** val,
       bool* is_filter, int64 count) = 0;
+  
+  virtual Status LookupKey(K key, void** val,
+      bool* is_filter, int64 count) {}
 
-  virtual int64 GetFreq(K key, ValuePtr<V>* value_ptr) = 0;
-
+  virtual int64 GetFreq(K key, void* value_ptr) = 0;
   virtual int64 GetFreq(K key) = 0;
 
-  virtual bool is_admit(K key, ValuePtr<V>* value_ptr) = 0;
+  virtual bool is_admit(K key, void* value_ptr) = 0;
 
   virtual Status Restore(int64 key_num, int bucket_num, int64 partition_id,
                          int64 partition_num, int64 value_len, bool is_filter,
                          bool to_dram, bool is_incr, RestoreBuffer& restore_buff) = 0;
-
- protected:
-  void LookupOrCreateEmbInternal(bool is_filter, bool to_dram,
-                                 int i, int value_len,
-                                 ValuePtr<V>* value_ptr,
-                                 V* value_src, K* key_src) {
-    
-    if (!is_filter) {
-      ev_->LookupOrCreateEmb(value_ptr, value_src + i * ev_->ValueLen());
-      return;
-    } else {
-      if (to_dram) {
-#if GOOGLE_CUDA
-        std::vector<V> default_value_host;
-        default_value_host.resize(config_.default_value_dim * value_len);
-        cudaMemcpy(default_value_host.data(), ev_->GetDefaultValuePtr(),
-                    sizeof(V) * config_.default_value_dim * value_len,
-                    cudaMemcpyDeviceToHost);
-        ev_->LookupOrCreateEmb(value_ptr,
-                               default_value_host.data() +
-                                  (key_src[i] % config_.default_value_dim)
-                                  * ev_->ValueLen());
-#endif
-        return;
-      } else {
-        ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_src[i]));
-      return;
-      }
-    }
-  }
 
  protected:
   EmbeddingConfig config_;
