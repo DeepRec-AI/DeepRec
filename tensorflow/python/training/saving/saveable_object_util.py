@@ -195,7 +195,8 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
       if self.var._init_data_source is not None:
         return self.var.recover_from_init_data_source(self.var._init_data_source, self.partition_id, self.partition_num)
       else:
-        with ops.control_dependencies([self.var._init_op_for_restore]):
+        restore_dependency = ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLE_RESTORE_DEPENDENCY)[0]
+        with ops.control_dependencies(restore_dependency[self.var._primary_handle]):
           rank = self.op.initial_value.get_shape().rank - 1
           restore_op = gen_kv_variable_ops.kv_resource_import_v3(
               restored_tensors[0],

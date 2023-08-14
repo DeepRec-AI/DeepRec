@@ -6132,6 +6132,8 @@ class GraphKeys(object):
   TRAINABLE_VARIABLES = "trainable_variables"
   # Indicate EmbeddingVariable in CollectionDef
   EMBEDDING_VARIABLES = "embedding_variables"
+  # Collection for dependencies of EmbeddingVariable's restore op
+  EMBEDDING_VARIABLE_RESTORE_DEPENDENCY = "embedding_variable_restore_dependency"
   # Key to collect summaries.
   SUMMARIES = "summaries"
   # Key to collect QueueRunners.
