@@ -18,25 +18,21 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/shrink_policy.h"
 
 namespace tensorflow {
-
-template<typename V>
-class ValuePtr;
-
 namespace embedding {
 template<typename K, typename V>
 class GlobalStepShrinkPolicy : public ShrinkPolicy<K, V> {
  public:
   GlobalStepShrinkPolicy(int64 steps_to_live,
-                         Allocator* alloc,
+                         FeatureDescriptor<V>* feat_desc,
                          KVInterface<K, V>* kv)
       : steps_to_live_(steps_to_live),
         kv_(kv),
-        ShrinkPolicy<K, V>(alloc) {}
+        ShrinkPolicy<K, V>(feat_desc) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(GlobalStepShrinkPolicy);
 
   void Shrink(std::vector<K>& key_list,
-              std::vector<ValuePtr<V>*>& value_list,
+              std::vector<void*>& value_list,
               const ShrinkArgs& shrink_args) override {
     ShrinkPolicy<K, V>::ReleaseValuePtrs();
     FilterToDelete(shrink_args.global_step,
@@ -46,16 +42,16 @@ class GlobalStepShrinkPolicy : public ShrinkPolicy<K, V> {
  private:
   void FilterToDelete(int64 global_step,
                       std::vector<K>& key_list,
-                      std::vector<ValuePtr<V>*>& value_list) {
+                      std::vector<void*>& value_list) {
     for (int64 i = 0; i < key_list.size(); ++i) {
-      int64 version = value_list[i]->GetStep();
+      int64 version = ShrinkPolicy<K, V>::feat_desc_->GetVersion(value_list[i]);
       if (version == -1) {
-        value_list[i]->SetStep(global_step);
+        ShrinkPolicy<K, V>::feat_desc_->UpdateVersion(value_list[i], global_step);
       } else {
         if (global_step - version > steps_to_live_) {
           kv_->Remove(key_list[i]);
           ShrinkPolicy<K, V>::EmplacePointer(value_list[i]);
-          value_list[i] = (ValuePtr<V>*)ValuePtrStatus::IS_DELETED;
+          value_list[i] = (void*)ValuePtrStatus::IS_DELETED;
         }
       }
     }

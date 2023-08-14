@@ -21,16 +21,17 @@ namespace tensorflow {
 namespace embedding {
 template<class K, class V>
 void EmbeddingVarCkptData<K, V>::Emplace(
-    K key, ValuePtr<V>* value_ptr,
+    K key, void* value_ptr,
     const EmbeddingConfig& emb_config,
-    V* default_value, int64 value_offset,
+    V* default_value,
+    FeatureDescriptor<V>* feat_desc,
     bool is_save_freq,
     bool is_save_version,
     bool save_unfiltered_features) {
   if((int64)value_ptr == ValuePtrStatus::IS_DELETED)
     return;
 
-  bool is_in_dram = ((int64)value_ptr >> 49 == 0);
+  bool is_in_dram = ((int64)value_ptr >> kDramFlagOffset == 0);
   bool is_admit = feat_desc->IsAdmit(value_ptr);
 
   if (is_admit) {
@@ -38,7 +39,7 @@ void EmbeddingVarCkptData<K, V>::Emplace(
 
     if (!is_in_dram) {
       value_ptr_vec_.emplace_back((V*)ValuePtrStatus::NOT_IN_DRAM);
-      value_ptr = (void*)((int64)value_ptr & 0x1ffffffffffff);
+      value_ptr = (void*)((int64)value_ptr & ((1L << kDramFlagOffset) - 1));
     } else if (feat_desc->GetEmbedding(value_ptr, 0) == nullptr) {
       value_ptr_vec_.emplace_back(default_value);
     } else {
@@ -71,8 +72,8 @@ void EmbeddingVarCkptData<K, V>::Emplace(
 }
 #define REGISTER_KERNELS(ktype, vtype)                               \
   template void EmbeddingVarCkptData<ktype, vtype>::Emplace(  \
-      ktype, ValuePtr<vtype>*, const EmbeddingConfig&, \
-      vtype*, int64, bool, bool, bool); 
+      ktype, void*, const EmbeddingConfig&, \
+      vtype*, FeatureDescriptor<vtype>*, bool, bool, bool);
 #define REGISTER_KERNELS_ALL_INDEX(type)                             \
   REGISTER_KERNELS(int32, type)                                      \
   REGISTER_KERNELS(int64, type)

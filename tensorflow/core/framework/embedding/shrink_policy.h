@@ -15,14 +15,11 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SHRINK_POLICY_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SHRINK_POLICY_H_
 
+#include "tensorflow/core/framework/embedding/feature_descriptor.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
-
-template<typename V>
-class ValuePtr;
-
 class Allocator;
 
 namespace embedding {
@@ -40,31 +37,29 @@ struct ShrinkArgs {
 template<typename K, typename V>
 class ShrinkPolicy {
  public:
-  ShrinkPolicy(Allocator* alloc): alloc_(alloc) {}
+  ShrinkPolicy(FeatureDescriptor<V>* feat_desc): feat_desc_(feat_desc) {}
   virtual ~ShrinkPolicy() {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(ShrinkPolicy);
 
   virtual void Shrink(std::vector<K>& key_list,
-                      std::vector<ValuePtr<V>*>& value_list,
+                      std::vector<void*>& value_list,
                       const ShrinkArgs& shrink_args) = 0;
 
  protected:
-  void EmplacePointer(ValuePtr<V>* value_ptr) {
+  void EmplacePointer(void* value_ptr) {
     to_delete_.emplace_back(value_ptr);
   }
 
   void ReleaseValuePtrs() {
     for (auto it : to_delete_) {
-      it->Destroy(alloc_);
-      delete it;
+      feat_desc_->Deallocate(it);
     }
     to_delete_.clear();
   }
  protected:
-  std::vector<ValuePtr<V>*> to_delete_;
- private:
-  Allocator* alloc_;
+  std::vector<void*> to_delete_;
+  FeatureDescriptor<V>* feat_desc_;
 };
 
 template<typename K, typename V>
@@ -74,7 +69,7 @@ class NonShrinkPolicy: public ShrinkPolicy<K, V> {
   TF_DISALLOW_COPY_AND_ASSIGN(NonShrinkPolicy);
 
   void Shrink(std::vector<K>& key_list,
-              std::vector<ValuePtr<V>*>& value_list,
+              std::vector<void*>& value_list,
               const ShrinkArgs& shrink_args) override {}
 };
 } // embedding

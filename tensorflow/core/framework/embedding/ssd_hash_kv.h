@@ -25,17 +25,12 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/ssd_record_descriptor.h"
 #include "tensorflow/core/framework/embedding/emb_file_creator.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
-#include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/threadpool.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
-
-template <class V>
-class ValuePtr;
-
 namespace embedding {
 class EmbPosition {
  public:
@@ -115,55 +110,6 @@ class SSDIterator {
     }
   }
 
-  virtual void Key(char* val, int64 dim) {
-    int64 f_id = file_id_vec_[curr_file_];
-    memcpy((char*)val, &((file_map_[f_id])[curr_vec_].first), dim);
-  }
-
-  virtual void Value(char* val, int64 dim, int64 value_offset) {
-    int64 f_id = file_id_vec_[curr_file_];
-    EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
-    if (posi->flushed_) {
-      emb_files_[posi->version_]->
-          ReadWithMemcpy(val, dim,
-              posi->offset_ + value_offset + sizeof(FixedLengthHeader));
-    } else {
-      memcpy(val, write_buffer_ + posi->buffer_offset_ +
-          value_offset + sizeof(FixedLengthHeader), dim);
-    }
-  }
-
-  virtual void Freq(char* val, int64 dim) {
-    int64 f_id = file_id_vec_[curr_file_];
-    EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
-    if (posi->flushed_) {
-      emb_files_[posi->version_]->
-          ReadWithMemcpy(val, sizeof(FixedLengthHeader),
-              posi->offset_);
-    } else {
-      memcpy(val, write_buffer_ + posi->buffer_offset_,
-             sizeof(FixedLengthHeader));
-    }
-    *((int64*)val) =
-        reinterpret_cast<FixedLengthHeader*>(val)->GetFreqCounter();
-  }
-
-  virtual void Version(char* val, int64 dim) {
-    int64 f_id = file_id_vec_[curr_file_];
-    EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
-
-    if (posi->flushed_) {
-      emb_files_[posi->version_]->
-          ReadWithMemcpy(val, sizeof(FixedLengthHeader),
-              posi->offset_);
-    } else {
-      memcpy(val, write_buffer_ + posi->buffer_offset_,
-             sizeof(FixedLengthHeader));
-    }
-    *((int64*)val) = 
-        reinterpret_cast<FixedLengthHeader*>(val)->GetGlobalStep();
-  }
-
   virtual K Key() {
     int64 f_id = file_id_vec_[curr_file_];
     return (file_map_[f_id])[curr_vec_].first;
@@ -192,8 +138,9 @@ class SSDIterator {
 template <class K, class V>
 class SSDHashKV : public KVInterface<K, V> {
  public:
-  explicit SSDHashKV(const std::string& path, Allocator* alloc)
-  : alloc_(alloc) {
+  explicit SSDHashKV(const std::string& path,
+                     FeatureDescriptor<V>* feat_desc)
+  : feat_desc_(feat_desc) {
     path_ = io::JoinPath(
         path, "ssd_kv_" + std::to_string(Env::Default()->NowMicros()) + "_");
     hash_map_.max_load_factor(0.8);
@@ -205,9 +152,6 @@ class SSDHashKV : public KVInterface<K, V> {
     evict_file_set_.set_counternum(16);
     evict_file_set_.set_deleted_key(DELETED_KEY);
 
-    new_value_ptr_fn_ = [this](size_t size) {
-      return new NormalContiguousValuePtr<V>(alloc_, size);
-    };
     is_async_compaction_ = true;
     TF_CHECK_OK(ReadBoolFromEnvVar("TF_SSDHASH_ASYNC_COMPACTION", true,
           &is_async_compaction_));
@@ -224,7 +168,7 @@ class SSDHashKV : public KVInterface<K, V> {
         "Use Sync Compactor in SSDHashKV of Multi-tier Embedding Storage!";
       compaction_fn_ = [this](){Compaction();}; 
       check_buffer_fn_ = [this](){CheckBuffer();};
-      save_kv_fn_ = [this](K key, const ValuePtr<V>* value_ptr,
+      save_kv_fn_ = [this](K key, const void* value_ptr,
           bool is_compaction=false) {
         SaveKV(key, value_ptr, is_compaction);
       };
@@ -233,7 +177,7 @@ class SSDHashKV : public KVInterface<K, V> {
         "Use Async Compactor in SSDHashKV of Multi-tier Embedding Storage!";
       compaction_fn_ = [](){};
       check_buffer_fn_ = [this](){CheckBufferAsync();};
-      save_kv_fn_ = [this](K key, const ValuePtr<V>* value_ptr,
+      save_kv_fn_ = [this](K key, const void* value_ptr,
           bool is_compaction=false) {
         SaveKVAsync(key, value_ptr, is_compaction);
       };
@@ -244,9 +188,8 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
-  void SetTotalDims(int total_dims) override {
-    total_dims_ = total_dims;
-    val_len_ = sizeof(FixedLengthHeader) + total_dims_ * sizeof(V);
+  void Init() {
+    val_len_ = feat_desc_->data_bytes();
     max_app_count_ = BUFFER_SIZE / val_len_;
     write_buffer_ = new char[BUFFER_SIZE];
     unsigned int max_key_count = 1 + int(BUFFER_SIZE / val_len_);
@@ -334,18 +277,18 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
+  Status Lookup(K key, void** value_ptr) override {
     auto iter = hash_map_.find_wait_free(key);
     if (iter.first == EMPTY_KEY) {
       return errors::NotFound("Unable to find Key: ", key, " in SSDHashKV.");
     } else {
-      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
+      void* val = feat_desc_->Allocate();
       EmbPosition* posi = iter.second;
       if (posi->flushed_) {
-        emb_files_[posi->version_]->Read((char*)(val->GetPtr()),
+        emb_files_[posi->version_]->Read((char*)val,
             val_len_, posi->offset_);
       } else {
-        memcpy((char*)val->GetPtr(),
+        memcpy((char*)val,
             write_buffer_ + posi->buffer_offset_, val_len_);
       }
       *value_ptr = val;
@@ -363,17 +306,17 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
+  Status Insert(K key, const void* value_ptr) override {
     return Status::OK();
   }
 
   Status BatchInsert(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) override {
+                     const std::vector<void*>& value_ptrs) override {
     return BatchCommit(keys, value_ptrs);
   }
 
   Status BatchCommit(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) override {
+                     const std::vector<void*>& value_ptrs) override {
     compaction_fn_();
     __sync_fetch_and_add(&total_app_count_, keys.size());
     for (int i = 0; i < keys.size(); i++) {
@@ -384,7 +327,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
+  Status Commit(K key, const void* value_ptr) override {
     compaction_fn_();
     __sync_fetch_and_add(&total_app_count_, 1);
     check_buffer_fn_();
@@ -402,7 +345,7 @@ class SSDHashKV : public KVInterface<K, V> {
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-                     std::vector<ValuePtr<V>*>* value_ptr_list) override {
+                     std::vector<void*>* value_ptr_list) override {
     return Status::OK();
   }
 
@@ -467,8 +410,8 @@ class SSDHashKV : public KVInterface<K, V> {
 
   int64 Size() const override { return hash_map_.size_lockless(); }
 
-  void FreeValuePtr(ValuePtr<V>* value_ptr) override {
-    delete value_ptr;
+  void FreeValuePtr(void* value_ptr) override {
+    feat_desc_->Deallocate(value_ptr);
   }
 
  private:
@@ -555,10 +498,10 @@ class SSDHashKV : public KVInterface<K, V> {
   }
 
   void AppendToWriteBuffer(size_t curr_buffer_offset, K key,
-                            const ValuePtr<V>* value_ptr) {
+                            const void* value_ptr) {
     current_offset_ += val_len_;
     memcpy(write_buffer_ + curr_buffer_offset,
-        (char*)value_ptr->GetPtr(), val_len_);
+        (char*)value_ptr, val_len_);
     key_buffer_[buffer_cur_] = key;
     ++buffer_cur_;
   }
@@ -582,7 +525,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return flag;
   }
 
-  void SaveKV(K key, const ValuePtr<V>* value_ptr,
+  void SaveKV(K key, const void* value_ptr,
       bool is_compaction = false) {
     size_t curr_buffer_offset = buffer_cur_ * val_len_;
     EmbPosition* ep = new EmbPosition(current_offset_, current_version_,
@@ -608,7 +551,7 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
-  void SaveKVAsync(K key, const ValuePtr<V>* value_ptr,
+  void SaveKVAsync(K key, const void* value_ptr,
       bool is_compaction = false) {
     size_t curr_buffer_offset = buffer_cur_ * val_len_;
     EmbPosition* ep = new EmbPosition(current_offset_, evict_version_,
@@ -681,21 +624,21 @@ class SSDHashKV : public KVInterface<K, V> {
   }
 
   void MoveToNewFile() {
-    ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
+    void* val = feat_desc_->Allocate();
     for (auto it : evict_file_map_) {
       EmbFile* file = emb_files_[it.first];
       total_app_count_ -= file->InvalidCount();
       file->MapForRead();
       for (auto it_vec : it.second) {
         EmbPosition* posi = it_vec.second;
-        file->ReadWithMemcpy((char*)(val->GetPtr()), val_len_,
+        file->ReadWithMemcpy((char*)val, val_len_,
             posi->offset_);
         CheckBuffer();
         SaveKV(it_vec.first, val, true);
       }
       file->UnmapForRead();
     }
-    delete val;
+    feat_desc_->Deallocate(val);
   }
 
   void MoveToNewFileAsync() {
@@ -825,11 +768,10 @@ class SSDHashKV : public KVInterface<K, V> {
   char* write_buffer_ = nullptr;
   K* key_buffer_ = nullptr;
   bool is_async_compaction_;
-  Allocator* alloc_ = nullptr;
+  FeatureDescriptor<V>* feat_desc_;
 
   int total_dims_;
   std::string path_;
-  std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn_;
 
   typedef google::dense_hash_map_lockless<K, EmbPosition*> LockLessHashMap;
   LockLessHashMap hash_map_;
@@ -857,7 +799,7 @@ class SSDHashKV : public KVInterface<K, V> {
 
   std::function<void()> compaction_fn_;
   std::function<void()> check_buffer_fn_;
-  std::function<void(K, const ValuePtr<V>*, bool)> save_kv_fn_;
+  std::function<void(K, const void*, bool)> save_kv_fn_;
   EmbFileCreator* emb_file_creator_ = nullptr;
 };
 template <class K, class V>

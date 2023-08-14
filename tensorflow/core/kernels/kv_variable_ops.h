@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/bounds_check.h"
+#include "tensorflow/core/framework/embedding/cache_factory.h"
 #include "tensorflow/core/framework/embedding/embedding_var.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/op_kernel.h"

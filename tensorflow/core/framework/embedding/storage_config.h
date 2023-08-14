@@ -17,13 +17,11 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
-#include "tensorflow/core/framework/embedding/value_ptr.h"
 namespace tensorflow {
 namespace embedding {
 struct StorageConfig {
   StorageConfig() : type(StorageType::DEFAULT),
                     path(""),
-                    layout_type(LayoutType::NORMAL),
                     cache_strategy(CacheStrategy::LFU) {
     size = {1<<30,1<<30,1<<30,1<<30};
   }
@@ -31,32 +29,14 @@ struct StorageConfig {
   StorageConfig(StorageType t,
                 const std::string& p,
                 const std::vector<int64>& s,
-                const std::string& layout,
                 const EmbeddingConfig& ec,
                 const CacheStrategy cache_strategy_ = CacheStrategy::LFU)
-                                      : type(t),
-                                        path(p),
-                                        embedding_config(ec),
-                                        cache_strategy(cache_strategy_) {
-    if ("normal" == layout) {
-      layout_type = LayoutType::NORMAL;
-    } else if ("light" == layout) {
-      layout_type = LayoutType::LIGHT;
-    } else if ("normal_contiguous" == layout){
-      layout_type = LayoutType::NORMAL_CONTIGUOUS;
-    } else if ("normal_contiguous_gpu" == layout){
-      layout_type = LayoutType::NORMAL_CONTIGUOUS_GPU;
-    } else if ("compact" == layout){
-      layout_type = LayoutType::COMPACT;
-    } else {
-      LOG(WARNING) << "Unknown layout: "
-        << layout << ", use LayoutType::NORMAL by default.";
-      layout_type = LayoutType::NORMAL;
-    }
-    size = s;
-  }
+      : type(t),
+        path(p),
+        size(s),
+        embedding_config(ec),
+        cache_strategy(cache_strategy_) {}
   StorageType type;
-  LayoutType layout_type;
   std::string path;
   std::vector<int64> size;
   CacheStrategy cache_strategy;

@@ -204,29 +204,29 @@ class GPUHashMapKV : public KVInterface<K, V> {
   }
 
   Status BatchLookupOrCreate(const K* keys, size_t n,
-                             ValuePtr<V>** value_ptrs) override {
+                             void** value_ptrs) override {
     return Status::OK();
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
+  Status Lookup(K key, void** value_ptr) override {
     return Status::OK();
   }
 
   Status Contains(K key) override { return Status::OK(); }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
+  Status Insert(K key, const void* value_ptr) override {
     return Status::OK();
   }
 
   Status Remove(K key) override { return Status::OK(); }
 
   Status BatchLookup(const K* keys, size_t size,
-                     ValuePtr<V>** value_ptrs) override {
+                     void** value_ptrs) override {
     return Status::OK();
   }
 
   Status BatchInsert(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) override {
+                     const std::vector<void*>& value_ptrs) override {
     return Status::OK();
   }
 
@@ -235,22 +235,20 @@ class GPUHashMapKV : public KVInterface<K, V> {
   }
 
   Status BatchCommit(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) override {
+                     const std::vector<void*>& value_ptrs) override {
     return Status::OK();
   }
 
   int64 Size() const override { return 0; }
 
-  void SetTotalDims(int total_dims) override {}
+  void FreeValuePtr(void* value_ptr) override {}
 
-  void FreeValuePtr(ValuePtr<V>* value_ptr) override {}
-
-  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
+  Status Commit(K key, const void* value_ptr) override {
     return Status::OK();
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-                     std::vector<ValuePtr<V>*>* value_ptr_list) override {
+                     std::vector<void*>* value_ptr_list) override {
     return Status::OK();
   }
 

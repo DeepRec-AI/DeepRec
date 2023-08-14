@@ -17,6 +17,7 @@ limitations under the License.
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/framework/embedding/feature_descriptor_impl.h"
 #include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
+#include "tensorflow/core/platform/mutex.h"
 
 namespace tensorflow {
 namespace embedding {

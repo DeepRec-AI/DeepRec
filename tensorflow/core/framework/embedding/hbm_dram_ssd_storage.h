@@ -244,8 +244,10 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     }
 
     for (auto value_ptr: value_ptr_list) {
-      if ((int64)value_ptr >> kDramFlagOffset == 1)
+      if ((int64)value_ptr >> kDramFlagOffset == 1) {
+        value_ptr = (void*)((int64)value_ptr & ((1L << kDramFlagOffset) - 1));
         cpu_allocator()->DeallocateRaw(value_ptr);
+      }
     }
 
     ssd_->Save(tensor_name, prefix, writer, emb_config,

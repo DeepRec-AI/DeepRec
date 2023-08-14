@@ -57,7 +57,7 @@ class EV2dVectorDataDumpIterator: public DumpIterator<T> {
         value_len_(value_len),
         col_idx_(0) {
     if (!valueptr_list.empty()) {
-      if ((int64)*curr_iter_ == ValuePosition::NOT_IN_DRAM) {
+      if ((int64)*curr_iter_ == ValuePtrStatus::NOT_IN_DRAM) {
         curr_ptr_ = val_iter_->Next();
       } else {
         curr_ptr_ = *curr_iter_;
@@ -75,7 +75,7 @@ class EV2dVectorDataDumpIterator: public DumpIterator<T> {
       curr_iter_++;
       col_idx_ = 0;
       if (curr_iter_ != end_iter_) {
-        if ((int64)*curr_iter_ == ValuePosition::NOT_IN_DRAM) {
+        if ((int64)*curr_iter_ == ValuePtrStatus::NOT_IN_DRAM) {
           curr_ptr_ = val_iter_->Next();
         } else {
           curr_ptr_ = *curr_iter_;

@@ -106,6 +106,9 @@ class CounterFilterDescriptorImpl: public FeatureDescriptorImpl<V> {
   void* Admit(void* val) override {
     if (!IsAdmit(val)) {
       return feat_desc_impl_->Allocate();
+    } else {
+      LOG(FATAL)<<"Only unadmited feature could be admited.";
+      return nullptr;
     }
   }
 

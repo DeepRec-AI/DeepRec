@@ -439,7 +439,8 @@ tf_cc_test(
 
 tf_cuda_cc_test(
     name = "embedding_variable_ops_test",
-    srcs = ["embedding_variable_ops_test.cc"],
+    srcs = ["embedding_variable_ops_test.cc",
+            "embedding_variable_test.h"],
     extra_copts = ["-fexceptions", "-g"],
     deps = [
         ":io",
@@ -6497,7 +6498,7 @@ tf_kernel_library(
         "training_ali_ops_gpu.h",
         "training_ali_ops.h"
     ],
-    copts = tf_copts(),
+    copts = tf_copts() + ["-g"],
     deps = [
         ":bounds_check",
         ":training_op_helpers",

@@ -121,7 +121,7 @@ class KvResourceLookupIDOp : public OpKernel {
       const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
       EmbeddingVarContext<Device> ev_ctx(c);
       ev->GetOrCreateKey(ev_ctx, indices,
-                         reinterpret_cast<ValuePtr<TValue>**>(out_base),
+                         reinterpret_cast<void**>(out_base),
                          indices_size);
     }
   }
@@ -203,7 +203,7 @@ class KvResourceCollectEmbeddingOp : public OpKernel {
       const size_t slice_bytes = slice_elems * sizeof(TValue);
       EmbeddingVarContext<Device> ev_ctx(c);
       ev->GatherEmbeddings(ev_ctx, indices,
-                          (ValuePtr<TValue>**)pointer.data(),
+                          (void**)pointer.data(),
                           out_base, N);
     }
   }

@@ -774,7 +774,7 @@ class GroupEmbeddingVariableForWardOpTest : public OpsTestBase {
       embedding_var->Init(value, 1);
 
       for (int64 j = 0; j < nnz; ++j) {
-        ValuePtr<TValue>* value_ptr = nullptr;
+        void* value_ptr = nullptr;
         Status s =
             embedding_var->LookupOrCreateKey(sp_values_vec[j], &value_ptr);
         typename TTypes<TValue>::Flat vflat = embedding_var->flat(value_ptr);
@@ -958,7 +958,7 @@ class GroupEmbeddingVariableBackWardOpTest : public OpsTestBase {
       embedding_var->Init(value, 1);
 
       for (int64 j = 0; j < nnz; ++j) {
-        ValuePtr<TValue>* value_ptr = nullptr;
+        void* value_ptr = nullptr;
         Status s =
             embedding_var->LookupOrCreateKey(sp_values_vec[j], &value_ptr);
         typename TTypes<TValue>::Flat vflat = embedding_var->flat(value_ptr);
