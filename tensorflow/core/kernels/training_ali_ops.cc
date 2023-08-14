@@ -141,16 +141,16 @@ class KvSparseApplyAdagradOp : public OpKernel {
             (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter = false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
                            &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto a = accum->flat(value_ptr, index);
+              auto a = accum->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
-              auto v = var->flat(value_ptr, index);
+              auto v = var->flat(value_ptr);
               a += g.square();
               v -= g.constant(lr_scalar) * g * a.rsqrt();
             }
@@ -542,15 +542,15 @@ class KvSparseApplyFtrlOp : public OpKernel {
             (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter = false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var_->LookupOrCreateKey(index, &value_ptr,
                            &is_filter, indices_as_pointer, count));
             if (is_filter) {
-              auto var = var_->flat(value_ptr, index);
-              auto accum = accum_->flat(value_ptr, index);
-              auto linear = linear_->flat(value_ptr, index);
+              auto var = var_->flat(value_ptr);
+              auto accum = accum_->flat(value_ptr);
+              auto linear = linear_->flat(value_ptr);
               auto grad = grad_flat.template chip<0>(i);
 
 // Use a macro to implement the computation here due to the templating of the
@@ -1301,19 +1301,19 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
             (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter = false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
                            &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto a = accum->flat(value_ptr, index);
+              auto a = accum->flat(value_ptr);
 
               auto g = grad_flat.template chip<0>(i);
 
-              auto v = var->flat(value_ptr, index);
-              auto accum_decay_power = accum_decay_power_var->flat(value_ptr, index);
+              auto v = var->flat(value_ptr);
+              auto accum_decay_power = accum_decay_power_var->flat(value_ptr);
 
               if (gs / decay_step_scalar > accum_decay_power(0)) {
                 a *= a.constant(decay_rate_scalar);
@@ -1505,19 +1505,18 @@ class KvSparseApplyAdamOp : public OpKernel {
           auto indices_vec = indices.vec<Tindex>();
 
           int64 gs = global_step.scalar<int64>()();
-
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter =false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
                            &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto var_i = var->flat(value_ptr, index);
-              auto m_a = m->flat(value_ptr, index);
-              auto v_a = v->flat(value_ptr, index);
+              auto var_i = var->flat(value_ptr);
+              auto m_a = m->flat(value_ptr);
+              auto v_a = v->flat(value_ptr);
 
               auto g = grad_flat.template chip<0>(i);
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
@@ -2412,15 +2411,15 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
           Tstep gs = global_step.scalar<Tstep>()();
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter = false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
                            &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto v_ = v->flat(value_ptr, index);
-              auto m_ = m->flat(value_ptr, index);
+              auto v_ = v->flat(value_ptr);
+              auto m_ = m->flat(value_ptr);
               auto grad_ = grad_flat.template chip<0>(i);
 
               v_ = v_ * v_.constant(beta2_scalar) +
@@ -2429,7 +2428,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                      (v_ + v_.constant(epsilon_scalar)).rsqrt() *
                          v_.constant(lr_scalar) * grad_;
 
-              auto v = var->flat(value_ptr, index);
+              auto v = var->flat(value_ptr);
               v -= m_;
             }
           }
@@ -2461,17 +2460,17 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
             for (int64 i = start_i; i < limit_i; i++) {
               const Tindex index = indices_vec(i);
-              ValuePtr<T>* value_ptr = nullptr;
+              void* value_ptr = nullptr;
               bool is_filter = false;
               int64 count = get_count_fn(indices_counts, i);
               OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
                              &is_filter, indices_as_pointer, count));
               var->UpdateVersion(value_ptr, gs);
               if (is_filter) {
-                auto m_a = m->flat(value_ptr, index);
-                auto v_a = v->flat(value_ptr, index);
+                auto m_a = m->flat(value_ptr);
+                auto v_a = v->flat(value_ptr);
                 auto g = grad_flat.template chip<0>(i);
-                auto var_i = var->flat(value_ptr, index);
+                auto var_i = var->flat(value_ptr);
 
                 m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
                 v_a = v_a * beta2_scalar + g.square() * (static_cast<T>(1) - beta2_scalar);
@@ -2939,7 +2938,7 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
             (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter = false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
@@ -2947,7 +2946,7 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto g = grad_flat.template chip<0>(i);
-              auto v = var->flat(value_ptr, index);
+              auto v = var->flat(value_ptr);
               v -= g.constant(lr_scalar) * g;
             }
           }
@@ -3136,16 +3135,16 @@ class KvSparseApplyAdamWOp : public OpKernel {
 
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<T>* value_ptr = nullptr;
+            void* value_ptr = nullptr;
             bool is_filter =false;
             int64 count = get_count_fn(indices_counts, i);
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr,
                            &is_filter, indices_as_pointer, count));
             var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
-              auto var_i = var->flat(value_ptr, index);
-              auto m_a = m->flat(value_ptr, index);
-              auto v_a = v->flat(value_ptr, index);
+              auto var_i = var->flat(value_ptr);
+              auto m_a = m->flat(value_ptr);
+              auto v_a = v->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
               // m_a = beta1 * m + (1 - beta1) * g
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
