@@ -181,7 +181,9 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
                       restore_buff.key_offset_list_buf,
                       restore_buff.num_of_keys,
                       file_id_map);
+    return Status::OK();
   }
+
   Status Eviction(K* evict_ids, int64 evict_size) override {
     ValuePtr<V>* value_ptr = nullptr;
     for (int64 i = 0; i < evict_size; ++i) {
