@@ -26,7 +26,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/lib/core/status.h"
 
-#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 #include "tensorflow/core/util/work_sharder.h"
 #include "tensorflow/core/framework/device_base.h"
 #if GOOGLE_CUDA
@@ -52,6 +51,9 @@ struct SsdRecordDescriptor;
 
 template <class K, class V>
 class GPUHashTable;
+
+class BundleWriter;
+class BundleReader;
 
 template<typename Device>
 struct EmbeddingVarContext;

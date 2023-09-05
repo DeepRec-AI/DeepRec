@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_KV_INTERFACE_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_KV_INTERFACE_H_
 
+#include "tensorflow/core/framework/device_base.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
@@ -29,6 +30,7 @@ class ValuePtr;
 template <class K, class V>
 class GPUHashTable;
 
+using GPUDevice = Eigen::GpuDevice;
 namespace embedding {
 
 template<class V>
@@ -90,15 +92,15 @@ class KVInterface {
 
   virtual Status BatchLookupOrCreate(const K* keys, V* val, V* default_v,
       int32 default_v_num,
-      size_t n, const Eigen::GpuDevice& device) {
+      size_t n, const GPUDevice& device) {
     return Status::OK();
   }
   virtual Status BatchLookupOrCreateKeys(const K* keys, size_t n,
-      int32* item_idxs, const Eigen::GpuDevice& device) {
+      int32* item_idxs, const GPUDevice& device) {
     return Status::OK();
   }
 
-  virtual Status BatchLookup(const Eigen::GpuDevice& device, 
+  virtual Status BatchLookup(const GPUDevice& device,
       const K* keys, V* val, size_t n, const V* default_v) {
     return Status(error::Code::UNIMPLEMENTED,
                   "Unimplemented for BatchLookup in KVInterface.");

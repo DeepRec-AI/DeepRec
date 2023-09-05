@@ -2907,7 +2907,10 @@ tf_kernel_library(
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc",
             "kv_variable_lookup_ops.cc",
-            "kv_variable_restore_ops.cc"],
+            "kv_variable_restore_ops.cc",
+            "//tensorflow/core:framework/embedding/embedding_var_ckpt_data.cc",
+            "//tensorflow/core:framework/embedding/embedding_var_restore.cc",
+            "//tensorflow/core:framework/embedding/ssd_record_descriptor.cc"],
     copts = tf_copts() + ["-g"],
     deps = [
         ":bounds_check",

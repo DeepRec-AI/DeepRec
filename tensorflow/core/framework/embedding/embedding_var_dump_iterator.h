@@ -15,9 +15,12 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_EMBEDDING_VAR_DUMP_ITERATOR_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_EMBEDDING_VAR_DUMP_ITERATOR_
 #include "tensorflow/core/platform/types.h"
-#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
-#include "tensorflow/core/kernels/save_restore_tensor.h"
+#include "tensorflow/core/framework/embedding/embedding_config.h"
+#include "tensorflow/core/framework/embedding/kv_interface.h"
 namespace tensorflow {
+template <class T>
+class DumpIterator;
+
 namespace embedding {
 template<class T>
 class EVVectorDataDumpIterator: public DumpIterator<T> {

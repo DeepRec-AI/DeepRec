@@ -37,7 +37,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/storage.h"
 #include "tensorflow/core/framework/embedding/storage_factory.h"
 #include "tensorflow/core/framework/typed_allocator.h"
-#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 
 namespace tensorflow {
 using CPUDevice = Eigen::ThreadPoolDevice;

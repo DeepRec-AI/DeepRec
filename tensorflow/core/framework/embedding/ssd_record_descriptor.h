@@ -20,14 +20,13 @@ limitations under the License.
 #include <vector>
 #include <cstdlib>
 #include <iomanip>
-
+#include <fstream>
 #include "tensorflow/core/framework/embedding/embedding_var_dump_iterator.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
-#include "tensorflow/core/lib/core/status.h"
-#include "tensorflow/core/lib/io/path.h"
-#include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/platform/env.h"
 
 namespace tensorflow {
+class BundleWriter;
 namespace embedding {
 
 template <class K>
@@ -59,48 +58,10 @@ class SsdRecordDescriptor {
   void DumpSection(const std::vector<T>& data_vec,
                    const std::string& section_str,
                    BundleWriter* writer,
-                   std::vector<char>& dump_buffer) {
-    EVVectorDataDumpIterator<T> iter(data_vec);
-    SaveTensorWithFixedBuffer(
-        section_str,
-        writer, dump_buffer.data(),
-        dump_buffer.size(), &iter,
-        TensorShape({data_vec.size()}));
-  }
+                   std::vector<char>& dump_buffer);
 
   void DumpSsdMeta(const std::string& prefix,
-                   const std::string& var_name) {
-    std::fstream fs;
-    std::string var_name_temp(var_name);
-    std::string new_str = "_";
-    int64 pos = var_name_temp.find("/");
-    while (pos != std::string::npos) {
-      var_name_temp.replace(pos, 1, new_str.data(), 1);
-      pos = var_name_temp.find("/");
-    }
-
-    std::string ssd_record_path =
-        prefix + "-" + var_name_temp + "-ssd_record";
-    BundleWriter ssd_record_writer(Env::Default(),
-                                   ssd_record_path);
-    size_t bytes_limit = 8 << 20;
-    std::vector<char> dump_buffer(bytes_limit);
-
-    DumpSection(key_list, "keys",
-                &ssd_record_writer, dump_buffer);
-    DumpSection(key_file_id_list, "keys_file_id",
-                &ssd_record_writer, dump_buffer);
-    DumpSection(key_offset_list, "keys_offset",
-                &ssd_record_writer, dump_buffer);
-    DumpSection(file_list, "files",
-                &ssd_record_writer, dump_buffer);
-    DumpSection(invalid_record_count_list, "invalid_record_count",
-                &ssd_record_writer, dump_buffer);
-    DumpSection(record_count_list, "record_count",
-                &ssd_record_writer, dump_buffer);
-
-    ssd_record_writer.Finish();
-  }
+                   const std::string& var_name);
 
   void CopyEmbeddingFilesToCkptDir(
       const std::string& prefix,
