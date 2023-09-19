@@ -3026,7 +3026,10 @@ tf_cuda_library(
             "framework/embedding/gpu_hash_table.cu.cc",
             "framework/embedding/gpu_hash_table.h",
             "framework/embedding/embedding_var.cu.cc",
-            "framework/embedding/multi_tier_storage.cu.cc"
+            "framework/embedding/multi_tier_storage.cu.cc",
+            "framework/embedding/embedding_var_ckpt_data.cc",
+            "framework/embedding/embedding_var_restore.cc",
+            "framework/embedding/ssd_record_descriptor.cc"
         ],
     ) + select({
         "//tensorflow:windows": [],

@@ -3,6 +3,9 @@
 
 #include <cmath>
 #include "tensorflow/core/framework/embedding/config.pb.h"
+#include "tensorflow/core/framework/types.pb.h"
+#include "tensorflow/core/lib/strings/strcat.h"
+#include "tensorflow/core/platform/default/logging.h"
 
 namespace tensorflow {
 struct EmbeddingConfig {
