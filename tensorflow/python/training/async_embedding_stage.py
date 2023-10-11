@@ -49,13 +49,14 @@ class AsyncEmbeddingStage:
         self._checkpoint_dir = checkpoint_dir if checkpoint_dir else ""
         self._use_stage_subgraph_thread_pool = options.use_stage_subgraph_thread_pool
         self._stage_subgraph_thread_pool_id = options.stage_subgraph_thread_pool_id
+        self._is_staged = False
         self._control_flow_ops = ['Switch', '_SwitchN', 'Merge', '_XlaMerge',
                                   'Enter', 'Exit']
         self._variable_ops = ['Variable', 'VariableV2', 'VarHandleOp',
                               'KvVarHandleOp', 'HashTableV2']
         self._variable_is_init_ops = ['IsVariableInitialized',
                                       'VarIsInitializedOp', 'KvVarIsInitializedOp']
-        self._saver_ops = ['SaveV2']
+        self._saver_ops = ['SaveV2', 'SaveV3']
         self._no_data_input_ops = self._variable_ops + ['Placeholder', 'PlaceholderV2', 'Const']
         self._boundary_ops = set()
         for tensor in ops.get_collection(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS):
@@ -74,6 +75,10 @@ class AsyncEmbeddingStage:
     def stage(self, graph):
         """ add async embedding stage node to graph
         """
+        if self._is_staged:
+            return
+        self._is_staged = True
+
         logging.info('async embedding stage begin')
         logging.info('async embedding thread num: ' + str(self._threads_num))
         logging.info('async embedding capacity: ' + str(self._capacity))
