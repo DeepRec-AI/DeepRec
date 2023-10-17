@@ -17,9 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
 
 #include "tensorflow/core/lib/io/path.h"
-
 #include "tensorflow/core/framework/embedding/kv_interface.h"
-#include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/lib/core/status.h"
 
 #include "leveldb/db.h"
@@ -35,9 +33,6 @@ using leveldb::WriteBatch;
 using leveldb::WriteOptions;
 
 namespace tensorflow {
-template <class V>
-class ValuePtr;
-
 namespace embedding {
 
 template <class K>
@@ -76,28 +71,21 @@ class SizeCounter {
 template <class K, class V>
 class LevelDBKV : public KVInterface<K, V> {
  public:
-  LevelDBKV(std::string path) {
+  LevelDBKV(std::string path, FeatureDescriptor<V>* feat_desc)
+      : feat_desc_(feat_desc) {
     path_ = io::JoinPath(path,
         "level_db_" + std::to_string(Env::Default()->NowMicros()));;
     options_.create_if_missing = true;
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
     CHECK(s.ok());
     counter_ =  new SizeCounter<K>(8);
-    new_value_ptr_fn_ = [] (size_t size) {
-      return new NormalContiguousValuePtr<V>(ev_allocator(), size);
-    };
-    total_dims_ = 0;
-  }
-
-  void SetTotalDims(int total_dims) {
-    total_dims_ = total_dims;
   }
 
   ~LevelDBKV() override {
     delete db_;
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
+  Status Lookup(K key, void** value_ptr) override {
     std::string val_str;
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::ReadOptions options;
@@ -106,8 +94,8 @@ class LevelDBKV : public KVInterface<K, V> {
       return errors::NotFound(
           "Unable to find Key: ", key, " in LevelDB.");
     } else {
-      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
-      memcpy((int64 *)(val->GetPtr()), &val_str[0], val_str.length());
+      void* val = feat_desc_->Allocate();
+      memcpy((int64 *)val, &val_str[0], val_str.length());
       *value_ptr = val;
       return Status::OK();
     }
@@ -126,22 +114,22 @@ class LevelDBKV : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
+  Status Insert(K key, const void* value_ptr) override {
     counter_->add(key, 1);
     return Status::OK();
   }
 
   Status BatchInsert(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) override {
+      const std::vector<void*>& value_ptrs) override {
     return BatchCommit(keys, value_ptrs);
   } 
 
   Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) override {
+      const std::vector<void*>& value_ptrs) override {
     WriteBatch batch;
     for (int i = 0; i < keys.size(); i++) {
-      std::string value_res((char*)value_ptrs[i]->GetPtr(),
-          sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
+      std::string value_res((char*)value_ptrs[i],
+          feat_desc_->data_bytes());
       leveldb::Slice db_key((char*)(&keys[i]), sizeof(void*));
       batch.Put(db_key, value_res);
       delete value_ptrs[i];
@@ -150,9 +138,9 @@ class LevelDBKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
-    std::string value_res((char*)value_ptr->GetPtr(),
-        sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
+  Status Commit(K key, const void* value_ptr) override {
+    std::string value_res((char*)value_ptr,
+        feat_desc_->data_bytes());
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);
     if (!s.ok()){
@@ -176,22 +164,32 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>*>* value_ptr_list) override {
+      std::vector<void*>* value_ptr_list) override {
     ReadOptions options;
     options.snapshot = db_->GetSnapshot();
     leveldb::Iterator* it = db_->NewIterator(options);
+    void* dram_value_ptr = feat_desc_->Allocate();
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       K key;
       memcpy((char*)&key, it->key().ToString().data(), sizeof(K));
       key_list->emplace_back(key);
-      ValuePtr<V>* value_ptr =
-          new NormalGPUValuePtr<V>(ev_allocator(), 1);
-      memcpy((char *)value_ptr->GetPtr(),
+      FeatureDescriptor<V> hbm_feat_desc(
+          1, 1, ev_allocator()/*useless*/,
+          StorageType::HBM_DRAM, true, true,
+          {false, 0});
+      void* value_ptr = cpu_allocator()->AllocateRaw(
+          Allocator::kAllocatorAlignment, hbm_feat_desc.data_bytes());
+      memcpy(dram_value_ptr,
              it->value().ToString().data(),
-             sizeof(FixedLengthHeader));
+             feat_desc_->data_bytes());
+      hbm_feat_desc.SetFreq(
+          value_ptr, feat_desc_->GetFreq(dram_value_ptr));
+      hbm_feat_desc.UpdateVersion(
+          value_ptr, feat_desc_->GetVersion(dram_value_ptr));
       value_ptr_list->emplace_back(value_ptr);
     }
     delete it;
+    feat_desc_->Deallocate(dram_value_ptr);
     return Status::OK();
   }
 
@@ -199,8 +197,8 @@ class LevelDBKV : public KVInterface<K, V> {
     return counter_->size();
   }
 
-  void FreeValuePtr(ValuePtr<V>* value_ptr) override {
-    delete value_ptr;
+  void FreeValuePtr(void* value_ptr) override {
+    feat_desc_->Deallocate(value_ptr);
   }
 
   std::string DebugString() const override{
@@ -212,8 +210,7 @@ class LevelDBKV : public KVInterface<K, V> {
   SizeCounter<K>* counter_;
   Options options_;
   std::string path_;
-  std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn_;
-  int total_dims_;
+  FeatureDescriptor<V>* feat_desc_;
 };
 
 template<class K, class  V>
@@ -223,10 +220,12 @@ class DBValueIterator: public ValueIterator<V> {
       const std::vector<K>& key_list,
       int64 emb_index,
       int64 value_len,
-      LevelDBKV<K, V>* leveldb_kv)
+      LevelDBKV<K, V>* leveldb_kv,
+      FeatureDescriptor<V>* feat_desc)
       : value_len_(value_len),
         emb_index_(emb_index),
-        leveldb_kv_(leveldb_kv) {
+        leveldb_kv_(leveldb_kv),
+        feat_desc_(feat_desc) {
     int64 emb_offset = value_len_ * emb_index;
     std::vector<std::list<K>> keys_parts_vec(kSavedPartitionNum);
     for (int64 i = 0; i < key_list.size(); i++) {
@@ -251,8 +250,7 @@ class DBValueIterator: public ValueIterator<V> {
 
   V* Next() {
     if (value_ptr_ != nullptr) {
-      value_ptr_->Destroy(ev_allocator());
-      delete value_ptr_;
+      feat_desc_->Deallocate(value_ptr_);
     }
     K key = *(keys_iter_++);
 
@@ -260,16 +258,17 @@ class DBValueIterator: public ValueIterator<V> {
     if (!s.ok()) {
       LOG(FATAL)<<"Not found value in LevelDB when Save.";
     }
-    return value_ptr_->GetValue(emb_index_, value_len_ * emb_index_);
+    return feat_desc_->GetEmbedding(value_ptr_, emb_index_);
   }
 
  private:
   int64 value_len_;
   int64 emb_index_;
   LevelDBKV<K, V>* leveldb_kv_;
+  FeatureDescriptor<V>* feat_desc_;
   std::list<K> keys_;
   typename std::list<K>::const_iterator keys_iter_;
-  ValuePtr<V>* value_ptr_ = nullptr;
+  void* value_ptr_ = nullptr;
   int64 key_cursor_ = 0;
 };
 

@@ -50,11 +50,7 @@ enum EmbeddingVariableType {
 enum ValuePtrStatus {
   OK = 0;
   IS_DELETED = 1;
-}
-
-enum ValuePosition {
-  IN_DRAM = 0;
-  NOT_IN_DRAM = 1;
+  NOT_IN_DRAM = 2;
 }
 
 enum IsSetInitialized {

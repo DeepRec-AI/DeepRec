@@ -23,7 +23,6 @@ limitations under the License.
 #include "tensorflow/core/framework/hash_table/hash_table.h"
 #include "tensorflow/core/framework/hash_table/bloom_filter_strategy.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
-#include "tensorflow/core/framework/embedding/value_ptr.h"
 
 namespace tensorflow {
 

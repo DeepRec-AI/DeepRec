@@ -373,6 +373,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           self._slot_num = 0 
         else:
           self._slot_num = evconfig.slot_num
+        if self._is_primary:
+          self._import_dependency_ops = []
         with ops.name_scope("IsInitialized"):
           self._is_initialized_op = (
               gen_kv_variable_ops.kv_var_is_initialized_op(self._handle,
@@ -488,6 +490,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           set_attr_ops.append(set_cache_op)
         with ops.control_dependencies(set_attr_ops + [self._initializer_for_restore]):
           self._init_op_for_restore = control_flow_ops.no_op()
+        self.collect_restore_denpendencies()
 
   def need_counts(self):
     return (self._record_freq or (self._filter_freq > 0) or self._is_multi_tier)
@@ -612,7 +615,18 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     else:
       self._is_primary = False
 
+    self.collect_restore_denpendencies()
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
+
+  def collect_restore_denpendencies(self):
+    restore_dependency = ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLE_RESTORE_DEPENDENCY)
+    if len(restore_dependency) == 0:
+      ops.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLE_RESTORE_DEPENDENCY, {})
+      restore_dependency = ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLE_RESTORE_DEPENDENCY)
+    dependency_dict = restore_dependency[0]
+    if not dependency_dict.__contains__(self._primary_handle):
+      dependency_dict[self._primary_handle] = []
+    dependency_dict[self._primary_handle].append(self._init_op_for_restore)
 
   def set_init_data_source_initializer(self, init_data_source):
     import pkgutil

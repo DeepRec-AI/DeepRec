@@ -121,55 +121,54 @@ EmbeddingVariableInputLockHolder<K, V> MaybeLockEmbeddingVariableInputMutexesInO
 template<class K, class V, class Tstep>
 void LookupKeyAndSetVersion(
     OpKernelContext* ctx, EmbeddingVar<K, V>* var,
-    ValuePtr<V>** value_ptrs, Tstep gs, const K* indices,
+    void** value_ptrs, Tstep gs, const K* indices,
     int64 task_size, bool indices_as_pointer,
     int counts_index) {
+  EmbeddingVarContext<Eigen::GpuDevice> ev_ctx(ctx);
   int64* indices_counts = nullptr;
   std::function<int64(int64*, int64)> get_count_fn = 0;
   if (counts_index != -1) {
     const Tensor& counts_tensor = ctx->input(counts_index);
     indices_counts = (int64*)counts_tensor.data();
-    get_count_fn = [](int64* counts, int64 index) {
-      return counts[index];};
-  } else {
-    get_count_fn = [](int64* counts, int64 index) {return 1;};
   }
+  var->LookupOrCreateKey(ev_ctx, indices, value_ptrs,
+                         task_size, indices_counts,
+                         indices_as_pointer);
 
-  auto lookup_key_and_set_version_fn = [var, value_ptrs, gs,
-      indices, indices_as_pointer,
-      indices_counts, get_count_fn] (int64 start, int64 limit) {
-    ValuePtr<V>* value_ptr = nullptr;
+  auto update_version_fn = [var, value_ptrs, gs]
+      (int64 start, int64 limit) {
     for (int i = start; i < limit; i++) {
-      bool is_filter = false;
-      int64 count = get_count_fn(indices_counts, i);
-      var->LookupOrCreateKey(indices[i], &value_ptr,
-          &is_filter, indices_as_pointer, count);
-      value_ptrs[i] = value_ptr;
-      var->UpdateVersion(value_ptr, gs);
+      var->UpdateVersion(value_ptrs[i], gs);
     }
   };
   const int64 unit_cost = 1000; //very unreliable estimate for cost per step.
   auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
   Shard(worker_threads->num_threads,
         worker_threads->workers, task_size, unit_cost,
-        lookup_key_and_set_version_fn);
+        update_version_fn);
 }
 
 template<class K, class V>
-void LookupOrCreateEmbedding(
+void LookupEmbedding(
     OpKernelContext* ctx,
     std::vector<std::pair<EmbeddingVar<K, V>*, V**>>& vars,
-    ValuePtr<V>** value_ptrs,
+    void** value_ptrs,
     const K* indices,
-    int64 num_of_keys,
-    IntraThreadCopyIdAllocator* thread_copy_id_alloc) {
+    int64 num_of_keys) {
   for (auto it: vars) {
     EmbeddingVar<K, V>* var = it.first;
     V** var_ptr = it.second;
-    EmbeddingVarContext<Eigen::GpuDevice> ev_ctx(ctx);
-    var->BatchLookupOrCreateEmb(
-        ev_ctx, var_ptr, value_ptrs,
-        indices, num_of_keys, thread_copy_id_alloc);
+    auto lookup_emb_fn = [var, var_ptr, value_ptrs]
+        (int64 start, int64 limit) {
+      for (int i = start; i < limit; i++) {
+        var_ptr[i] = var->GetValuePtr(value_ptrs[i]);
+      }
+    };
+    const int64 unit_cost = 1000; //very unreliable estimate for cost per step.
+    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
+    Shard(worker_threads->num_threads,
+        worker_threads->workers, num_of_keys, unit_cost,
+        lookup_emb_fn);
   }
 }
 
@@ -180,12 +179,12 @@ void GetEmbeddingPointers(
     const K* indices, Tstep gs, bool indices_as_pointer,
     int counts_index, int64 num_of_keys,
     IntraThreadCopyIdAllocator* thread_copy_id_alloc) {
-  std::vector<ValuePtr<V>*> value_ptrs(num_of_keys);
+  std::vector<void*> value_ptrs(num_of_keys);
   LookupKeyAndSetVersion(ctx, vars[0].first, value_ptrs.data(),
                          gs, indices, num_of_keys,
                          indices_as_pointer, counts_index);
-  LookupOrCreateEmbedding(ctx, vars, value_ptrs.data(),
-                          indices, num_of_keys, thread_copy_id_alloc);
+  LookupEmbedding(ctx, vars, value_ptrs.data(),
+                  indices, num_of_keys);
 }
 }  // end namespace tensorflow
 

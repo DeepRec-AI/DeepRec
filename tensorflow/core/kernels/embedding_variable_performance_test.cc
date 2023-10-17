@@ -90,14 +90,21 @@ void GenerateSkewInput(int num_of_ids, float skew_factor,
 void thread_lookup_or_create(
     EmbeddingVar<int64, float>* ev,
     const int64* input_batch,
+    float* default_value,
+    int default_value_dim,
     float** outputs, int value_size,
     int start, int end) {
-  ValuePtr<float>* value_ptr = nullptr;
+  void* value_ptr = nullptr;
 	bool is_filter = false;
   for (int i = start; i < end; i++) {
     ev->LookupOrCreateKey(input_batch[i], &value_ptr, &is_filter, false);
-    auto val = ev->flat(value_ptr, input_batch[i]);
-    memcpy(outputs[i], &val(0), sizeof(float) * value_size);
+    if (is_filter) {
+      auto val = ev->flat(value_ptr);
+      memcpy(outputs[i], &val(0), sizeof(float) * value_size);
+    } else {
+      int default_value_index = input_batch[i] % default_value_dim;
+      memcpy(outputs[i], default_value + default_value_index * value_size, sizeof(float) * value_size);
+    }
   }
 }
 
@@ -138,6 +145,8 @@ double PerfLookupOrCreate(
     for (int i = 0; i < num_thread; i++) {
       worker_threads[i] = std::thread(thread_lookup_or_create,
                                       ev, input_batches[k].data(),
+                                      default_value_matrix.data(),
+                                      default_value_dim,
                                       outputs.data(), value_size,
                                       thread_task_range[i].first,
                                       thread_task_range[i].second);
@@ -201,11 +210,11 @@ void thread_lookup(
     const int64* input_batch,
     float** outputs, int value_size,
     int start, int end) {
-  ValuePtr<float>* value_ptr = nullptr;
+  void* value_ptr = nullptr;
 	bool is_filter = false;
   for (int i = start; i < end; i++) {
     ev->LookupKey(input_batch[i], &value_ptr);
-    auto val = ev->flat(value_ptr, input_batch[i]);
+    auto val = ev->flat(value_ptr);
     memcpy(outputs[i], &val(0), sizeof(float) * value_size);
   }
 }
@@ -293,7 +302,7 @@ TEST(EmbeddingVariablePerformanceTest, TestLookup) {
 		}
 	}
   auto ev = CreateEmbeddingVar(value_size, default_value, default_value_dim);
-  ValuePtr<float>* value_ptr = nullptr;
+  void* value_ptr = nullptr;
   bool is_filter = false;
   for (int i = 0; i < hot_ids_list.size(); i++) {
     ev->LookupOrCreateKey(hot_ids_list[i], &value_ptr, &is_filter, false);
@@ -339,13 +348,13 @@ void PerfSave(Tensor& default_value,
       value_size, default_value,
       default_value_dim, 0, steps_to_live,
       l2_weight_threshold);
-  ValuePtr<float>* value_ptr = nullptr;
+  void* value_ptr = nullptr;
   bool is_filter = false;
   srand((unsigned)time(NULL));
 
   for (int i = 0; i < id_list.size(); i++) {
     ev->LookupOrCreateKey(id_list[i], &value_ptr, &is_filter, false);
-    ev->flat(value_ptr, id_list[i]);
+    ev->flat(value_ptr);
     int64 global_step = rand() % 100;
     ev->UpdateVersion(value_ptr, global_step);
   }

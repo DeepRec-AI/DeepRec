@@ -23,9 +23,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 
 namespace tensorflow {
-template <class V>
-class ValuePtr;
-
 namespace embedding {
 
 template <class K, class V>
@@ -45,7 +42,7 @@ class DenseHashMap : public KVInterface<K, V> {
     delete []hash_map_;
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
+  Status Lookup(K key, void** value_ptr) override {
     int64 l_id = std::abs(key)%partition_num_;
     spin_rd_lock l(hash_map_[l_id].mu);
     auto iter = hash_map_[l_id].hash_map.find(key);
@@ -70,7 +67,7 @@ class DenseHashMap : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
+  Status Insert(K key, const void* value_ptr) override {
     int64 l_id = std::abs(key)%partition_num_;
     spin_wr_lock l(hash_map_[l_id].mu);
     auto iter = hash_map_[l_id].hash_map.find(key);
@@ -80,8 +77,8 @@ class DenseHashMap : public KVInterface<K, V> {
           "already exists Key: ", key, " in DenseHashMap.");
     } else {
       auto iter = hash_map_[l_id].hash_map.insert(
-        std::move(std::pair<K, ValuePtr<V>*>(key,
-            const_cast<ValuePtr<V>*>(value_ptr))));
+        std::move(std::pair<K, void*>(key,
+            const_cast<void*>(value_ptr))));
       return Status::OK();
     }
   }
@@ -109,7 +106,7 @@ class DenseHashMap : public KVInterface<K, V> {
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>* >* value_ptr_list) override {
+      std::vector<void*>* value_ptr_list) override {
     dense_hash_map hash_map_dump[partition_num_];
     for (int i = 0; i< partition_num_; i++) {
       spin_rd_lock l(hash_map_[i].mu);
@@ -132,7 +129,7 @@ class DenseHashMap : public KVInterface<K, V> {
   const int partition_num_ = 1000;
   struct dense_hash_map {
     mutable easy_spinrwlock_t mu = EASY_SPINRWLOCK_INITIALIZER;
-    google::dense_hash_map<K, ValuePtr<V>* > hash_map;
+    google::dense_hash_map<K, void* > hash_map;
   };
   dense_hash_map* hash_map_;
 };

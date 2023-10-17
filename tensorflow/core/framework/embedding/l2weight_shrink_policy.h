@@ -19,28 +19,23 @@ limitations under the License.
 
 namespace tensorflow {
 
-template<typename V>
-class ValuePtr;
-
 namespace embedding {
 template<typename K, typename V>
 class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
  public:
   L2WeightShrinkPolicy(float l2_weight_threshold,
                        int64 index,
-                       int64 offset,
-                       Allocator* alloc,
+                       FeatureDescriptor<V>* feat_desc,
                        KVInterface<K, V>* kv)
       : index_(index),
-        offset_(offset),
         kv_(kv),
         l2_weight_threshold_(l2_weight_threshold),
-        ShrinkPolicy<K, V>(alloc) {}
+        ShrinkPolicy<K, V>(feat_desc) {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(L2WeightShrinkPolicy);
 
   void Shrink(std::vector<K>& key_list,
-              std::vector<ValuePtr<V>*>& value_list,
+              std::vector<void*>& value_list,
               const ShrinkArgs& shrink_args) override {
     ShrinkPolicy<K, V>::ReleaseValuePtrs();
     FilterToDelete(shrink_args.value_len,
@@ -50,9 +45,9 @@ class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
  private:
   void FilterToDelete(int64 value_len,
                       std::vector<K>& key_list,
-                      std::vector<ValuePtr<V>*>& value_list) {
+                      std::vector<void*>& value_list) {
     for (int64 i = 0; i < key_list.size(); ++i) {
-      V* val = value_list[i]->GetValue(index_, offset_);
+      V* val = ShrinkPolicy<K, V>::feat_desc_->GetEmbedding(value_list[i], index_);
       if (val != nullptr) {
         V l2_weight = (V)0.0;
         for (int64 j = 0; j < value_len; j++) {
@@ -61,7 +56,7 @@ class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
         l2_weight *= (V)0.5;
         if (l2_weight < (V)l2_weight_threshold_) {
           kv_->Remove(key_list[i]);
-          value_list[i] = (ValuePtr<V>*)ValuePtrStatus::IS_DELETED;
+          value_list[i] = (void*)ValuePtrStatus::IS_DELETED;
           ShrinkPolicy<K, V>::EmplacePointer(value_list[i]);
         }
       }
@@ -70,7 +65,7 @@ class L2WeightShrinkPolicy : public ShrinkPolicy<K, V> {
 
  private:
   int64 index_;
-  int64 offset_;
+  //int64 offset_;
   KVInterface<K, V>* kv_;
   float l2_weight_threshold_;
 };

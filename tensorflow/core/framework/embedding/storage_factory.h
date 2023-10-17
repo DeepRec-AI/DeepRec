@@ -16,7 +16,6 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_STORAGE_FACTORY_H_
 
 #include "tensorflow/core/framework/embedding/config.pb.h"
-#include "tensorflow/core/framework/embedding/layout_creator.h"
 #include "tensorflow/core/framework/embedding/dram_leveldb_storage.h"
 #include "tensorflow/core/framework/embedding/dram_pmem_storage.h"
 #include "tensorflow/core/framework/embedding/dram_ssd_storage.h"
@@ -34,50 +33,41 @@ class StorageFactory {
  public:
   template<typename K, typename V>
   static Storage<K, V>* Create(const StorageConfig& sc,
-      Allocator* gpu_allocator, const string& name) {
-    auto layout_creator = LayoutCreatorFactory::Create<V>(sc);
-
+      Allocator* gpu_allocator, FeatureDescriptor<V>* feat_desc,
+      const string& name) {
     switch (sc.type) {
       case StorageType::DRAM:
-        return new DramStorage<K, V>(sc, ev_allocator(),
-            layout_creator, new LocklessHashMap<K, V>());
+        return new DramStorage<K, V>(sc, feat_desc);
       case StorageType::PMEM_MEMKIND:
-        return new PmemMemkindStorage<K, V>(sc, pmem_allocator(),
-            layout_creator);
+        feat_desc->SetAllocator(pmem_allocator());
+        return new PmemMemkindStorage<K, V>(sc, feat_desc);
       case StorageType::PMEM_LIBPMEM:
-        return new PmemLibpmemStorage<K, V>(sc,
-            experimental_pmem_allocator(sc.path, sc.size[0]),
-            layout_creator);
+        feat_desc->SetAllocator(
+            experimental_pmem_allocator(sc.path, sc.size[0]));
+        return new PmemLibpmemStorage<K, V>(sc, feat_desc);
       case StorageType::DRAM_PMEM:
-        return new DramPmemStorage<K, V>(sc, ev_allocator(),
-            experimental_pmem_allocator(sc.path, sc.size[0]),
-            layout_creator, name);
+        return new DramPmemStorage<K, V>(sc,
+            feat_desc, name);
       case StorageType::LEVELDB:
       case StorageType::DRAM_LEVELDB:
-        return new DramLevelDBStore<K, V>(sc, ev_allocator(),
-            layout_creator, name);
+        return new DramLevelDBStore<K, V>(sc, feat_desc, name);
       case StorageType::SSDHASH:
       case StorageType::DRAM_SSDHASH:
-        return new DramSsdHashStorage<K, V>(sc, ev_allocator(),
-            layout_creator, name);
+        return new DramSsdHashStorage<K, V>(sc, feat_desc, name);
       case StorageType::HBM:
 #if GOOGLE_CUDA
-        return new HbmStorage<K, V>(sc, gpu_allocator,
-            layout_creator);
+        return new HbmStorage<K, V>(sc, gpu_allocator, feat_desc);
 #endif  // GOOGLE_CUDA
       case StorageType::HBM_DRAM:
 #if GOOGLE_CUDA
-        return new HbmDramStorage<K, V>(sc, gpu_allocator,
-        ev_allocator(), layout_creator, name);
+        return new HbmDramStorage<K, V>(sc, gpu_allocator, feat_desc, name);
 #endif  // GOOGLE_CUDA
       case StorageType::HBM_DRAM_SSDHASH:
 #if GOOGLE_CUDA
-        return new HbmDramSsdStorage<K, V>(sc, gpu_allocator,
-            ev_allocator(), layout_creator, name);
+        return new HbmDramSsdStorage<K, V>(sc, gpu_allocator, feat_desc, name);
 #endif  // GOOGLE_CUDA
       default:
-        return new DramStorage<K, V>(sc, ev_allocator(),
-            layout_creator, new LocklessHashMap<K, V>());
+        return new DramStorage<K, V>(sc, feat_desc);
     }
   }
 };

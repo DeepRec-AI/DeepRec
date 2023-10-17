@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/filter_policy.h"
 #include "tensorflow/core/framework/embedding/nullable_filter_policy.h"
 
-
 namespace tensorflow {
 namespace embedding{
 template <class K, class V>
@@ -34,22 +33,23 @@ class FilterFactory {
   template<typename K, typename V, typename EV>
   static FilterPolicy<K, V, EV>* CreateFilter(
       const EmbeddingConfig& config, EV* ev,
-      embedding::Storage<K, V>* storage) {
+      embedding::Storage<K, V>* storage,
+      embedding::FeatureDescriptor<V>* feat_desc) {
     if (config.filter_freq > 0) {
       if (config.kHashFunc != 0) {
         return new BloomFilterPolicy<K, V, EV>(
-            config, ev);
+            config, ev, feat_desc);
       } else {
         return new CounterFilterPolicy<K, V, EV>(
-            config, ev);
+            config, ev, feat_desc);
       }
     } else {
       return new NullableFilterPolicy<K, V, EV>(
-          config, ev, storage);
+          config, ev, storage, feat_desc);
     }
   }
 };
 
-} // tensorflow
+} //namespace tensorflow
 
 #endif // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_FILTER_FACTORY_H_

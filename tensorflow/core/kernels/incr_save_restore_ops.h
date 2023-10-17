@@ -225,9 +225,9 @@ class IncrEVValueDumpIterator : public  DumpIterator<T> {
       keys_idx_++;
       col_idx_ = 0;
     }
-    ValuePtr<T>* value_ptr = NULL;
+    void* value_ptr = NULL;
     TF_CHECK_OK(emb_var_->LookupOrCreateKey(*keys_iter_, &value_ptr));
-    return emb_var_->flat(value_ptr, *keys_iter_)(col_idx_++);
+    return emb_var_->flat(value_ptr)(col_idx_++);
   }
 
  private:

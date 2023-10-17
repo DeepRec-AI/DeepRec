@@ -40,9 +40,6 @@ using GPUDevice = Eigen::GpuDevice;
 template <class K, class V>
 class CheckpointLoader;
 
-template <class V>
-class ValuePtr;
-
 template <class K, class V>
 class EmbeddingVar;
 
@@ -57,9 +54,6 @@ class BundleReader;
 
 template<typename Device>
 struct EmbeddingVarContext;
-namespace {
-  const int kSavedPartitionNum = 1000;
-}
 namespace embedding {
 
 template<typename K, typename V>
@@ -67,42 +61,40 @@ class Storage {
  friend class CheckpointLoader<K, V>;
  public:
   explicit Storage(const StorageConfig& storage_config)
-      : storage_config_(storage_config) {}
+      : storage_config_(storage_config) {
+    initialize_value_.resize(storage_config.embedding_config.slot_num + 1);    
+  }
   virtual ~Storage() {}
   TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
-  virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
+  virtual Status Get(K key, void** value_ptr) = 0;
 #if GOOGLE_CUDA
   virtual void BatchGet(const EmbeddingVarContext<GPUDevice>& ctx,
                         const K* key,
-                        ValuePtr<V>** value_ptr_list,
-                        int64 num_of_keys,
-                        int64 value_len) {}
+                        void** value_ptr_list,
+                        int64 num_of_keys) {}
 
   virtual void BatchGetOrCreate(
       const EmbeddingVarContext<GPUDevice>& ctx,
       const K* key,
-      ValuePtr<V>** value_ptr_list,
+      void** value_ptr_list,
       int64 num_of_keys,
       int64 value_len,
       std::vector<std::list<int64>>& not_found_cursor_list) {}
 #endif //GOOGLE_CUDA
   virtual Status Contains(K key) = 0;
-  virtual void Insert(K key, ValuePtr<V>** value_ptr,
-                      size_t alloc_len, bool to_dram = false) = 0;
-  virtual void Insert(K key, ValuePtr<V>* value_ptr) = 0;
-  virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
+  virtual void CreateAndInsert(K key, void** value_ptr,
+                               bool to_dram=false) = 0;
+  virtual void Insert(K key, void** value_ptr) = 0;
+  virtual void Init() {}
   virtual void SetValueLen(int64 value_len) {}
-  virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size) = 0;
-  virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, CopyBackFlag &need_copyback) = 0;
+  virtual Status GetOrCreate(K key, void** value_ptr) = 0;
   virtual int LookupTier(K key) const = 0;
   virtual Status Remove(K key) = 0;
   virtual int64 Size() const = 0;
   virtual int64 Size(int level) const = 0;
   virtual Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>*>* value_ptr_list) = 0;
+      std::vector<void*>* value_ptr_list) = 0;
   virtual Status Save(
       const string& tensor_name,
       const string& prefix,
@@ -113,7 +105,7 @@ class Storage {
       V* default_value) = 0;
 
   virtual Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) = 0;
+      const std::vector<void*>& value_ptrs) = 0;
 
   virtual Status Eviction(K* evict_ids, int64 evict_size) = 0;
 
@@ -121,7 +113,7 @@ class Storage {
       int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
-      ValuePtr<V> **gpu_value_ptrs,
+      void **gpu_value_ptrs,
       V* memcpy_buffer_gpu,
       se::Stream* compute_stream,
       EventMgr* event_mgr,
@@ -149,25 +141,11 @@ class Storage {
       Allocator* alloc,
       int64 value_len,
       int64 block_size) = 0;
-  virtual void AllocateMemoryForNewFeatures(
-      const std::vector<ValuePtr<V>*>& value_ptr_list) = 0;
-  virtual void AllocateMemoryForNewFeatures(
-      ValuePtr<V>** value_ptr_list, int64 num_of_value_ptrs) = 0;
  
   inline mutex* get_mutex() { return &mu_; }
   inline int64 GetAllocLen() { return alloc_len_; }
   inline int64 GetOffset(int64 index) { return alloc_len_ * index; }
   inline int64 GetTotalDims() { return total_dims_; }
-  inline int64 ComputeAllocLen(int64 value_len) {
-    if (LayoutType::COMPACT == storage_config_.layout_type) {
-      return value_len;
-    } else {
-      return (value_len * sizeof(V) % 16 == 0)
-          ? value_len
-          : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
-    }
-  }
-  inline LayoutType GetLayoutType() { return storage_config_.layout_type; }
   inline embedding::StorageType GetStorageType() { return storage_config_.type; }
   inline std::string GetStoragePath() { return storage_config_.path; }
   inline embedding::CacheStrategy
@@ -183,7 +161,7 @@ class Storage {
   }
 
   inline void Insert(const std::vector<K>& keys,
-                     ValuePtr<V>** value_ptrs) {
+                     void** value_ptrs) {
     for (size_t i = 0; i < keys.size(); i++) {
       Insert(keys[i], value_ptrs[i]);
     }
@@ -211,6 +189,13 @@ class Storage {
                                     reset_version, reader);
     restorer.RestoreCkpt(emb_config, device);
   };
+  
+  virtual void UpdateValuePtr(K key, void* new_value_ptr,
+                              void* old_value_ptr) = 0;
+  
+  virtual void Import(K key, V* value,
+                      int64 freq, int64 version,
+                      int emb_index) = 0;
 
  protected:
   virtual Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
@@ -227,12 +212,7 @@ class Storage {
                             const std::string& ssd_emb_file_name,
                             EmbeddingVar<K, V>* ev,
                             RestoreSSDBuffer<K>& restore_buff) {
-    int64 alloc_len = Storage<K, V>::ComputeAllocLen(value_len);
-    auto* alloc = ev->GetAllocator();
     for (int64 i = 0; i < restore_buff.num_of_keys; i++) {
-      ValuePtr<V>* value_ptr = nullptr;
-      ev->LookupOrCreateKey(restore_buff.key_list_buf[i], &value_ptr);
-      value_ptr->SetInitialized(emb_index);
       int64 file_id = restore_buff.key_file_id_list_buf[i];
       int64 key_offset = restore_buff.key_offset_list_buf[i];
       // Read data from embedding files on SSD. Data are stored in
@@ -240,32 +220,29 @@ class Storage {
       std::stringstream ss;
       ss << ssd_emb_file_name << "/" << file_id << ".emb";
       int fd = open(ss.str().data(), O_RDONLY);
+      EmbeddingConfig& emb_config = storage_config_.embedding_config;
+      FeatureDescriptor<V> normal_feat_desc(
+          emb_config.block_num, emb_config.slot_num + 1,
+          ev_allocator(), StorageType::DRAM, true,
+          true, {false, 0});
+      void* value_ptr = normal_feat_desc.Allocate();
       char* file_addr = (char*)mmap(nullptr,
-                                    sizeof(FixedLengthHeader) +
-                                    alloc_len * sizeof(V) * (emb_slot_num + 1) +
+                                    normal_feat_desc.data_bytes() +
                                     key_offset,
                                     PROT_READ, MAP_PRIVATE, fd, 0);
-
-      NormalContiguousValuePtr<V> tmp_value_ptr(alloc,
-                                                alloc_len * (emb_slot_num + 1));
-      void* ptr = tmp_value_ptr.GetPtr();
-      memcpy(ptr, file_addr + key_offset,
-             sizeof(FixedLengthHeader) +
-              alloc_len * sizeof(V) * (emb_slot_num + 1));
+      memcpy(value_ptr, file_addr + key_offset,
+             normal_feat_desc.data_bytes());
       munmap(file_addr,
-             sizeof(FixedLengthHeader) +
-             alloc_len * sizeof(V) * (emb_slot_num + 1) +
+             normal_feat_desc.data_bytes() +
              key_offset);
       close(fd);
       // Copy Data to ValuePtr, data of slots are set by primary here.
-      for (int j = 0; j < emb_slot_num + 1; j++) {
-        V* value = tmp_value_ptr.GetValue(j, alloc_len * j);
-        if (value != nullptr) {
-          value_ptr->GetOrAllocate(alloc, value_len, value, j, alloc_len * j);
-        }
-      }
-      value_ptr->SetFreq(tmp_value_ptr.GetFreq());
-      value_ptr->SetStep(tmp_value_ptr.GetStep());
+      int64 import_freq = normal_feat_desc.GetFreq(value_ptr);
+      int64 import_version = normal_feat_desc.GetVersion(value_ptr);
+      V* value = normal_feat_desc.GetEmbedding(value_ptr, emb_index);
+      Import(restore_buff.key_list_buf[i], value,
+             import_freq, import_version, emb_index);
+      normal_feat_desc.Deallocate(value_ptr);
     }
     return Status::OK();
   }
@@ -273,10 +250,11 @@ class Storage {
  private:
   void GeneratePartitionedCkptData(
       const std::vector<K>& key_list,
-      const std::vector<ValuePtr<V>*>& value_ptr_list,
+      const std::vector<void*>& value_ptr_list,
       EmbeddingVarCkptData<K, V>* partitioned_ckpt_data,
       const EmbeddingConfig& emb_config,
-      V* default_value) {
+      V* default_value,
+      FeatureDescriptor<V>* feat_desc) {
     std::vector<EmbeddingVarCkptData<K, V>>
         ev_ckpt_data_parts(kSavedPartitionNum);
 
@@ -293,7 +271,43 @@ class Storage {
           ev_ckpt_data_parts[part_id].Emplace(
               key_list[i], value_ptr_list[i],
               emb_config, default_value,
-              GetOffset(emb_config.emb_index),
+              feat_desc,
+              is_save_freq,
+              is_save_version,
+              save_unfiltered_features);
+          break;
+        }
+      }
+    }
+
+    partitioned_ckpt_data->SetWithPartition(ev_ckpt_data_parts);
+  }
+
+  void GeneratePartitionedCkptData(
+      const std::vector<K>& key_list,
+      const std::vector<void*>& value_ptr_list,
+      EmbeddingVarCkptData<K, V>* partitioned_ckpt_data,
+      const EmbeddingConfig& emb_config,
+      V* default_value,
+      const std::vector<FeatureDescriptor<V>*>& feat_desc) {
+    std::vector<EmbeddingVarCkptData<K, V>>
+        ev_ckpt_data_parts(kSavedPartitionNum);
+
+    bool save_unfiltered_features = true;
+    TF_CHECK_OK(ReadBoolFromEnvVar(
+        "TF_EV_SAVE_FILTERED_FEATURES", true, &save_unfiltered_features));
+
+    bool is_save_freq = emb_config.is_save_freq();
+    bool is_save_version = emb_config.is_save_version();
+
+    for (int64 i = 0; i < key_list.size(); i++) {
+      for (int part_id = 0; part_id < kSavedPartitionNum; part_id++) {
+        if (key_list[i] % kSavedPartitionNum == part_id) {
+          int feat_desc_type = (int64)value_ptr_list[i] >> kDramFlagOffset;
+          ev_ckpt_data_parts[part_id].Emplace(
+              key_list[i], value_ptr_list[i],
+              emb_config, default_value,
+              feat_desc[feat_desc_type],
               is_save_freq,
               is_save_version,
               save_unfiltered_features);
@@ -333,12 +347,33 @@ class Storage {
       int64 value_len,
       V* default_value,
       const std::vector<K>& key_list,
-      const std::vector<ValuePtr<V>*>& value_ptr_list,
+      const std::vector<void*>& value_ptr_list,
+      FeatureDescriptor<V>* feat_desc,
       ValueIterator<V>* value_iter = nullptr) {
     EmbeddingVarCkptData<K, V> partitioned_ckpt_data;
     GeneratePartitionedCkptData(key_list, value_ptr_list,
                                 &partitioned_ckpt_data, emb_config,
-                                default_value);
+                                default_value, feat_desc);
+    Status s =
+        partitioned_ckpt_data.ExportToCkpt(
+            tensor_name, writer, value_len, value_iter);
+    return Status::OK();
+  }
+
+  Status SaveToCheckpoint(
+      const string& tensor_name,
+      BundleWriter* writer,
+      const EmbeddingConfig& emb_config,
+      int64 value_len,
+      V* default_value,
+      const std::vector<K>& key_list,
+      const std::vector<void*>& value_ptr_list,
+      const std::vector<FeatureDescriptor<V>*>& feat_desc,
+      ValueIterator<V>* value_iter = nullptr) {
+    EmbeddingVarCkptData<K, V> partitioned_ckpt_data;
+    GeneratePartitionedCkptData(key_list, value_ptr_list,
+                                &partitioned_ckpt_data, emb_config,
+                                default_value, feat_desc);
     Status s =
         partitioned_ckpt_data.ExportToCkpt(
             tensor_name, writer, value_len, value_iter);
@@ -366,6 +401,7 @@ class Storage {
 
   mutex mu_;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+  std::vector<V*> initialize_value_;
 };
 } // embedding
 } // tensorflow

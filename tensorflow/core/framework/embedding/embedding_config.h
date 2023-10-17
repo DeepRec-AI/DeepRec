@@ -23,7 +23,6 @@ struct EmbeddingConfig {
   DataType counter_type;
   int64 default_value_dim;
   float default_value_no_permission;
-  int normal_fix_flag;
   bool record_freq;
   bool record_version;
   bool is_inference;
@@ -37,7 +36,6 @@ struct EmbeddingConfig {
                   int64 filter_freq = 0,
                   int64 max_freq = 999999,
                   float l2_weight_threshold = -1.0,
-                  const std::string& layout = "normal",
                   int64 max_element_size = 0,
                   float false_positive_probability = -1.0,
                   DataType counter_type = DT_UINT64,
@@ -58,7 +56,6 @@ struct EmbeddingConfig {
       counter_type(counter_type),
       default_value_dim(default_value_dim),
       default_value_no_permission(default_value_no_permission),
-      normal_fix_flag(0),
       record_freq(record_freq),
       record_version(record_version),
       is_inference(is_inference) {
@@ -69,10 +66,6 @@ struct EmbeddingConfig {
     } else {
       kHashFunc = 0;
       num_counter = 0;
-    }
-    if (layout == "normal_contiguous" ||
-        layout == "normal_contiguous_gpu") {
-      normal_fix_flag = 1;
     }
   }
 
@@ -105,19 +98,11 @@ struct EmbeddingConfig {
   }
 
   bool is_save_freq() const {
-    return filter_freq != 0 ||
-           record_freq ||
-           normal_fix_flag == 1;
+    return filter_freq != 0 || record_freq;
   }
 
   bool is_save_version() const {
     return steps_to_live != 0 || record_version;
-  }
-
-  int64 total_num(int alloc_len) {
-    return block_num *
-           (1 + (1 - normal_fix_flag) * slot_num) *
-           (1 + normal_fix_flag * (alloc_len * (slot_num + 1) - 1));
   }
 
   int64 get_filter_freq() {

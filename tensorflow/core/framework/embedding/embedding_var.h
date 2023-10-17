@@ -30,7 +30,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/embedding_var_context.h"
 #include "tensorflow/core/framework/embedding/embedding_var_restore.h"
-#include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/framework/embedding/filter_factory.h"
 #include "tensorflow/core/framework/embedding/gpu_hash_map_kv.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
@@ -57,7 +56,8 @@ class EmbeddingVar : public ResourceBase {
   EmbeddingVar(const string& name,
                embedding::Storage<K, V>* storage,
                EmbeddingConfig emb_cfg,
-               Allocator* alloc):
+               Allocator* alloc,
+               embedding::FeatureDescriptor<V>* feat_desc):
       name_(name),
       storage_(storage),
       default_value_(nullptr),
@@ -65,27 +65,8 @@ class EmbeddingVar : public ResourceBase {
       value_len_(0),
       alloc_(alloc),
       default_value_alloc_(alloc),
-      emb_config_(emb_cfg) {
-    if (IsMultiLevel() || emb_config_.record_freq) {
-      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int64 freq, int64 filter_freq) {
-        value_ptr->AddFreq(freq);
-      };
-    } else if (emb_config_.is_counter_filter()) {
-      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int64 freq, int64 filter_freq) {
-        if (value_ptr->GetFreq() < filter_freq)
-          value_ptr->AddFreq(freq);
-      };
-    } else {
-      add_freq_fn_ = [](ValuePtr<V>* value_ptr, int64 freq, int64 filter_freq) {};
-    }
-    if (emb_config_.steps_to_live != 0 || emb_config_.record_version) {
-      update_version_fn_ = [](ValuePtr<V>* value_ptr, int64 gs) {
-        value_ptr->SetStep(gs);
-      };
-    } else {
-      update_version_fn_ = [](ValuePtr<V>* value_ptr, int64 gs) {};
-    }
-  }
+      emb_config_(emb_cfg),
+      feat_desc_(feat_desc) {}
 
   Status Init(const Tensor& default_tensor, int64 default_value_dim) {
     if (storage_ == nullptr) {
@@ -95,16 +76,10 @@ class EmbeddingVar : public ResourceBase {
 
     storage_type_ = storage_->GetStorageType();
     filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(
-        emb_config_, this, storage_);
+        emb_config_, this, storage_, feat_desc_);
     emb_config_.default_value_dim = default_value_dim;
     value_len_ =
         default_tensor.NumElements() / emb_config_.default_value_dim;
-
-    if (LayoutType::NORMAL_CONTIGUOUS == storage_->GetLayoutType() ||
-        LayoutType::NORMAL_CONTIGUOUS_GPU == storage_->GetLayoutType() ||
-        LayoutType::COMPACT == storage_->GetLayoutType()) {
-      storage_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
-    }
 
     if (storage_->IsUseHbm()) {
 #if GOOGLE_CUDA
@@ -115,12 +90,6 @@ class EmbeddingVar : public ResourceBase {
       dev_addr_buffer_size_ = 0;
       cudaMemcpy(default_value_, &default_tensor_flat(0),
           default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
-      storage_->
-          CreateEmbeddingMemoryPool(
-              alloc_,
-              emb_config_.total_num(
-                  storage_->GetAllocLen()),
-              1024 * 1024 * 64);
 #endif  // GOOGLE_CUDA
     } else if (storage_->IsSingleHbm()) {
 #if GOOGLE_CUDA
@@ -147,6 +116,14 @@ class EmbeddingVar : public ResourceBase {
             emb_config_.default_value_no_permission);
       }
     }
+    bool is_all_slots_initialized = 
+        feat_desc_->InitSlotInfo(
+            emb_config_.emb_index, value_len_,
+            std::pair<V*, int64>(
+                default_value_, emb_config_.default_value_dim));
+    if (is_all_slots_initialized) {
+      storage_->Init();
+    }
 
     return Status::OK();
   }
@@ -159,57 +136,92 @@ class EmbeddingVar : public ResourceBase {
     return is_initialized_;
   }
 
-  Status LookupKey(K key, ValuePtr<V>** value_ptr) {
+  Status LookupKey(K key, void** value_ptr) {
     return storage_->Get(key, value_ptr);
   }
 
   void BatchLookupKey(const EmbeddingVarContext<GPUDevice>& ctx,
                       const K* keys,
-                      ValuePtr<V>** value_ptr_list,
+                      void** value_ptr_list,
                       int64 num_of_keys) {
-    storage_->BatchGet(ctx, keys, value_ptr_list, num_of_keys,
-                       emb_config_.total_num(storage_->GetAllocLen()));
+    storage_->BatchGet(ctx, keys, value_ptr_list, num_of_keys);
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr,
+  Status LookupOrCreateKey(K key, void** value_ptr,
                            bool* is_filter, bool indices_as_pointer,
                            int64 count = 1) {
     if (indices_as_pointer) {
-      *value_ptr = (ValuePtr<V>*)key;
-      *is_filter = (*value_ptr != nullptr);
+      *value_ptr = (void*)key;
+      *is_filter = filter_->is_admit(key, *value_ptr);
       return Status::OK();
     } else {
       Status s = filter_->LookupOrCreateKey(key, value_ptr, is_filter, count);
-      add_freq_fn_(*value_ptr, count, emb_config_.filter_freq);
       return s;
     }
   }
 
   Status Insert(K key, V* value) {
-    ValuePtr<V>* value_ptr = nullptr;
+    void* value_ptr = nullptr;
     CreateKey(key, &value_ptr, true);
-    LookupOrCreateEmb(value_ptr, value);
+    feat_desc_->SetValue(value_ptr, emb_config_.emb_index, value);
     return Status::OK();
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr) {
-    Status s = storage_->GetOrCreate(key, value_ptr,
-        emb_config_.total_num(storage_->GetAllocLen()));
+  Status LookupOrCreateKey(const EmbeddingVarContext<GPUDevice>& context,
+                           const K* keys,
+                           void** value_ptrs,
+                           int64 num_of_keys,
+                           int64* indices_counts,
+                           bool indices_as_pointer = false) {
+    if (indices_as_pointer) {
+      auto lookup_key_and_set_version_fn = [keys, value_ptrs]
+          (int64 start, int64 limit) {
+        for (int i = start; i < limit; i++) {
+          value_ptrs[i] = (void*)keys[i];
+        }
+      };
+      const int64 unit_cost = 1000; //very unreliable estimate for cost per step.
+      auto worker_threads = context.worker_threads;
+      Shard(worker_threads->num_threads,
+            worker_threads->workers, num_of_keys, unit_cost,
+            lookup_key_and_set_version_fn);
+    } else {
+      filter_->BatchLookupOrCreateKey(context, keys, value_ptrs, num_of_keys);
+    }
+
+    if (indices_counts != nullptr) {
+      auto add_freq_fn = [this, value_ptrs, indices_counts]
+          (int64 start, int64 limit) {
+        for (int i = start; i < limit; i++) {
+          feat_desc_->AddFreq(value_ptrs[i], indices_counts[i]);
+        }
+      };
+      const int64 unit_cost = 1000; //very unreliable estimate for cost per step.
+      auto worker_threads = context.worker_threads;
+      Shard(worker_threads->num_threads,
+            worker_threads->workers, num_of_keys, unit_cost,
+            add_freq_fn);
+    }
+    return Status::OK();
+  }
+
+
+  Status LookupOrCreateKey(K key, void** value_ptr) {
+    Status s = storage_->GetOrCreate(key, value_ptr);
     TF_CHECK_OK(s);
     return s;
   }
 
-  void CreateKey(K key, ValuePtr<V>** value_ptr, bool to_dram) {
-    storage_->Insert(key, value_ptr,
-        emb_config_.total_num(storage_->GetAllocLen()), to_dram);
+  void CreateKey(K key, void** value_ptr, bool to_dram) {
+    storage_->CreateAndInsert(key, value_ptr, to_dram);
   }
 
-  void UpdateVersion(ValuePtr<V>* value_ptr, int64 gs) {
-    update_version_fn_(value_ptr, gs);
+  void UpdateVersion(void* value_ptr, int64 gs) {
+    feat_desc_->UpdateVersion(value_ptr, gs);
   }
 
   void BatchCommit(const std::vector<K>& keys,
-                   const std::vector<ValuePtr<V>*>& value_ptrs) {
+                   const std::vector<void*>& value_ptrs) {
     TF_CHECK_OK(storage_->BatchCommit(keys, value_ptrs));
   }
 
@@ -218,9 +230,9 @@ class EmbeddingVar : public ResourceBase {
   }
 
   int64 GetVersion(K key) {
-    ValuePtr<V>* value_ptr = nullptr;
+    void* value_ptr = nullptr;
     TF_CHECK_OK(LookupOrCreateKey(key, &value_ptr));
-    return value_ptr->GetStep();
+    return feat_desc_->GetVersion(value_ptr);
   }
 
   int64 GetFreq(K key) {
@@ -261,11 +273,11 @@ class EmbeddingVar : public ResourceBase {
         (int64 start, int64 limit) {
       for (int64 i = start; i < limit; ++i) {
         V* default_v = default_value + i * value_len_;
-        ValuePtr<V>* value_ptr = nullptr;
+        void* value_ptr = nullptr;
         filter_->LookupOrCreate(
             keys[i], output + i * value_len_, default_v, &value_ptr, 1,
             default_value_no_permission_);
-        add_freq_fn_(value_ptr, 1, emb_config_.filter_freq);
+        feat_desc_->AddFreq(value_ptr, 1);
       }
     };
     auto worker_threads = context.worker_threads;
@@ -276,7 +288,7 @@ class EmbeddingVar : public ResourceBase {
 
   void GetOrCreateKey(const EmbeddingVarContext<CPUDevice>& context,
                       const Tensor& keys_tensor,
-                      ValuePtr<V>** value_ptrs,
+                      void** value_ptrs,
                       int64 num_of_keys) {
     const K* keys = (K*)keys_tensor.data();
     auto do_work = [this, keys, value_ptrs] (int64 start, int64 limit) {
@@ -295,7 +307,7 @@ class EmbeddingVar : public ResourceBase {
 
   void GatherEmbeddings(const EmbeddingVarContext<CPUDevice>& context,
                         const Tensor& keys_tensor,
-                        ValuePtr<V>** value_ptrs,
+                        void** value_ptrs,
                         V* output,
                         int64 num_of_keys) {
     const K* keys = (K*)keys_tensor.data();
@@ -303,13 +315,10 @@ class EmbeddingVar : public ResourceBase {
         (int64 start, int64 limit) {
       for (int64 i = start; i < limit; ++i) {
         bool is_admit = filter_->is_admit(keys[i], value_ptrs[i]);
-        add_freq_fn_(value_ptrs[i], 1, emb_config_.filter_freq);
         V* value = nullptr;
         if (is_admit) {
-          V* default_v =
-              default_value_ +
-                  (keys[i] % emb_config_.default_value_dim) * value_len_;
-          value = LookupOrCreateEmb(value_ptrs[i], default_v);
+          value = feat_desc_->GetEmbedding(
+              value_ptrs[i], emb_config_.emb_index);
         } else {
           value = default_value_no_permission_;
         }
@@ -341,8 +350,9 @@ class EmbeddingVar : public ResourceBase {
 
   void GetOrCreateKey(const EmbeddingVarContext<GPUDevice>& context,
                       const Tensor& keys_tensor,
-                      ValuePtr<V>** value_ptrs,
-                      int64 num_of_keys) {
+                      void** value_ptrs,
+                      int64 num_of_keys,
+                      bool indices_as_pointer = false) {
     const K* keys = (K*)keys_tensor.data();
     filter_->BatchLookupOrCreateKey(context, keys, value_ptrs, num_of_keys);
     storage_->AddToCachePrefetchList(keys_tensor);
@@ -351,17 +361,17 @@ class EmbeddingVar : public ResourceBase {
   void BatchLookupOrCreateKey(
       const EmbeddingVarContext<GPUDevice>& context,
       const K* keys,
-      ValuePtr<V>** value_ptrs,
+      void** value_ptrs,
       int64 num_of_keys,
       std::vector<std::list<int64>>& not_found_cursor_list) {
     storage_->BatchGetOrCreate(context, keys, value_ptrs, num_of_keys,
-                               emb_config_.total_num(storage_->GetAllocLen()),
+                               value_len_,
                                not_found_cursor_list);
   }
 
   void GatherEmbeddings(const EmbeddingVarContext<GPUDevice>& context,
                         const Tensor& keys_tensor,
-                        ValuePtr<V>** value_ptrs,
+                        void** value_ptrs,
                         V* output,
                         int64 num_of_keys) {
     std::vector<V*> embedding_ptr(num_of_keys);
@@ -370,12 +380,10 @@ class EmbeddingVar : public ResourceBase {
         (int64 start, int64 limit) {
       for (int64 i = start; i < limit; ++i) {
         bool is_admit = filter_->is_admit(keys[i], value_ptrs[i]);
-        add_freq_fn_(value_ptrs[i], 1, emb_config_.filter_freq);
+        feat_desc_->AddFreq(value_ptrs[i], 1);
         if (is_admit) {
-          V* default_v =
-              default_value_ +
-                  (keys[i] % emb_config_.default_value_dim) * value_len_;
-          embedding_ptr[i] = LookupOrCreateEmb(value_ptrs[i], default_v);
+          embedding_ptr[i] = feat_desc_->GetEmbedding(
+              value_ptrs[i], emb_config_.emb_index);
         } else {
           embedding_ptr[i] = default_value_no_permission_;
         }
@@ -394,71 +402,7 @@ class EmbeddingVar : public ResourceBase {
 
     storage_->AddToCache(keys_tensor);
   }
-
-  void BatchLookupOrCreateEmb(
-      const EmbeddingVarContext<GPUDevice>& ctx,
-      V** var_ptr,
-      ValuePtr<V>** value_ptrs,
-      const K* indices,
-      int64 num_of_keys,
-      IntraThreadCopyIdAllocator* thread_copy_id_alloc) {
-    int num_worker_threads = ctx.worker_threads->num_threads;
-    std::vector<std::list<int64>> init_cursor_list(
-        num_worker_threads + 1);
-    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
-
-    auto do_work_get_ptrs = [this, value_ptrs, &init_cursor_list,
-        &thread_copy_id_alloc, main_thread_id, var_ptr] (int64 start, int64 limit) {
-      int copy_id =
-          thread_copy_id_alloc->GetCopyIdOfThread(main_thread_id);
-      for (int i = start; i < limit; i++) {
-        bool is_need_set_default_value = false;
-        var_ptr[i] = LookupOrCreateEmb(
-            value_ptrs[i], is_need_set_default_value);
-        if (is_need_set_default_value) {
-          init_cursor_list[copy_id].emplace_back(i);
-        }
-      }
-    };
-    const int64 unit_cost = 1000;
-    auto worker_threads = ctx.worker_threads;
-    Shard(worker_threads->num_threads,
-          worker_threads->workers,
-          num_of_keys, unit_cost, do_work_get_ptrs);
-
-    // Merge copies of init_cursor_list
-    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
-      if (init_cursor_list[i].size() > 0) {
-        init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                   init_cursor_list[i]);
-      }
-    }
-
-    auto stream = ctx.compute_stream;
-    auto event_mgr = ctx.event_mgr;
-
-    SetDefaultValueOfNewFeatures(
-        indices, num_of_keys,
-        init_cursor_list[0],
-        var_ptr, stream, event_mgr,
-        ctx.gpu_device);
-  }
 #endif
-
-  void LookupOrCreate(K key, V* val, V* default_v, int count = 1)  {
-    const V* default_value_ptr =
-      (default_v == nullptr) ? default_value_ : default_v;
-    ValuePtr<V>* value_ptr = nullptr;
-    filter_->LookupOrCreate(key, val, default_value_ptr, &value_ptr, count,
-                            default_value_no_permission_);
-    add_freq_fn_(value_ptr, count, emb_config_.filter_freq);
-  }
-
-  void BatchInitEmb(int64 size, V** memcpy_address, V* default_value,
-      bool* init_flags, int64 value_len) {
-    filter_->BatchInitEmb(size, memcpy_address, default_value,
-        init_flags, value_len);
-  }
 
 #if GOOGLE_CUDA
   void CopyEmbeddingsToBuffer(
@@ -467,71 +411,16 @@ class EmbeddingVar : public ResourceBase {
       se::Stream* compute_stream,
       EventMgr* event_mgr,
       const Eigen::GpuDevice& gpu_device);
-
-  void SetDefaultValueOfNewFeatures(
-      const K* keys, int64 size,
-      const std::list<int64>& init_cursor,
-      V** memcpy_address,
-      se::Stream* compute_stream,
-      EventMgr* event_mgr,
-      const Eigen::GpuDevice& gpu_device);
-
-  void CopyEmbeddingsFromCPUToGPU(
-      const K* keys,
-      const std::list<int64>& copyback_cursor,
-      V** memcpy_address,
-      se::Stream* compute_stream,
-      EventMgr* event_mgr,
-      const Eigen::GpuDevice& gpu_device,
-      const DeviceBase::CpuWorkerThreads* worker_threads,
-      int64* output_value_ptrs = nullptr);
-
-  void AllocateMemoryForNewFeatures(
-      V** memcpy_address,
-      const std::list<int64>& init_cursor) {
-    std::vector<ValuePtr<V>*> value_ptr_list;
-    for (auto it = init_cursor.cbegin();
-      it != init_cursor.cend(); ++it) {
-      ValuePtr<V>* value_ptr =
-          reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
-      value_ptr_list.emplace_back(value_ptr);
-    }
-    storage_->AllocateMemoryForNewFeatures(value_ptr_list);
-  }
 #endif  // GOOGLE_CUDA
 
-  V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {
-    return value_ptr->GetOrAllocate(alloc_, value_len_, default_v,
-        emb_config_.emb_index, storage_->GetOffset(
-          emb_config_.emb_index));
-  }
-
-  V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v,
-                       Allocator* alloc) {
-    return value_ptr->GetOrAllocate(alloc, value_len_, default_v,
-        emb_config_.emb_index, storage_->GetOffset(
-            emb_config_.emb_index));
-  }
-
-  V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, bool &need_initialize) {
-    return value_ptr->GetOrAllocate(alloc_, value_len_, nullptr,
-        emb_config_.emb_index,
-        storage_->GetOffset(emb_config_.emb_index),
-        need_initialize);
-  }
-
-  V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
-    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index,
-        storage_->GetOffset(emb_config_.primary_emb_index));
-    return primary_val;
-  }
-
-  typename TTypes<V>::Flat flat(ValuePtr<V>* value_ptr, int64 index) {
-    V* default_v =
-        default_value_ + (index % emb_config_.default_value_dim) * value_len_;
-    V* val = LookupOrCreateEmb(value_ptr, default_v);
+  typename TTypes<V>::Flat flat(void* value_ptr) {
+    V* val = feat_desc_->GetEmbedding(value_ptr, emb_config_.emb_index);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
+  }
+
+  V* GetValuePtr(void* ptr) {
+    return feat_desc_->GetEmbedding(ptr, emb_config_.emb_index);
   }
 
   int64 ValueLen() const {
@@ -602,25 +491,26 @@ class EmbeddingVar : public ResourceBase {
                    std::vector<V*>* value_list,
                    std::vector<int64>* version_list,
                    std::vector<int64>* freq_list) {
-    std::vector<ValuePtr<V>*> value_ptr_list;
+    std::vector<void*> value_ptr_list;
     storage_->GetSnapshot(key_list, &value_ptr_list);
     bool is_save_freq = emb_config_.is_save_freq();
     bool is_save_version = emb_config_.is_save_version();
     for (int64 i = 0; i < key_list->size(); i++) {
-      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index, 0);
-      if (val != nullptr) {
+      if (feat_desc_->IsAdmit(value_ptr_list[i])) {
+        V* val = feat_desc_->GetEmbedding(
+            value_ptr_list[i], emb_config_.emb_index);
         value_list->emplace_back(val);
       } else {
         value_list->emplace_back(default_value_);
       }
 
       if(is_save_version) {
-        int64 dump_version = value_ptr_list[i]->GetStep();
+        int64 dump_version = feat_desc_->GetVersion(value_ptr_list[i]);
         version_list->emplace_back(dump_version);
       }
 
       if(is_save_freq) {
-        int64 dump_freq = value_ptr_list[i]->GetFreq();
+        int64 dump_freq = feat_desc_->GetFreq(value_ptr_list[i]);
         freq_list->emplace_back(dump_freq);
       }
     }
@@ -632,6 +522,10 @@ class EmbeddingVar : public ResourceBase {
 
   embedding::Storage<K, V>* storage() {
     return storage_;
+  }
+
+  embedding::FeatureDescriptor<V>* feature_descriptor() {
+    return feat_desc_;
   }
 
   Status Shrink(embedding::ShrinkArgs& shrink_args) {
@@ -669,10 +563,6 @@ class EmbeddingVar : public ResourceBase {
   
   Allocator* GetAllocator() {
     return alloc_;
-  }
-
-  int64 GetAllocLen() {
-    return emb_config_.total_num(storage_->GetAllocLen());
   }
 
   V** GetBuffer(int64 size) {
@@ -756,16 +646,17 @@ class EmbeddingVar : public ResourceBase {
     return storage_->HashTable();
   }
 
- protected:
   FilterPolicy<K, V, EmbeddingVar<K, V>>* GetFilter() const {
     return filter_;
   }
 
+ protected:
   ~EmbeddingVar() override {
     // When dynamic dimension embedding is used,
     // there will be more than one primary slot
     if (emb_config_.is_primary() && emb_config_.primary_emb_index == 0) {
       delete storage_;
+      delete feat_desc_;
     }
     if (embedding::StorageType::HBM_DRAM == storage_type_) {
       alloc_->DeallocateRaw(dev_addr_buffer_);
@@ -804,35 +695,6 @@ class EmbeddingVar : public ResourceBase {
           value_len_ * sizeof(V), do_work);
   }
 
-  V* GetAddressOfGpuValuePtr(ValuePtr<V>* value_ptr,
-      int64 index,
-      bool copyback_flag,
-      std::list<int64>& init_cursor,
-      std::list<int64>& copyback_cursor) {
-    V* mem_addr = nullptr;
-    bool init_flag = false;
-    if (!copyback_flag) {
-      mem_addr = LookupOrCreateEmb(value_ptr, init_flag);
-    } else {
-      mem_addr = value_ptr->GetValue(0,0);
-      if (copyback_flag ==
-          embedding::CopyBackFlag::COPYBACK_AND_DESTROY) {
-        delete value_ptr;
-        // If the 64th bit of cursor is set to 1,
-        // the corresponding valueptr need to be deleted later.
-        int64 tmp = 1;
-        tmp = tmp << 63;
-        copyback_cursor.emplace_back(index | tmp);
-      } else {
-        copyback_cursor.emplace_back(index);
-      }
-    }
-    if (init_flag) {
-      init_cursor.emplace_back(index);
-    }
-    return mem_addr;
-  }
-
   std::string name_;
   bool is_initialized_ = false;
 
@@ -849,8 +711,7 @@ class EmbeddingVar : public ResourceBase {
   embedding::StorageType storage_type_;
   EmbeddingConfig emb_config_;
   FilterPolicy<K, V, EmbeddingVar<K, V>>* filter_;
-  std::function<void(ValuePtr<V>*, int64, int64)> add_freq_fn_;
-  std::function<void(ValuePtr<V>*, int64)> update_version_fn_;
+  embedding::FeatureDescriptor<V>* feat_desc_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);
 };

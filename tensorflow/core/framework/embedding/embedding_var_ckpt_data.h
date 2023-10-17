@@ -19,15 +19,19 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/embedding_var_dump_iterator.h"
 namespace tensorflow {
 class BundleWriter;
+namespace {
+  const int kSavedPartitionNum = 1000;
+  const int kDramFlagOffset = 49;
+}
 
 namespace embedding {
-
 template<class K, class V>
 class  EmbeddingVarCkptData {
  public:
-  void Emplace(K key, ValuePtr<V>* value_ptr,
+  void Emplace(K key, void* value_ptr,
                const EmbeddingConfig& emb_config,
-               V* default_value, int64 value_offset,
+               V* default_value,
+               FeatureDescriptor<V>* feat_desc,
                bool is_save_freq,
                bool is_save_version,
                bool save_unfiltered_features);

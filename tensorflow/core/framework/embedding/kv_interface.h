@@ -17,15 +17,13 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_KV_INTERFACE_H_
 
 #include "tensorflow/core/framework/device_base.h"
+#include "tensorflow/core/framework/embedding/feature_descriptor.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
 namespace {
 const char* kInferenceMode = "INFERENCE_MODE";
 }
-
-template <class V>
-class ValuePtr;
 
 template <class K, class V>
 class GPUHashTable;
@@ -43,19 +41,19 @@ template <class K, class V>
 class KVInterface {
  public:
   virtual ~KVInterface() {}
-  virtual Status Lookup(K key, ValuePtr<V>** value_ptr) = 0;
+  virtual Status Lookup(K key, void** value_ptr) = 0;
   virtual Status Contains(K key) = 0;
-  virtual Status Insert(K key, const ValuePtr<V>* value_ptr) = 0;
+  virtual Status Insert(K key, const void* value_ptr) = 0;
   virtual Status Remove(K key) = 0;
 
   virtual Status BatchLookup(const K* keys, size_t size,
-                             ValuePtr<V>** value_ptrs) {
+                             void** value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
                   "Unimplemented for BatchLookup in KVInterface.");
   }
   // KV Batch Insert
   virtual Status BatchInsert(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) {
+      const std::vector<void*>& value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
                   "Unimplemented for BatchInsert in KVInterface.");
   }
@@ -66,27 +64,30 @@ class KVInterface {
   }
 
   virtual Status BatchLookupOrCreate(const K* keys, size_t size,
-      ValuePtr<V>** value_ptrs) {
+      void** value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
                   "Unimplemented for BatchLookupOrInsert in KVInterface.");
   }
 
+  virtual void UpdateValuePtr(K key, void* new_value_ptr,
+                              void* old_value_ptr) {
+    LOG(FATAL)<<"Unimplemented for UpdateValuePtr in KVInterface.";
+  }
+
   virtual Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) = 0;
+      const std::vector<void*>& value_ptrs) = 0;
 
   // KV Size
   virtual int64 Size() const = 0;
 
-  virtual void SetTotalDims(int total_dims) {}
+  virtual void FreeValuePtr(void* value_ptr) {}
 
-  virtual void FreeValuePtr(ValuePtr<V>* value_ptr) {}
-
-  virtual Status Commit(K key, const ValuePtr<V>* value_ptr) {
+  virtual Status Commit(K key, const void* value_ptr) {
     return Status::OK();
   }
 
   virtual Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>*>* value_ptr_list) = 0;
+      std::vector<void*>* value_ptr_list) = 0;
 
   virtual std::string DebugString() const = 0;
 

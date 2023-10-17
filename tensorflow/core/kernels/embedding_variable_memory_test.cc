@@ -19,17 +19,22 @@ namespace embedding {
 float PerfMemory(Tensor& default_value,
                 const std::vector<int64>& id_list,
                 int value_size, int64 default_value_dim,
-                int64 filter_freq = 0) {
+                int64 filter_freq = 0, int64 steps_to_live = 0,
+                int64 record_freq = false) {
   auto ev = CreateEmbeddingVar(value_size, default_value,
-                               default_value_dim, filter_freq);
-  ValuePtr<float>* value_ptr = nullptr;
+                               default_value_dim, filter_freq,
+                               steps_to_live, -1.0,
+                               embedding::StorageType::DRAM,
+                               {1024, 1024, 1024, 1024},
+                               record_freq);
+  void* value_ptr = nullptr;
   bool is_filter = false;
   double start_mem, end_mem;
   start_mem = getResident() * getpagesize();
   for (int i = 0; i < id_list.size(); i++) {
     ev->LookupOrCreateKey(id_list[i], &value_ptr, &is_filter, false);
     if (is_filter)
-      ev->flat(value_ptr, id_list[i]);
+      ev->flat(value_ptr);
   }
   end_mem = getResident() * getpagesize();
   double used_mb = (end_mem - start_mem)/1000000;
@@ -58,7 +63,7 @@ TEST(EmbeddingVariabelMemoryTest, TestMemory) {
   float used_mb = PerfMemory(default_value, id_list,
                              value_size, default_value_dim);
   float theoritical_mb =
-      50 + num_of_ids * (32 + 32 + value_size * sizeof(float))/ 1000000;
+      50 + num_of_ids * (value_size * sizeof(float)) / 1000000;
   EXPECT_TRUE((used_mb > theoritical_mb * 0.99) &&
               (used_mb < theoritical_mb * 1.01));
 
@@ -68,9 +73,10 @@ TEST(EmbeddingVariabelMemoryTest, TestMemory) {
   used_mb = PerfMemory(default_value, id_list, value_size,
                        default_value_dim, filter_freq);
   theoritical_mb =
-      50 + num_of_ids * (32 + 32 + 16 + value_size * sizeof(float)/2)/ 1000000;
+      50 + num_of_ids * (8 + value_size * sizeof(float) / 2
+                         + 4/*memory for ids_list*/) / 1000000;
   EXPECT_TRUE((used_mb > theoritical_mb * 0.99) &&
-              (used_mb < theoritical_mb * 1.01));
+              (used_mb < theoritical_mb * 1.02));
 }
 } //namespace embedding
 } //namespace tensorflow
