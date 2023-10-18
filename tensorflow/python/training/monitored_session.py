@@ -185,6 +185,7 @@ class Scaffold(object):
     self._saver = saver
     self._incremental_save_restore = incremental_save_restore
     self._incr_saver = None
+    self._async_embedding_stage = None
     self._enable_async_embedding = False
     self._async_embedding_checkpoint_dir = None
     self._async_embedding_options = None
@@ -247,10 +248,11 @@ class Scaffold(object):
       self._incr_saver = incr_saver._get_incremental_saver(self._incremental_save_restore, self._saver)
 
     if self._enable_async_embedding:
-      async_embedding_stage = async_embedding.AsyncEmbeddingStage(
-        self._async_embedding_options,
-        self._async_embedding_checkpoint_dir)
-      async_embedding_stage.stage(ops.get_default_graph())
+      if self._async_embedding_stage is None:
+        self._async_embedding_stage = async_embedding.AsyncEmbeddingStage(
+          self._async_embedding_options,
+          self._async_embedding_checkpoint_dir)
+      self._async_embedding_stage.stage(ops.get_default_graph())
 
     ops.get_default_graph().finalize()
     logging.info('Graph was finalized.')
