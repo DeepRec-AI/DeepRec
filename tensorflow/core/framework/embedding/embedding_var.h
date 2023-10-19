@@ -435,6 +435,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_->CacheSize();
   }
 
+  int64 MemoryUsage() const {
+    return storage_->Size() * (sizeof(K) + feat_desc_->data_bytes());
+  }
+
   int64 MinFreq() {
     return emb_config_.filter_freq;
   }
@@ -516,6 +520,85 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
+  Status GetShardedSnapshot(std::vector<K>* key_list,
+                            std::vector<void*>* value_ptr_list,
+                            int partition_id, int partition_num) {
+    return storage_->GetShardedSnapshot(key_list, value_ptr_list,
+                                        partition_id, partition_num);
+  }
+
+  void ExportAndRemove(K* key_list, V* value_list,
+                     int64* version_list, int64* freq_list,
+                     std::vector<K>& tot_keys_list,
+                     std::vector<void*>& tot_value_ptr_list) {
+    bool save_unfiltered_features = true;
+    TF_CHECK_OK(ReadBoolFromEnvVar(
+        "TF_EV_SAVE_FILTERED_FEATURES", true, &save_unfiltered_features));
+
+    bool is_save_freq = emb_config_.is_save_freq();
+    bool is_save_version = emb_config_.is_save_version();
+
+    for (int64 i = 0; i < tot_keys_list.size(); ++i) {
+      auto& value_ptr = tot_value_ptr_list[i];
+      if((int64)value_ptr == embedding::ValuePtrStatus::IS_DELETED)
+        continue;
+
+      bool is_admit = feat_desc_->IsAdmit(value_ptr);
+      bool is_in_dram = ((int64)value_ptr >> kDramFlagOffset == 0);
+
+      if (!is_admit) {
+        key_list[i] = tot_keys_list[i];
+        
+        if (!is_in_dram) {
+          auto tmp_value = value_list + i * value_len_;
+          tmp_value = (V*)embedding::ValuePtrStatus::NOT_IN_DRAM;
+          value_ptr = (void*)((int64)value_ptr & ((1L << kDramFlagOffset) - 1));
+        } else if (feat_desc_->GetEmbedding(value_ptr, 0) == nullptr) {
+          memcpy(value_list + i * value_len_, default_value_, sizeof(V) * value_len_);
+        } else {
+          V* val = feat_desc_->GetEmbedding(value_ptr, emb_config_.emb_index);
+          memcpy(value_list + i * value_len_, val, sizeof(V) * value_len_);
+        }
+
+        if(is_save_version) {
+          int64 dump_version = feat_desc_->GetVersion(value_ptr);
+          version_list[i] = dump_version;
+        }
+
+        if(is_save_freq) {
+          int64 dump_freq = feat_desc_->GetFreq(value_ptr);
+          freq_list[i] = dump_freq;
+        }
+      } else {
+        if (!save_unfiltered_features)
+          return;
+        //TODO(JUNQI) : currently not export filtered keys
+      }
+
+      if (emb_config_.is_primary()) {
+        Status s;
+        s = storage_->Remove(tot_keys_list[i]);
+        if (!s.ok()) {
+          LOG(ERROR) << "Remove keys error: " << s.error_message();
+        }
+        feat_desc_->Deallocate(value_ptr);
+      }
+    }
+  }
+
+  Status RestoreFromKeysAndValues(int64 key_num, int partition_id,
+                                  int partition_num, const K* key_list,
+                                  const V* value_list, const int64* version_list,
+                                  const int64* freq_list,
+                                  const Eigen::GpuDevice* device = nullptr) {
+    RestoreBuffer restore_buff((char*)key_list, (char*)value_list,
+                                (char*)version_list, (char*)freq_list);
+    return storage_->RestoreFeatures(key_num, kSavedPartitionNum, 
+                                     partition_id, partition_num,
+                                     value_len_, false/* is_filter*/, false/* is_incr*/,
+                                     emb_config_, device, filter_, restore_buff);
+  }
+
   mutex* mu() {
     return &mu_;
   }
@@ -536,6 +619,8 @@ class EmbeddingVar : public ResourceBase {
       return Status::OK();
     }
   }
+
+  string Name() {return name_; }
 
   V* GetDefaultValuePtr() {
     return default_value_;
@@ -645,7 +730,6 @@ class EmbeddingVar : public ResourceBase {
   GPUHashTable<K, V>* HashTable() {
     return storage_->HashTable();
   }
-
   FilterPolicy<K, V, EmbeddingVar<K, V>>* GetFilter() const {
     return filter_;
   }

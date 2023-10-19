@@ -121,6 +121,25 @@ class DenseHashMap : public KVInterface<K, V> {
     return Status::OK();
   }
 
+  Status GetShardedSnapshot(
+      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      int partition_id, int partition_nums) override {
+    dense_hash_map hash_map_dump[partition_num_];
+    for (int i = 0; i< partition_num_; i++) {
+      spin_rd_lock l(hash_map_[i].mu);
+      hash_map_dump[i].hash_map = hash_map_[i].hash_map;
+    }
+    for (int i = 0; i< partition_num_; i++) {
+      for (const auto it : hash_map_dump[i].hash_map) {
+        if (it.first % 1000 % partition_nums != partition_id) {
+          key_list->push_back(it.first);
+          value_ptr_list->push_back(it.second);
+        }
+      }
+    }
+    return Status::OK();
+  }
+
   std::string DebugString() const override {
     return "";
   }

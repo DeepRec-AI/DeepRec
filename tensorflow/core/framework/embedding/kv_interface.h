@@ -89,6 +89,10 @@ class KVInterface {
   virtual Status GetSnapshot(std::vector<K>* key_list,
       std::vector<void*>* value_ptr_list) = 0;
 
+  virtual Status GetShardedSnapshot(
+      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      int partition_id, int partition_nums) = 0;
+
   virtual std::string DebugString() const = 0;
 
   virtual Status BatchLookupOrCreate(const K* keys, V* val, V* default_v,

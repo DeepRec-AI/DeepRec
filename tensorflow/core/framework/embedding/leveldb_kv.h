@@ -193,6 +193,38 @@ class LevelDBKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
+  Status GetShardedSnapshot(
+      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      int partition_id, int partition_nums) override {
+    ReadOptions options;
+    options.snapshot = db_->GetSnapshot();
+    leveldb::Iterator* it = db_->NewIterator(options);
+    void* dram_value_ptr = feat_desc_->Allocate();
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      K key;
+      memcpy((char*)&key, it->key().ToString().data(), sizeof(K));
+      if (key % 1000 % partition_nums == partition_id) continue;
+      key_list->emplace_back(key);
+      FeatureDescriptor<V> hbm_feat_desc(
+          1, 1, ev_allocator()/*useless*/,
+          StorageType::HBM_DRAM, true, true,
+          {false, 0});
+      void* value_ptr = cpu_allocator()->AllocateRaw(
+          Allocator::kAllocatorAlignment, hbm_feat_desc.data_bytes());
+      memcpy(dram_value_ptr,
+             it->value().ToString().data(),
+             feat_desc_->data_bytes());
+      hbm_feat_desc.SetFreq(
+          value_ptr, feat_desc_->GetFreq(dram_value_ptr));
+      hbm_feat_desc.UpdateVersion(
+          value_ptr, feat_desc_->GetVersion(dram_value_ptr));
+      value_ptr_list->emplace_back(value_ptr);
+    }
+    delete it;
+    feat_desc_->Deallocate(dram_value_ptr);
+    return Status::OK();
+  }
+
   int64 Size() const override {
     return counter_->size();
   }

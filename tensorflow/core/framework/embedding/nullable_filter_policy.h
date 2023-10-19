@@ -150,7 +150,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
       // this can describe by graph(Mod + DynamicPartition),
       // but memory waste and slow
       if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
-        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        VLOG(1) << "skip EV key:" << *(key_buff + i);
         continue;
       }
       int64 import_freq = 0;

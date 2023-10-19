@@ -223,6 +223,14 @@ class SingleTierStorage : public Storage<K, V> {
     return kv_->GetSnapshot(key_list, value_ptr_list);
   }
 
+  Status GetShardedSnapshot(
+      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      int partition_id, int partition_nums) override {
+    mutex_lock l(Storage<K, V>::mu_);
+    return kv_->GetShardedSnapshot(key_list, value_ptr_list,
+                                   partition_id, partition_nums);
+  }
+
   Status Save(
       const std::string& tensor_name,
       const std::string& prefix,
@@ -286,7 +294,7 @@ class SingleTierStorage : public Storage<K, V> {
   FeatureDescriptor<V>* feature_descriptor() {
     return feat_desc_;
   }
- protected:
+
   virtual Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
                                  int64 partition_num, int64 value_len, bool is_filter,
                                  bool is_incr, const EmbeddingConfig& emb_config, 
@@ -298,7 +306,8 @@ class SingleTierStorage : public Storage<K, V> {
                                false/*to_dram*/, is_incr, restore_buff);
     return s;
   }
-
+ 
+ protected:
   virtual void Shrink(std::vector<K>& key_list,
                       std::vector<void*>& value_ptr_list,
                       ShrinkArgs& shrink_args,

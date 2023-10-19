@@ -95,6 +95,9 @@ class Storage {
   virtual int64 Size(int level) const = 0;
   virtual Status GetSnapshot(std::vector<K>* key_list,
       std::vector<void*>* value_ptr_list) = 0;
+  virtual Status GetShardedSnapshot(
+      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      int partition_id, int partition_nums) = 0;
   virtual Status Save(
       const string& tensor_name,
       const string& prefix,
@@ -197,7 +200,6 @@ class Storage {
                       int64 freq, int64 version,
                       int emb_index) = 0;
 
- protected:
   virtual Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
                                  int64 partition_num, int64 value_len, bool is_filter,
                                  bool is_incr, const EmbeddingConfig& emb_config,
@@ -206,7 +208,8 @@ class Storage {
                                  RestoreBuffer& restore_buff) {
     return Status::OK();
   }
-  
+
+ protected:
   virtual Status RestoreSSD(int64 emb_index, int64 emb_slot_num,
                             int64 value_len,
                             const std::string& ssd_emb_file_name,
