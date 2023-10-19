@@ -203,7 +203,7 @@ class LevelDBKV : public KVInterface<K, V> {
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       K key;
       memcpy((char*)&key, it->key().ToString().data(), sizeof(K));
-      if (key % 1000 % partition_nums == partition_id) continue;
+      if (key % kSavedPartitionNum % partition_nums == partition_id) continue;
       key_list->emplace_back(key);
       FeatureDescriptor<V> hbm_feat_desc(
           1, 1, ev_allocator()/*useless*/,

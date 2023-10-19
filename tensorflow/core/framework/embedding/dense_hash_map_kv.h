@@ -131,7 +131,7 @@ class DenseHashMap : public KVInterface<K, V> {
     }
     for (int i = 0; i< partition_num_; i++) {
       for (const auto it : hash_map_dump[i].hash_map) {
-        if (it.first % 1000 % partition_nums != partition_id) {
+        if (it.first % kSavedPartitionNum % partition_nums != partition_id) {
           key_list->push_back(it.first);
           value_ptr_list->push_back(it.second);
         }
