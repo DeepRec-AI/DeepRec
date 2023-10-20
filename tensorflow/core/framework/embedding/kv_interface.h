@@ -23,6 +23,7 @@ limitations under the License.
 namespace tensorflow {
 namespace {
 const char* kInferenceMode = "INFERENCE_MODE";
+const int kSavedPartitionNum = 1000;
 }
 
 template <class K, class V>

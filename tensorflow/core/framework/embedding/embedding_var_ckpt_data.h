@@ -20,7 +20,6 @@ limitations under the License.
 namespace tensorflow {
 class BundleWriter;
 namespace {
-  const int kSavedPartitionNum = 1000;
   const int kDramFlagOffset = 49;
 }
 
