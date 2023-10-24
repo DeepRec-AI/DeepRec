@@ -442,7 +442,7 @@ class MultiDeviceIteratorHandleOp : public OpKernel {
         std::unique_ptr<FunctionHandleCache> function_handle_cache =
             absl::make_unique<FunctionHandleCache>(flr);
         ResourceMgr* mgr = context->resource_manager();
-        OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), true));
+        OP_REQUIRES_OK(context, cinfo_.Init(mgr, def()));
 
         MultiDeviceIterator* resource;
 

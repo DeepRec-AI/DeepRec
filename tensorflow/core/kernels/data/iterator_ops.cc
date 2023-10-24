@@ -269,6 +269,7 @@ IteratorHandleOp::IteratorHandleOp(OpKernelConstruction* ctx)
   OP_REQUIRES_OK(ctx, ctx->GetAttr(kOutputTypes, &output_dtypes_));
   OP_REQUIRES_OK(ctx, ctx->GetAttr(kOutputShapes, &output_shapes_));
   OP_REQUIRES_OK(ctx, ctx->GetAttr("shared_name", &name_));
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("recoverable", &recoverable_));
 }
 
 // The resource is deleted from the resource manager only when it is private
@@ -308,7 +309,11 @@ void IteratorHandleOp::Compute(OpKernelContext* context) LOCKS_EXCLUDED(mu_) {
       }
 
       ResourceMgr* mgr = context->resource_manager();
-      OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), true));
+      if (recoverable_ == false) {
+        OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), false));
+      } else {
+        OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), true));
+      }
 
       IteratorResource* resource;
       OP_REQUIRES_OK(

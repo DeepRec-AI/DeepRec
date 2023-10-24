@@ -555,6 +555,16 @@ REGISTER_OP("Iterator")
     .Attr("output_shapes: list(shape) >= 1")
     .SetShapeFn(shape_inference::ScalarShape);
 
+#ifndef TF_API_COMPATIBLE_1150
+REGISTER_OP("IteratorV2")
+    .Output("handle: resource")
+    .Attr("shared_name: string")
+    .Attr("container: string")
+    .Attr("recoverable: bool = false")
+    .Attr("output_types: list(type) >= 1")
+    .Attr("output_shapes: list(shape) >= 1")
+    .SetShapeFn(shape_inference::ScalarShape);
+#else
 REGISTER_OP("IteratorV2")
     .Output("handle: resource")
     .Attr("shared_name: string")
@@ -562,6 +572,7 @@ REGISTER_OP("IteratorV2")
     .Attr("output_types: list(type) >= 1")
     .Attr("output_shapes: list(shape) >= 1")
     .SetShapeFn(shape_inference::ScalarShape);
+#endif
 
 REGISTER_OP("AnonymousIterator")
     .Output("handle: resource")
