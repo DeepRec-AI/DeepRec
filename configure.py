@@ -1433,6 +1433,9 @@ def main():
   set_build_var(environ_cp, 'TF_NEED_STAR', 'STAR', 'with_star_support',
                 True, 'star')
 
+  set_build_var(environ_cp, 'TF_NEED_ELASTIC', 'ELASTIC TRAINING', 'with_elastic_support',
+                True, 'elastic')
+
   set_build_var(environ_cp, 'TF_ENABLE_PMEM', 'PMEM', 'with_pmem_support',
                 False, 'pmem')
 

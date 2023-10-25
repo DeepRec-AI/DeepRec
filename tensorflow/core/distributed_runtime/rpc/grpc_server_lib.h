@@ -127,14 +127,11 @@ class GrpcServer : public ServerInterface {
   const ServerDef& server_def() const { return server_def_; }
   GrpcWorker* worker_impl() const { return worker_impl_.get(); }
 
-
- private:
-  // The overall server configuration.
-  const ServerDef server_def_;
+ protected:
+  // The overall server configuration. It may be changed during scaling.
+  ServerDef server_def_;
   Env* env_;
-
-  // The port to which this server is bound.
-  int bound_port_ = 0;
+  GrpcServerOptions opts_;
 
   // Guards state transitions.
   mutex mu_;
@@ -151,6 +148,9 @@ class GrpcServer : public ServerInterface {
   enum State { NEW, STARTED, STOPPED };
   State state_ GUARDED_BY(mu_);
 
+ private:
+  // The port to which this server is bound.
+  int bound_port_ = 0;
   // Implementation of a TensorFlow master, and RPC polling thread.
   MasterEnv master_env_;
   std::unique_ptr<Master> master_impl_;
