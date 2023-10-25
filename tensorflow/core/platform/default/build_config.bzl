@@ -769,6 +769,12 @@ def tf_additional_star_lib_defines():
         "//conditions:default": [],
     })
 
+def tf_additional_elastic_server_lib_defines():
+    return select({
+        "//tensorflow:with_elastic_support": ["TENSORFLOW_USE_ELASTIC_SERVER"],
+        "//conditions:default": [],
+    })
+
 def tf_additional_api_compatible_defines():
     return select({
         "//tensorflow:with_api_compatible": ["TF_API_COMPATIBLE_1150"],

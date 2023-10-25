@@ -435,6 +435,12 @@ config_setting(
 )
 
 config_setting(
+    name = "with_elastic_support",
+    values = {"define": "with_elastic_support=true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "with_pmem_support",
     values = {"define": "with_pmem_support=true"},
     visibility = ["//visibility:public"],

@@ -77,6 +77,14 @@ def tf_additional_star_deps():
         "//conditions:default": [],
     })
 
+def tf_additional_elastic_deps():
+    return select({
+        str(Label("//tensorflow:with_elastic_support")): [
+             str(Label("//tensorflow/contrib/elastic_grpc_server:elastic_grpc_server_lib")),
+        ],
+        "//conditions:default": [],
+    })
+
 # Include specific extra dependencies when building statically, or
 # another set of dependencies otherwise. If "macos" is provided, that
 # dependency list is used when using the framework_shared_object config
