@@ -333,7 +333,7 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
       // this can describe by graph(Mod + DynamicPartition),
       // but memory waste and slow
       if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
-        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        VLOG(1) << "skip EV key:" << *(key_buff + i);
         continue;
       }
       void* value_ptr = nullptr;

@@ -87,6 +87,14 @@ class MultiTierStorage : public Storage<K, V> {
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<void*>* value_ptr_list) override {
     LOG(FATAL)<<"Can't get snapshot of MultiTierStorage.";
+    return Status::OK();
+  }
+
+  Status GetShardedSnapshot(
+      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      int partition_id, int partition_nums) override {
+    LOG(FATAL)<<"Can't get sharded snapshot of MultiTierStorage.";
+    return Status::OK();
   }
 
   void CopyEmbeddingsFromCPUToGPU(
@@ -170,7 +178,6 @@ class MultiTierStorage : public Storage<K, V> {
     });
   }
 
- protected:
   Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
                          int64 partition_num, int64 value_len, bool is_filter,
                          bool is_incr, const EmbeddingConfig& emb_config,

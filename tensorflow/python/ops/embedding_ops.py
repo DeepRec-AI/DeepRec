@@ -44,6 +44,7 @@ from tensorflow.python.ops import group_embedding_lookup_ops
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util.tf_export import tf_export
 
+SAVED_PARTITIONED_NUM = 1000
 
 def _clip(params, ids, max_norm):
   """Helper function for _embedding_lookup_and_transform.
@@ -216,7 +217,7 @@ def _embedding_lookup_and_transform(params,
 
       if isinstance(params[0], kv_variable_ops.EmbeddingVariable):
          new_ids = flat_ids
-         p_assignments = flat_ids % 1000 % np 
+         p_assignments = flat_ids % SAVED_PARTITIONED_NUM % np 
       elif partition_strategy == "mod":
         p_assignments = flat_ids % np
         new_ids = flat_ids // np

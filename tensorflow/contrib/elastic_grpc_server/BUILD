@@ -56,7 +56,8 @@ cc_library(
 tf_cc_test(
     name = "elastic_grpc_test",
     size = "small",
-    srcs = ["elastic_grpc_server_lib_test.cc"],
+    srcs = select({"//tensorflow:with_elastic_support": ["elastic_grpc_server_lib_test.cc"],
+		   "//conditions:default": []}),
     deps = [
         ":elastic_grpc_server_lib",
         "//tensorflow/core/distributed_runtime/rpc:grpc_util",

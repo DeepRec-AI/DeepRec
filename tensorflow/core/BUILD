@@ -128,6 +128,7 @@ load(
     "tf_additional_numa_deps",
     "tf_additional_numa_lib_defines",
     "tf_additional_star_lib_defines",
+    "tf_additional_elastic_server_lib_defines",
     "tf_additional_api_compatible_defines",
     "tf_additional_pmem_lib_defines",
     "tf_additional_test_deps",
@@ -1441,6 +1442,7 @@ tf_cc_test(
 cc_library(
     name = "ops",
     visibility = ["//visibility:public"],
+    defines = tf_additional_elastic_server_lib_defines(),
     deps = [
         ":array_ops_op_lib",
         ":parquet_ops_op_lib",
@@ -2562,7 +2564,8 @@ LIB_INTERNAL_DEFINES = (
     tf_additional_gdr_lib_defines() +
     tf_additional_numa_lib_defines() +
     tf_additional_star_lib_defines() +
-    tf_additional_pmem_lib_defines()
+    tf_additional_pmem_lib_defines() +
+    tf_additional_elastic_server_lib_defines()
 )
 
 cc_library(

@@ -9,6 +9,11 @@ load(
     "transitive_hdrs",
 )
 
+load(
+    "//tensorflow/core/platform:default/build_config.bzl",
+    "tf_additional_elastic_server_lib_defines",
+)
+
 package(
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],  # Apache 2.0
@@ -1119,6 +1124,7 @@ tf_kernel_library(
     name = "iterator_ops",
     srcs = ["iterator_ops.cc"],
     hdrs = ["iterator_ops.h"],
+    defines = tf_additional_elastic_server_lib_defines(),
     deps = [
         ":captured_function",
         ":dataset_utils",

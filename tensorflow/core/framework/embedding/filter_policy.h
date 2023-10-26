@@ -27,19 +27,31 @@ struct RestoreBuffer {
   char* value_buffer = nullptr;
   char* version_buffer = nullptr;
   char* freq_buffer = nullptr;
+  bool should_release = false;
 
   explicit RestoreBuffer(size_t buffer_size) {
     key_buffer = new char[buffer_size];
     value_buffer = new char[buffer_size];
     version_buffer = new char[buffer_size];
     freq_buffer = new char[buffer_size];
+    should_release = true;
+  }
+
+  explicit RestoreBuffer(char* i_key_buffer, char* i_value_buffer,
+                         char* i_version_buffer, char* i_freq_buffer) {
+    key_buffer = i_key_buffer;
+    value_buffer = i_value_buffer;
+    version_buffer = i_version_buffer;
+    freq_buffer = i_freq_buffer;
   }
 
   ~RestoreBuffer() {
-    delete []key_buffer;
-    delete []value_buffer;
-    delete []version_buffer;
-    delete []freq_buffer;
+    if (should_release) {
+      delete []key_buffer;
+      delete []value_buffer;
+      delete []version_buffer;
+      delete []freq_buffer;
+    }
   }
 };
 
