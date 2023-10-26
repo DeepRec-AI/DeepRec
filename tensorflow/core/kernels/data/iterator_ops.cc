@@ -269,7 +269,6 @@ IteratorHandleOp::IteratorHandleOp(OpKernelConstruction* ctx)
   OP_REQUIRES_OK(ctx, ctx->GetAttr(kOutputTypes, &output_dtypes_));
   OP_REQUIRES_OK(ctx, ctx->GetAttr(kOutputShapes, &output_shapes_));
   OP_REQUIRES_OK(ctx, ctx->GetAttr("shared_name", &name_));
-  OP_REQUIRES_OK(ctx, ctx->GetAttr("recoverable", &recoverable_));
 }
 
 // The resource is deleted from the resource manager only when it is private
@@ -309,11 +308,11 @@ void IteratorHandleOp::Compute(OpKernelContext* context) LOCKS_EXCLUDED(mu_) {
       }
 
       ResourceMgr* mgr = context->resource_manager();
-      if (recoverable_ == false) {
-        OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), false));
-      } else {
-        OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), true));
-      }
+#ifdef TENSORFLOW_USE_ELASTIC_SERVER
+      OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), true));
+#else
+      OP_REQUIRES_OK(context, cinfo_.Init(mgr, def(), false));
+#endif
 
       IteratorResource* resource;
       OP_REQUIRES_OK(
@@ -788,7 +787,11 @@ class OneShotIteratorOp : public AsyncOpKernel {
 
   Status TryInit(OpKernelContext* ctx, IteratorResource** iterator,
                  ContainerInfo* cinfo) {
-    TF_RETURN_IF_ERROR(cinfo->Init(ctx->resource_manager(), def(), true));
+#ifdef TENSORFLOW_USE_ELASTIC_SERVER
+      TF_RETURN_IF_ERROR(cinfo->Init(ctx->resource_manager(), def(), true));
+#else
+      TF_RETURN_IF_ERROR(cinfo->Init(ctx->resource_manager(), def(), false));
+#endif
 
     FunctionLibraryRuntime* flr;
     std::unique_ptr<FunctionLibraryDefinition> flib_def(nullptr);

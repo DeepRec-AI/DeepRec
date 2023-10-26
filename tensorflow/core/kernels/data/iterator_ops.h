@@ -135,7 +135,6 @@ class IteratorHandleOp : public OpKernel {
   std::vector<PartialTensorShape> output_shapes_;
   const int graph_def_version_;
   string name_;
-  bool recoverable_;
 };
 
 // Like IteratorHandleOp, but creates handles which are never shared, and does
