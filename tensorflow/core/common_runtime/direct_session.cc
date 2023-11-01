@@ -2185,8 +2185,8 @@ Status DirectSession::GetOrCreateExecutors(
   auto insert_key_status = executors_.emplace(key, insert_result.first->second);
   *executors_and_keys = insert_result.first->second.get();
   if (insert_key_status.second) {
-    LOG(INFO) << "Add new unsort key to executors_ map: " << executors_idx++
-              << ", key: " << key << ", this: " << this;
+    VLOG(2) << "Add new unsort key to executors_ map: " << executors_idx++
+            << ", key: " << key << ", this: " << this;
   }
 
   return Status::OK();
