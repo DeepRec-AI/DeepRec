@@ -24,7 +24,7 @@ limitations under the License.
 #include <grpcpp/server.h>
 #include "grpcpp/server_builder.h"
 
-using namespace des;
+using namespace deeprec;
 
 using grpc::Server;
 using grpc::ServerAsyncResponseWriter;
