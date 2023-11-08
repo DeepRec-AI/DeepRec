@@ -7,7 +7,6 @@
 #include "tensorflow/core/framework/embedding/single_tier_storage.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
 #include "tensorflow/core/platform/stream_executor.h"
-#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 
 namespace tensorflow {
 using se::DeviceMemoryBase;

@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/hbm_storage_iterator.h"
 #include "tensorflow/core/framework/embedding/intra_thread_copy_id_allocator.h"
 #include "tensorflow/core/platform/stream_executor.h"
-#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 
 namespace tensorflow {
 using se::DeviceMemoryBase;
