@@ -4747,6 +4747,7 @@ py_library(
         ":platform",
         ":protos_all_py",
         ":session_run_hook",
+        "//tensorflow/core:elastic_service_pb_py",
         ":training_util",
         ":util",
     ],

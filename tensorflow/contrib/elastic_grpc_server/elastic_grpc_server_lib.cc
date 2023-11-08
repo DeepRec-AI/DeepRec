@@ -17,6 +17,7 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include <google/protobuf/map.h>
 #include "include/json/json.h"
 #include "grpc/support/alloc.h"
 #include "grpcpp/grpcpp.h"
@@ -89,7 +90,7 @@ Status ElasticGrpcServer::UpdateServerDef(const string& cluster_def_str, int& be
       return errors::Internal("PARSE TF_CONFIG/cluster ERROR");
     }
 
-    std::unordered_set<string> ps_addrs_vec;
+    std::set<string> ps_addrs_vec; //ordered
     after_part_num = cluster_json["cluster"]["ps"].size();
     for (auto& value: cluster_json["cluster"]["ps"]) {
       ps_addrs_vec.emplace(value.asString());
@@ -111,21 +112,25 @@ Status ElasticGrpcServer::UpdateServerDef(const string& cluster_def_str, int& be
           }
           for (auto ps_addr: ps_addrs_vec) {
             if (target_string_set.find(ps_addr) == target_string_set.end()) {
-              job->mutable_tasks()->insert({idx, ps_addr});
+              job->mutable_tasks()->insert({idx++, ps_addr});
               tf_config_json["cluster"]["ps"].append(ps_addr);
             }
           } 
           break;
         } else {
           LOG(INFO) << "SCALING DOWN, partition_num is: " << after_part_num;
+          google::protobuf::Map< google::protobuf::int32, std::string > tasks;
+          Json::Value arr_value(Json::arrayValue);
+          int idx = 0;
           for (int i = 0; i < before_part_num; ++i) {
             string tmp_string = tf_config_json["cluster"]["ps"][i].asString();
-            if (ps_addrs_vec.find(tmp_string) == ps_addrs_vec.end()) {
-              Json::Value ps_addr;
-              tf_config_json["cluster"]["ps"].removeIndex(i, &ps_addr);
-              job->mutable_tasks()->erase(i);
+            if (ps_addrs_vec.find(tmp_string) != ps_addrs_vec.end()) {
+              arr_value.append(tf_config_json["cluster"]["ps"][i]);
+              tasks[idx++] = tmp_string;
             }
           }
+          tf_config_json["cluster"]["ps"].swap(arr_value);
+          job->mutable_tasks()->swap(tasks);
         }
       }
     }

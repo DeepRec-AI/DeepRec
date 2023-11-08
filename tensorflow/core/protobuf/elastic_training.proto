@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package des;
+package deeprec;
 
 enum Code {
   OK                  = 0;
