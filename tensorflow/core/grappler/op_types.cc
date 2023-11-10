@@ -454,7 +454,7 @@ bool IsReciprocalGrad(const NodeDef& node) {
 }
 
 bool IsRecv(const NodeDef& node) {
-  return node.op() == "_Recv" || node.op() == "_HostRecv";
+  return node.op() == "_Recv" || node.op() == "_HostRecv" || IsSliceRecv(node);
 }
 
 bool IsFuseRecv(const NodeDef& node) {
@@ -502,7 +502,7 @@ bool IsSelect(const NodeDef& node) { return node.op() == "Select"; }
 bool IsSeluGrad(const NodeDef& node) { return node.op() == "SeluGrad"; }
 
 bool IsSend(const NodeDef& node) {
-  return node.op() == "_Send" || node.op() == "_HostSend";
+  return node.op() == "_Send" || node.op() == "_HostSend" || IsSliceSend(node);
 }
 
 bool IsShape(const NodeDef& node) { return node.op() == "Shape"; }
@@ -516,6 +516,10 @@ bool IsSigmoidGrad(const NodeDef& node) { return node.op() == "SigmoidGrad"; }
 bool IsSize(const NodeDef& node) { return node.op() == "Size"; }
 
 bool IsSlice(const NodeDef& node) { return node.op() == "Slice"; }
+
+bool IsSliceRecv(const NodeDef& node) { return node.op() == "_SliceRecv"; }
+
+bool IsSliceSend(const NodeDef& node) { return node.op() == "_SliceSend"; }
 
 bool IsSnapshot(const NodeDef& node) { return node.op() == "Snapshot"; }
 

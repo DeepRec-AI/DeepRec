@@ -80,6 +80,8 @@ class Rendezvous : public core::RefCounted {
     friend class SendOp;
     friend class RecvOp;
     friend class FuseRecvOp;
+    friend class SliceSendOp;
+    friend class SliceRecvOp;
     friend class RefSendOp;
     friend class RefRecvOp;
     string buf_;

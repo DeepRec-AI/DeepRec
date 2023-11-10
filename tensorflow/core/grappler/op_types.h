@@ -167,6 +167,8 @@ bool IsShuffle(const NodeDef& node);
 bool IsSigmoidGrad(const NodeDef& node);
 bool IsSize(const NodeDef& node);
 bool IsSlice(const NodeDef& node);
+bool IsSliceRecv(const NodeDef& node);
+bool IsSliceSend(const NodeDef& node);
 bool IsSnapshot(const NodeDef& node);
 bool IsSoftmax(const NodeDef& node);
 bool IsSoftplusGrad(const NodeDef& node);
