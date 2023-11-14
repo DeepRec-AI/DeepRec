@@ -2675,6 +2675,9 @@ class _SharedEmbeddingColumn(
         embedding_weights = shared_embedding_collection[0]
         if isinstance(embedding_weights, kv_variable_ops.EmbeddingVariable):
           embedding_shape = (self.dimension)
+        elif isinstance(embedding_weights, variables.PartitionedVariable):
+          if isinstance(embedding_weights._get_variable_list()[0], kv_variable_ops.EmbeddingVariable):
+            embedding_shape = (self.dimension)
         if embedding_weights.get_shape() != embedding_shape:
           raise ValueError(
               'Shared embedding collection {} contains variable {} of '
