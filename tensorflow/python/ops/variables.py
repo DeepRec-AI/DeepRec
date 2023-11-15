@@ -3100,6 +3100,9 @@ class PartitionedVariable(object):
 
     self._name = name
     self._shape = shape
+    from tensorflow.python.ops import kv_variable_ops
+    if isinstance(self._variable_list[0], kv_variable_ops.EmbeddingVariable):
+      self._shape = shape[1:]
     self._dtype = dtype
     self._partitions = partitions
     self._as_tensor = None
