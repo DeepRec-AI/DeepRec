@@ -39,7 +39,7 @@
 
 代码库：[https://github.com/DeepRec-AI/serving](https://github.com/DeepRec-AI/serving)
 
-开发分支：master，最新Release分支：deeprec2306
+开发分支：master，最新Release分支：deeprec2310
 
 ## TFServing编译&打包
 

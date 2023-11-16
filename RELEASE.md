@@ -1,3 +1,44 @@
+# Release r1.15.5-deeprec2310
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Refactor the data structure of EmbeddingVariable.
+- Add interface of EmbeddingVar for Elastic Training.
+- Add GetSnapshot and Create API for EmbeddingVariable.
+- Remove the dependency on private header file in EmbeddingVariable.
+
+### **Runtime Optimization**
+
+- Canonicalize SaveV2 Op device spec in distributed training.
+- Update log level in direct_session.
+
+### **Distributed**
+
+- Add elastic-grpc server.
+
+### **BugFix**
+
+- Fix missing return value of RestoreSSD of DramSSDHashStorage.
+- Fix incorrect frequency in shared-embedding.
+- Fix set initialized flag too early in restore subgraph.
+- Fix wgrad bug in Sparse Operation Kit.
+- Fix hang bug for async embedding lookup.
+- Fix ps address list sort by index.
+- Fix SharedEmbeddingColumn with PartitionedEmbedingVariable shape validation error.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2310-cpu-py38-ubuntu20.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2310-gpu-py38-cu116-ubuntu20.04`
+
 # Release r1.15.5-deeprec2306
 
 ## **Major Features and Improvements**
