@@ -91,7 +91,8 @@ class KVInterface {
       std::vector<void*>* value_ptr_list) = 0;
 
   virtual Status GetShardedSnapshot(
-      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      std::vector<std::vector<K>>& key_list,
+      std::vector<std::vector<void*>>& value_ptr_list,
       int partition_id, int partition_nums) = 0;
 
   virtual std::string DebugString() const = 0;

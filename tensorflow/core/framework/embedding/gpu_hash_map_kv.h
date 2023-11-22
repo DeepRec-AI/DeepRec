@@ -253,7 +253,8 @@ class GPUHashMapKV : public KVInterface<K, V> {
   }
 
   Status GetShardedSnapshot(
-      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      std::vector<std::vector<K>>& key_list,
+      std::vector<std::vector<void*>>& value_ptr_list,
       int partition_id, int partition_nums) override {
     LOG(INFO) << "GPUHashMapKV do not support GetShardedSnapshot";
     return Status::OK();

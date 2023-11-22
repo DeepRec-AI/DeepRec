@@ -224,7 +224,8 @@ class SingleTierStorage : public Storage<K, V> {
   }
 
   Status GetShardedSnapshot(
-      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      std::vector<std::vector<K>>& key_list,
+      std::vector<std::vector<void*>>& value_ptr_list,
       int partition_id, int partition_nums) override {
     mutex_lock l(Storage<K, V>::mu_);
     return kv_->GetShardedSnapshot(key_list, value_ptr_list,
