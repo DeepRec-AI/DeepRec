@@ -543,9 +543,10 @@ def train(sess_config,
     hooks = []
     hooks.extend(input_hooks)
 
+    sharded_saver = tf_config != None
     scaffold = tf.train.Scaffold(
         local_init_op=tf.group(tf.local_variables_initializer(), data_init_op),
-        saver=tf.train.Saver(max_to_keep=args.keep_checkpoint_max))
+        saver=tf.train.Saver(max_to_keep=args.keep_checkpoint_max, sharded=sharded_saver))
 
     stop_hook = tf.train.StopAtStepHook(last_step=steps)
     log_hook = tf.train.LoggingTensorHook(
