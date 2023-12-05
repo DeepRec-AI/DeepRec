@@ -138,7 +138,8 @@ class LocklessHashMap : public KVInterface<K, V> {
   }
 
   Status GetShardedSnapshot(
-      std::vector<K>* key_list, std::vector<void*>* value_ptr_list,
+      std::vector<std::vector<K>>& key_list,
+      std::vector<std::vector<void*>>& value_ptr_list,
       int partition_id, int partition_nums) override {
     std::pair<const K, void*> *hash_map_dump;
     int64 bucket_count;
@@ -147,11 +148,12 @@ class LocklessHashMap : public KVInterface<K, V> {
     bucket_count = it.second;
     for (int64 j = 0; j < bucket_count; j++) {
       if (hash_map_dump[j].first != LocklessHashMap<K, V>::EMPTY_KEY_ 
-          && hash_map_dump[j].first != LocklessHashMap<K, V>::DELETED_KEY_
-          && hash_map_dump[j].first % kSavedPartitionNum 
-              % partition_nums != partition_id) {
-        key_list->emplace_back(hash_map_dump[j].first);
-        value_ptr_list->emplace_back(hash_map_dump[j].second);
+          && hash_map_dump[j].first != LocklessHashMap<K, V>::DELETED_KEY_) {
+        int part_id = hash_map_dump[j].first % kSavedPartitionNum % partition_nums;
+        if (part_id != partition_id) {
+          key_list[part_id].emplace_back(hash_map_dump[j].first);
+          value_ptr_list[part_id].emplace_back(hash_map_dump[j].second);
+        }
       }
     }
 

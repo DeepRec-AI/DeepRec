@@ -520,8 +520,8 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
-  Status GetShardedSnapshot(std::vector<K>* key_list,
-                            std::vector<void*>* value_ptr_list,
+  Status GetShardedSnapshot(std::vector<std::vector<K>>& key_list,
+                            std::vector<std::vector<void*>>& value_ptr_list,
                             int partition_id, int partition_num) {
     return storage_->GetShardedSnapshot(key_list, value_ptr_list,
                                         partition_id, partition_num);
@@ -546,7 +546,7 @@ class EmbeddingVar : public ResourceBase {
       bool is_admit = feat_desc_->IsAdmit(value_ptr);
       bool is_in_dram = ((int64)value_ptr >> kDramFlagOffset == 0);
 
-      if (!is_admit) {
+      if (is_admit) {
         key_list[i] = tot_keys_list[i];
         
         if (!is_in_dram) {
@@ -571,7 +571,7 @@ class EmbeddingVar : public ResourceBase {
         }
       } else {
         if (!save_unfiltered_features)
-          return;
+          continue;
         //TODO(JUNQI) : currently not export filtered keys
       }
 
@@ -584,6 +584,7 @@ class EmbeddingVar : public ResourceBase {
         feat_desc_->Deallocate(value_ptr);
       }
     }
+    return;
   }
 
   Status RestoreFromKeysAndValues(int64 key_num, int partition_id,
