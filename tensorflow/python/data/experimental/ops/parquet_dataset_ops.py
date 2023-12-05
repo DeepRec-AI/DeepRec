@@ -38,25 +38,23 @@ class DataFrameValueSpec(type_spec.BatchableTypeSpec):
   def value_type(self):
     return DataFrame.Value if self._ragged_rank > 0 else ops.Tensor
 
-  def __init__(self, field, batch_size=None):
+  def __init__(self, field):
     """Constructs a type specification for a `tf.RaggedTensor`.
 
     Args:
       field: The field definition.
-      batch_size: The batch_size of DataFrame.
     """
     if field.incomplete:
       raise ValueError(
         f'Field {field} is incomplete, please specify dtype and ragged_rank')
     self._field = field
-    self._batch_size = batch_size
 
   def _serialize(self):
     return (self._field.dtype, self._field.ragged_rank)
 
   @property
   def _component_specs(self):
-    return self._field.output_specs(self._batch_size)
+    return self._field.output_specs
 
   def _to_components(self, value):
     if isinstance(value, DataFrame.Value):
@@ -80,7 +78,7 @@ class DataFrameValueSpec(type_spec.BatchableTypeSpec):
     return self._field.output_types
 
   def _to_legacy_output_shapes(self):
-    return self._field.output_shapes(self._batch_size)
+    return self._field.output_shapes
 
   def _to_legacy_output_classes(self):
     return self._field.output_classes
@@ -112,10 +110,9 @@ class _ParquetDataset(dataset_ops.DatasetSource):  # pylint: disable=abstract-me
     self._fields = fields
     self._output_specs = {
       f.name: (
-        DataFrameValueSpec(f, batch_size if drop_remainder else None)
+        DataFrameValueSpec(f)
         if f.ragged_rank > 0
-        else tensor_spec.TensorSpec(
-            shape=[batch_size if drop_remainder else None], dtype=f.dtype))
+        else tensor_spec.TensorSpec(shape=[None], dtype=f.dtype))
       for f in self._fields}
     self._field_names = nest.flatten({f.name: f.name for f in self._fields})
     self._field_dtypes = nest.flatten({f.name: f.dtype for f in self._fields})
