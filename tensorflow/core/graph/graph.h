@@ -220,15 +220,19 @@ class Node {
   bool IsSend() const { return class_ == NC_SEND ||
                                class_ == NC_HOST_SEND ||
                                class_ == NC_REF_SEND ||
-                               class_ == NC_SLICE_SEND; }
+                               class_ == NC_SLICE_SEND ||
+                               class_ == NC_FILE_SLICE_SEND; }
   bool IsSliceSend() const { return class_ == NC_SLICE_SEND; }
+  bool IsFileSliceSend() const { return class_ == NC_FILE_SLICE_SEND; }
   bool IsRecv() const { return class_ == NC_RECV ||
                                class_ == NC_HOST_RECV ||
                                class_ == NC_REF_RECV ||
-                               class_ == NC_SLICE_RECV; }
+                               class_ == NC_SLICE_RECV ||
+                               class_ == NC_FILE_SLICE_RECV; }
   bool IsFuseRecv() const { return class_ == NC_FUSE_RECV ||
                                    class_ == NC_HOST_FUSE_RECV; }
   bool IsSliceRecv() const {return class_ == NC_SLICE_RECV; }
+  bool IsFileSliceRecv() const { return class_ == NC_FILE_SLICE_RECV; }
   bool IsConstant() const { return class_ == NC_CONSTANT; }
   bool IsStage() const { return class_ == NC_TENSOR_BUFFER_PUT; }
   bool IsUnstage() const { return class_ == NC_TENSOR_BUFFER_TAKE; }
@@ -339,12 +343,14 @@ class Node {
     NC_HOST_SEND,
     NC_REF_SEND,
     NC_SLICE_SEND,
+    NC_FILE_SLICE_SEND,
     NC_RECV,
     NC_HOST_RECV,
     NC_REF_RECV,
     NC_FUSE_RECV,
     NC_HOST_FUSE_RECV,
     NC_SLICE_RECV,
+    NC_FILE_SLICE_RECV,
     NC_CONSTANT,
     NC_VARIABLE,
     NC_KV_VAR_HANDLE,
@@ -851,8 +857,10 @@ inline bool IsLoopCond(const Node* node) { return node->IsLoopCond(); }
 inline bool IsControlTrigger(const Node* n) { return n->IsControlTrigger(); }
 inline bool IsSend(const Node* node) { return node->IsSend(); }
 inline bool IsSliceSend(const Node* node) { return node->IsSliceSend(); }
+inline bool IsFileSliceSend(const Node* node) { return node->IsFileSliceSend(); }
 inline bool IsRecv(const Node* node) { return node->IsRecv(); }
 inline bool IsSliceRecv(const Node* node) { return node->IsSliceRecv(); }
+inline bool IsFileSliceRecv(const Node* node) { return node->IsFileSliceRecv(); }
 inline bool IsFuseRecv(const Node* node) { return node->IsFuseRecv(); }
 inline bool IsHostSend(const Node* node) { return node->IsHostSend(); }
 inline bool IsHostRecv(const Node* node) { return node->IsHostRecv(); }
