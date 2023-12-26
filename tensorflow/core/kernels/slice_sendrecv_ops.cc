@@ -14,40 +14,9 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/kernels/slice_sendrecv_ops.h"
+#include "tensorflow/core/kernels/slice_sendrecv_utils.h"
 
 namespace tensorflow {
-
-//------------------------------------------------------------------------------
-// Utils.
-static string GetSliceRendezvousKeyPrefix(const string& send_device,
-                                          const string& recv_device,
-                                          const uint64 send_device_incarnation,
-                                          const string& tensor_name) {
-  return strings::StrCat(send_device, ";",
-                         strings::FpToString(send_device_incarnation), ";",
-                         recv_device, ";", tensor_name);
-}
-
-static void GetSliceRendezvousKey(const string& key_prefix,
-                                  const string& tensor_name_suffix,
-                                  const FrameAndIter& frame_iter, string* key) {
-  key->clear();
-  strings::StrAppend(key, key_prefix, tensor_name_suffix, ";",
-                     frame_iter.frame_id, ":", frame_iter.iter_id);
-}
-
-static FrameAndIter GetFrameAndIter(OpKernelContext* ctx,
-                                    bool hostmem_sendrecv) {
-  if (hostmem_sendrecv && ctx->call_frame() != nullptr) {
-    // Host memory send/recv pairs are added by
-    // common_runtime/memory_types.cc.  When the pair of nodes are
-    // added inside a function, we need to use the function call frame
-    // to formulate the unique rendezvous key.
-    return FrameAndIter(reinterpret_cast<uint64>(ctx->call_frame()), 0);
-  } else {
-    return ctx->frame_iter();
-  }
-}
 
 //------------------------------------------------------------------------------
 // Functions of SliceSendOp.
@@ -64,8 +33,9 @@ SliceSendOp::SliceSendOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
   string tensor_name;
   OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name));
   key_prefix_ = \
-    GetSliceRendezvousKeyPrefix(send_device, recv_device,
-                                send_device_incarnation, tensor_name);
+    slice_sendrecv::GetSliceRendezvousKeyPrefix(send_device,
+                      recv_device, send_device_incarnation, tensor_name);
+
   if (!ctx->GetAttr("_hostmem_sendrecv", &hostmem_sendrecv_).ok()) {
     hostmem_sendrecv_ = false;
   }
@@ -79,7 +49,8 @@ void SliceSendOp::Compute(OpKernelContext* ctx) {
     errors::Internal("Op kernel context needs to provide a rendezvous."));
 
   const Tensor& input_t = ctx->input(0);
-  FrameAndIter frame_iter = GetFrameAndIter(ctx, hostmem_sendrecv_);
+  FrameAndIter frame_iter = \
+    slice_sendrecv::GetFrameAndIter(ctx, hostmem_sendrecv_);
 
   // send total_bytes.
   OP_REQUIRES_OK(ctx, SendTotalBytes(ctx, frame_iter, input_t));
@@ -95,8 +66,8 @@ void SliceSendOp::Compute(OpKernelContext* ctx) {
     args.alloc_attrs = ctx->input_alloc_attr(0);
 
     Rendezvous::ParsedKey parsed_key;
-    GetSliceRendezvousKey(key_prefix_, "_transfer_data", frame_iter,
-                          &parsed_key.buf_);
+    slice_sendrecv::GetSliceRendezvousKey(key_prefix_, "_transfer_data",
+                                          frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     OP_REQUIRES_OK(ctx, Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
     OP_REQUIRES_OK(ctx, ctx->rendezvous()->Send(parsed_key, args, input_t,
@@ -124,11 +95,11 @@ Status SliceSendOp::SendTotalBytes(OpKernelContext* ctx,
 
   Rendezvous::ParsedKey parsed_key;
   Tensor total_bytes_t;
-  TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_INT64, TensorShape({}),
+  TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_UINT64, TensorShape({}),
                                         &total_bytes_t));
-  total_bytes_t.scalar<int64>()() = input_t.TotalBytes();
-  GetSliceRendezvousKey(key_prefix_, "_slice_transfer_totalbytes", frame_iter,
-                        &parsed_key.buf_);
+  total_bytes_t.scalar<uint64>()() = input_t.TotalBytes();
+  slice_sendrecv::GetSliceRendezvousKey(key_prefix_,
+                    "_slice_transfer_totalbytes", frame_iter, &parsed_key.buf_);
   VLOG(2) << "SliceSend " << parsed_key.buf_;
   TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
   return ctx->rendezvous()->Send(parsed_key, args, total_bytes_t,
@@ -152,8 +123,8 @@ Status SliceSendOp::SendShape(OpKernelContext* ctx,
   for (int i = 0; i < rank; i++) {
     shape_vec(i) = shape.dim_size(i);
   }
-  GetSliceRendezvousKey(key_prefix_, "_slice_transfer_shape", frame_iter,
-                        &parsed_key.buf_);
+  slice_sendrecv::GetSliceRendezvousKey(key_prefix_,
+                    "_slice_transfer_shape", frame_iter, &parsed_key.buf_);
   VLOG(2) << "SliceSend " << parsed_key.buf_;
   TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
   return ctx->rendezvous()->Send(parsed_key, args, shape_t,
@@ -168,21 +139,21 @@ Status SliceSendOp::SendString(OpKernelContext* ctx,
   args.alloc_attrs = AllocatorAttributes();
   Rendezvous::ParsedKey parsed_key;
 
-  // send elements size.
-  Tensor elements_size_t;
-  TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_INT64, input_t.shape(),
-                                        &elements_size_t));
+  // send elements bytes.
+  Tensor elements_bytes_t;
+  TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_UINT64, input_t.shape(),
+                                        &elements_bytes_t));
   int64 num_elements = input_t.NumElements();
   auto input_flat = input_t.flat<tstring>();
-  auto elements_size_flat = elements_size_t.flat<int64>();
+  auto elements_bytes_flat = elements_bytes_t.flat<uint64>();
   for (int64 i = 0; i < num_elements; i++) {
-    elements_size_flat(i) = input_flat(i).size();
+    elements_bytes_flat(i) = input_flat(i).size();
   }
-  GetSliceRendezvousKey(key_prefix_, "_slice_transfer_elements_size",
-                        frame_iter, &parsed_key.buf_);
+  slice_sendrecv::GetSliceRendezvousKey(key_prefix_,
+    "_slice_transfer_elements_bytes", frame_iter, &parsed_key.buf_);
   VLOG(2) << "SliceSend " << parsed_key.buf_;
   TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-  TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, elements_size_t,
+  TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, elements_bytes_t,
                                              ctx->is_input_dead()));
 
   // send data.
@@ -196,8 +167,8 @@ Status SliceSendOp::SendString(OpKernelContext* ctx,
       data_t.scalar<tstring>()() = elem;
       std::string tensor_name_suffix = \
         strings::StrCat("_slice_transfer_data_", std::to_string(i));
-      GetSliceRendezvousKey(key_prefix_, tensor_name_suffix, frame_iter,
-                            &parsed_key.buf_);
+      slice_sendrecv::GetSliceRendezvousKey(key_prefix_, tensor_name_suffix,
+                                            frame_iter, &parsed_key.buf_);
       VLOG(2) << "SliceSend " << parsed_key.buf_;
       TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
       TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, data_t,
@@ -218,7 +189,10 @@ Status SliceSendOp::SendStringSlice(OpKernelContext* ctx,
   args.alloc_attrs = ctx->input_alloc_attr(0);
   Rendezvous::ParsedKey parsed_key;
 
-  int64 slice_num = (elem.size() + slice_size_ - 1) / slice_size_;
+  int64 slice_num = elem.size() / slice_size_;
+  if (elem.size() % slice_size_ != 0) {
+    slice_num += 1;
+  }
   Tensor data_t;
   for (int64 i = 0; i < slice_num; i++) {
     TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_STRING, TensorShape({}), &data_t));
@@ -231,8 +205,8 @@ Status SliceSendOp::SendStringSlice(OpKernelContext* ctx,
     std::string tensor_name_suffix = \
       strings::StrCat("_slice_transfer_data_", std::to_string(index), "_",
                       std::to_string(i));
-    GetSliceRendezvousKey(key_prefix_, tensor_name_suffix, frame_iter,
-                          &parsed_key.buf_);
+    slice_sendrecv::GetSliceRendezvousKey(key_prefix_, tensor_name_suffix,
+                                          frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
     TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, data_t,
@@ -252,12 +226,15 @@ Status SliceSendOp::SendBasicType(OpKernelContext* ctx,
 
   // send data.
   Tensor data_t;
-  int64 bytes_num = input_t.TotalBytes();
-  int64 slice_num = (bytes_num + slice_size_ - 1) / slice_size_;
+  size_t bytes_num = input_t.TotalBytes();
+  int64 slice_num = bytes_num / slice_size_;
+  if (bytes_num % slice_size_ != 0) {
+    slice_num += 1;
+  }
   unsigned char* input_base = reinterpret_cast<unsigned char*>(input_t.data());
   for (int64 i = 0; i < slice_num; i++) {
-    int64 start = i * slice_size_;
-    int64 copy_size = slice_size_;
+    size_t start = i * slice_size_;
+    size_t copy_size = slice_size_;
     if (start > bytes_num - slice_size_) {
       copy_size = bytes_num - start;
     }
@@ -267,8 +244,8 @@ Status SliceSendOp::SendBasicType(OpKernelContext* ctx,
     std::memcpy(data_base, input_base+start, copy_size);
     std::string tensor_name_suffix = \
       strings::StrCat("_slice_transfer_data_", std::to_string(i));
-    GetSliceRendezvousKey(key_prefix_, tensor_name_suffix, frame_iter,
-                          &parsed_key.buf_);
+    slice_sendrecv::GetSliceRendezvousKey(key_prefix_, tensor_name_suffix,
+                                          frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
     TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, data_t,
@@ -296,8 +273,8 @@ SliceRecvOp::SliceRecvOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
   string tensor_name;
   OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name));
   key_prefix_ = \
-    GetSliceRendezvousKeyPrefix(send_device, recv_device,
-                                send_device_incarnation, tensor_name);
+    slice_sendrecv::GetSliceRendezvousKeyPrefix(send_device,
+                      recv_device, send_device_incarnation, tensor_name);
   if (!ctx->GetAttr("_hostmem_sendrecv", &hostmem_sendrecv_).ok()) {
     hostmem_sendrecv_ = false;
   }
@@ -311,11 +288,12 @@ void SliceRecvOp::Compute(OpKernelContext* ctx) {
     ctx, ctx->rendezvous() != nullptr,
     errors::Internal("Op kernel context needs to provide a rendezvous."));
 
-  FrameAndIter frame_iter = GetFrameAndIter(ctx, hostmem_sendrecv_);
+  FrameAndIter frame_iter = \
+    slice_sendrecv::GetFrameAndIter(ctx, hostmem_sendrecv_);
   bool is_dead;
 
   // recv total_bytes.
-  int64 total_bytes;
+  uint64 total_bytes;
   OP_REQUIRES_OK(ctx, RecvTotalBytes(ctx, frame_iter, is_dead, total_bytes));
   if (is_dead) {
     return;
@@ -334,8 +312,8 @@ void SliceRecvOp::Compute(OpKernelContext* ctx) {
     }
 
     Rendezvous::ParsedKey parsed_key;
-    GetSliceRendezvousKey(key_prefix_, "_transfer_data", frame_iter,
-                          &parsed_key.buf_);
+    slice_sendrecv::GetSliceRendezvousKey(key_prefix_, "_transfer_data",
+                                          frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceRecv " << parsed_key.buf_;
     OP_REQUIRES_OK(ctx, Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
     Tensor data_t;
@@ -364,7 +342,7 @@ void SliceRecvOp::Compute(OpKernelContext* ctx) {
 
 Status SliceRecvOp::RecvTotalBytes(OpKernelContext* ctx,
                                    const FrameAndIter& frame_iter,
-                                   bool& is_dead, int64& total_bytes) {
+                                   bool& is_dead, uint64& total_bytes) {
   Rendezvous::Args args;
   args.device_context = ctx->op_device_context();
   args.alloc_attrs = AllocatorAttributes();
@@ -377,14 +355,14 @@ Status SliceRecvOp::RecvTotalBytes(OpKernelContext* ctx,
 
   Rendezvous::ParsedKey parsed_key;
   Tensor total_bytes_t;
-  GetSliceRendezvousKey(key_prefix_, "_slice_transfer_totalbytes", frame_iter,
-                        &parsed_key.buf_);
+  slice_sendrecv::GetSliceRendezvousKey(key_prefix_,
+                    "_slice_transfer_totalbytes", frame_iter, &parsed_key.buf_);
   VLOG(2) << "SliceRecv " << parsed_key.buf_;
   TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
   TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &total_bytes_t,
                                              &is_dead, timeout_ms_));
   if (!is_dead) {
-    total_bytes = total_bytes_t.scalar<int64>()();
+    total_bytes = total_bytes_t.scalar<uint64>()();
   }
 
   return Status::OK();
@@ -404,8 +382,8 @@ Status SliceRecvOp::RecvShape(OpKernelContext* ctx,
   }
 
   Rendezvous::ParsedKey parsed_key;
-  GetSliceRendezvousKey(key_prefix_, "_slice_transfer_shape", frame_iter,
-                        &parsed_key.buf_);
+  slice_sendrecv::GetSliceRendezvousKey(key_prefix_, "_slice_transfer_shape",
+                                        frame_iter, &parsed_key.buf_);
   VLOG(2) << "SliceRecv " << parsed_key.buf_;
   TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
 
@@ -439,27 +417,27 @@ Status SliceRecvOp::RecvString(OpKernelContext* ctx,
   Rendezvous::ParsedKey parsed_key;
   bool is_dead;
 
-  // recv elements size.
-  GetSliceRendezvousKey(key_prefix_, "_slice_transfer_elements_size",
-                        frame_iter, &parsed_key.buf_);
+  // recv elements bytes.
+  slice_sendrecv::GetSliceRendezvousKey(key_prefix_,
+    "_slice_transfer_elements_bytes", frame_iter, &parsed_key.buf_);
   VLOG(2) << "SliceRecv " << parsed_key.buf_;
   TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-  Tensor elements_size_t;
-  TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &elements_size_t,
+  Tensor elements_bytes_t;
+  TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &elements_bytes_t,
                                              &is_dead, timeout_ms_));
   // This shouldn't be a dead tensor.
   CHECK_EQ(is_dead, false);
-  auto elements_size_flat = elements_size_t.flat<int64>();
+  auto elements_bytes_flat = elements_bytes_t.flat<uint64>();
   int64 num_elements = shape.num_elements();
   args.alloc_attrs = ctx->output_alloc_attr(0);
   Tensor data_t;
   auto output_flat = output_t->flat<tstring>();
   for (int64 i = 0; i < num_elements; i++) {
-    if (elements_size_flat(i) <= slice_size_) {
+    if (elements_bytes_flat(i) <= slice_size_) {
       std::string tensor_name_suffix = \
         strings::StrCat("_slice_transfer_data_", std::to_string(i));
-      GetSliceRendezvousKey(key_prefix_, tensor_name_suffix, frame_iter,
-                            &parsed_key.buf_);
+      slice_sendrecv::GetSliceRendezvousKey(key_prefix_, tensor_name_suffix,
+                                            frame_iter, &parsed_key.buf_);
       VLOG(2) << "SliceRecv " << parsed_key.buf_;
       TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
       TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &data_t,
@@ -469,7 +447,7 @@ Status SliceRecvOp::RecvString(OpKernelContext* ctx,
       output_flat(i) = data_t.scalar<tstring>()();
     } else {
       TF_RETURN_IF_ERROR(RecvStringSlice(ctx, frame_iter, i,
-                                         elements_size_flat(i), output_flat));
+                                         elements_bytes_flat(i), output_flat));
     }
   }
 
@@ -478,7 +456,8 @@ Status SliceRecvOp::RecvString(OpKernelContext* ctx,
 
 Status SliceRecvOp::RecvStringSlice(OpKernelContext* ctx,
                                     const FrameAndIter& frame_iter,
-                                    const int64 index, const int64 element_size,
+                                    const int64 index,
+                                    const uint64 element_bytes,
                                     TTypes<tstring>::Flat& output_flat) {
   Rendezvous::Args args;
   args.device_context = ctx->op_device_context();
@@ -491,15 +470,18 @@ Status SliceRecvOp::RecvStringSlice(OpKernelContext* ctx,
   }
   Rendezvous::ParsedKey parsed_key;
 
-  int64 slice_num = (element_size + slice_size_ - 1) / slice_size_;
+  int64 slice_num = element_bytes / slice_size_;
+  if (element_bytes % slice_size_ != 0) {
+    slice_num += 1;
+  }
   Tensor data_t;
   bool is_dead = false;
   for (int64 i = 0; i < slice_num; i++) {
     std::string tensor_name_suffix = \
       strings::StrCat("_slice_transfer_data_", std::to_string(index), "_",
                       std::to_string(i));
-    GetSliceRendezvousKey(key_prefix_, tensor_name_suffix, frame_iter,
-                          &parsed_key.buf_);
+    slice_sendrecv::GetSliceRendezvousKey(key_prefix_, tensor_name_suffix,
+                                          frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceRecv " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
     TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &data_t,
@@ -514,7 +496,7 @@ Status SliceRecvOp::RecvStringSlice(OpKernelContext* ctx,
 
 Status SliceRecvOp::RecvBasicType(OpKernelContext* ctx,
                                   const FrameAndIter& frame_iter,
-                                  const int64 total_bytes,
+                                  const uint64 total_bytes,
                                   Tensor*& output_t) {
   Rendezvous::Args args;
   args.device_context = ctx->op_device_context();
@@ -529,19 +511,22 @@ Status SliceRecvOp::RecvBasicType(OpKernelContext* ctx,
 
   Tensor data_t;
   bool is_dead = false;
-  int64 slice_num = (total_bytes + slice_size_ - 1) / slice_size_;
+  int64 slice_num = total_bytes / slice_size_;
+  if (total_bytes % slice_size_ != 0) {
+    slice_num += 1;
+  }
   unsigned char* output_base = \
     reinterpret_cast<unsigned char*>(output_t->data());
   for (int64 i = 0; i < slice_num; i++) {
-    int64 start = i * slice_size_;
-    int64 copy_size = slice_size_;
+    uint64 start = i * slice_size_;
+    uint64 copy_size = slice_size_;
     if (start > total_bytes - slice_size_) {
       copy_size = total_bytes - start;
     }
     std::string tensor_name_suffix = \
       strings::StrCat("_slice_transfer_data_", std::to_string(i));
-    GetSliceRendezvousKey(key_prefix_, tensor_name_suffix, frame_iter,
-                          &parsed_key.buf_);
+    slice_sendrecv::GetSliceRendezvousKey(key_prefix_, tensor_name_suffix,
+                                          frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
     TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &data_t,

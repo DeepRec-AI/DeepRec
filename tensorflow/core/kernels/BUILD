@@ -5423,6 +5423,7 @@ cc_library(
     name = "required",
     deps = [
         ":no_op",
+        ":file_slice_sendrecv_ops",
         ":fuserecv_ops",
         ":sendrecv_ops",
         ":slice_sendrecv_ops",
@@ -5446,10 +5447,33 @@ tf_kernel_library(
     deps = REQUIRED_DEPS,
 )
 
+cc_library(
+    name = "slice_sendrecv_utils",
+    hdrs = [
+        "slice_sendrecv_utils.h"
+    ],
+    srcs = [
+        "slice_sendrecv_utils.cc",
+    ],
+    deps = [
+        "//tensorflow/core:framework",
+    ]
+)
+
 tf_kernel_library(
     name = "slice_sendrecv_ops",
     prefix = "slice_sendrecv_ops",
-    deps = REQUIRED_DEPS,
+    deps = REQUIRED_DEPS + [
+        ":slice_sendrecv_utils",
+    ],
+)
+
+tf_kernel_library(
+    name = "file_slice_sendrecv_ops",
+    prefix = "file_slice_sendrecv_ops",
+    deps = REQUIRED_DEPS + [
+        ":slice_sendrecv_utils",
+    ],
 )
 
 tf_kernel_library(
@@ -5527,6 +5551,26 @@ tf_cc_test(
         ":ops_testutil",
         ":ops_util",
         ":slice_sendrecv_ops",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "file_slice_sendrecv_ops_test",
+    srcs = ["file_slice_sendrecv_ops_test.cc"],
+    linkstatic = tf_kernel_tests_linkstatic(), # Required for benchmarking
+    deps = [
+        ":control_flow_ops",
+        ":cwise_op",
+        ":file_slice_sendrecv_ops",
+        ":logging_ops",
+        ":ops_testutil",
+        ":ops_util",
+        ":slice_sendrecv_ops",
+        ":whole_file_read_ops",
         "//tensorflow/core:framework",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",

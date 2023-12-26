@@ -80,6 +80,8 @@ bool IsExit(const NodeDef& node);
 bool IsExp(const NodeDef& node);
 bool IsFakeParam(const NodeDef& node);
 bool IsFill(const NodeDef& node);
+bool IsFileSliceRecv(const NodeDef& node);
+bool IsFileSliceSend(const NodeDef& node);
 bool IsFloorDiv(const NodeDef& node);
 bool IsFloorMod(const NodeDef& node);
 bool IsFusedBatchNorm(const NodeDef& node);

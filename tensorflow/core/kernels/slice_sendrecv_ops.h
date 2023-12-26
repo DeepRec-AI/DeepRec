@@ -66,7 +66,7 @@ class SliceRecvOp : public OpKernel {
 
   // Fucntions.
   Status RecvTotalBytes(OpKernelContext* ctx, const FrameAndIter& frame_iter,
-                        bool& is_dead, int64& total_bytes);
+                        bool& is_dead, uint64& total_bytes);
 
   Status RecvShape(OpKernelContext* ctx, const FrameAndIter& frame_iter,
                    TensorShape& shape);
@@ -75,11 +75,11 @@ class SliceRecvOp : public OpKernel {
                     const TensorShape& shape, Tensor*& output_t);
 
   Status RecvStringSlice(OpKernelContext* ctx, const FrameAndIter& frame_iter,
-                         const int64 index, const int64 element_size,
+                         const int64 index, const uint64 element_bytes,
                          TTypes<tstring>::Flat& output_flat);
 
   Status RecvBasicType(OpKernelContext* ctx, const FrameAndIter& frame_iter,
-                       const int64 total_bytes, Tensor*& output_t);
+                       const uint64 total_bytes, Tensor*& output_t);
 
   TF_DISALLOW_COPY_AND_ASSIGN(SliceRecvOp);
 };
