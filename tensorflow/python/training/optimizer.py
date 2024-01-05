@@ -1100,24 +1100,9 @@ class Optimizer(
     """
     from tensorflow.python.ops import kv_variable_ops
     if isinstance(handle, kv_variable_ops.EmbeddingVariable) and handle.need_counts():
-      if len(handle._counts_tensor.keys()) == 0:
-        summed_grad, unique_indices, indices_counts = \
+      summed_grad, unique_indices, indices_counts = \
             _deduplicate_indexed_slices_with_counts(
                 values=grad, indices=indices)
-      else:
-        if indices.op.type == "ConcatV2":
-          total_counts = []
-          for tensor in indices.op.inputs:
-            if tensor.op.type == "Reshape":
-              indices_tensor = tensor.op.inputs[0]
-              total_counts.append(handle._counts_tensor[indices_tensor])
-          counts_tensor = array_ops.concat(total_counts, 0)
-        elif indices.op.type == "Reshape":
-          indices_tensor = indices.op.inputs[0]
-          counts_tensor = handle._counts_tensor[indices_tensor]
-        summed_grad, unique_indices, indices_counts = \
-            _deduplicate_indexed_slices_with_counts_reduction(
-                grad, indices, counts_tensor)
       return self._resource_apply_sparse(
           summed_grad, handle, unique_indices, indices_counts)
     else:

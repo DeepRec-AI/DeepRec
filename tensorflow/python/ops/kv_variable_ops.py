@@ -368,7 +368,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
         self._gather_op = None
-        self._counts_tensor = {}
         if self._is_primary:
           self._slot_num = 0 
         else:
@@ -864,7 +863,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
               default_value,
               counts, is_inference=True,
               name=name)
-        self._counts_tensor[indices] = counts
       else:
         value = gen_kv_variable_ops.kv_resource_gather(self._handle,
               indices,

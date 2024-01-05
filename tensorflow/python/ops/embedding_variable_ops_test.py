@@ -2871,6 +2871,39 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         value = checkpoint_utils.load_variable(ckpt_path, name)
         self.assertAllEqual(value, [3, 3, 1, 3, 2])
   
+  def testCountsWithSparseAndDenseTensor(self):
+    os.environ["TF_RECORD_FREQ"] = "1"
+    checkpoint_directory = self.get_temp_dir()
+    ckpt_path = os.path.join(checkpoint_directory, "model.ckpt")
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+          embedding_dim = 3)
+      sp1 = sparse_tensor.SparseTensor(
+                      indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]],
+                      values=math_ops.cast([0,0,0,1,1,2], dtypes.int64),
+                      dense_shape=[6, 1])
+      ids = constant_op.constant([3,3,3,4,4,1], dtype=dtypes.int64)
+      emb1 = embedding_ops.embedding_lookup_sparse(var, sp1, None)
+      emb2 = embedding_ops.embedding_lookup(var, ids)
+      emb = emb1 + emb2
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      saver = saver_module.Saver()
+      init = variables.global_variables_initializer()
+    with self.test_session(graph=g) as sess:
+      sess.run([init])
+      sess.run(train_op)
+      saver.save(sess, ckpt_path)
+
+    for name, shape in checkpoint_utils.list_variables(ckpt_path):
+      if name == "var_1-freqs":
+        value = checkpoint_utils.load_variable(ckpt_path, name)
+        self.assertAllEqual(value, [3, 3, 1, 3, 2])
+  
   def testCountsTensorWithGradientDescent(self):
     os.environ["TF_RECORD_FREQ"] = "1"
     checkpoint_directory = self.get_temp_dir()
@@ -2888,6 +2921,41 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
                       dense_shape=[6, 1])
       emb1 = embedding_ops.embedding_lookup_sparse(var, sp1, None)
       emb2 = embedding_ops.embedding_lookup_sparse(var, sp2, None)
+      emb = emb1 + emb2
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = gradient_descent.GradientDescentOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      saver = saver_module.Saver()
+      init = variables.global_variables_initializer()
+    with self.test_session(graph=g) as sess:
+      sess.run([init])
+      sess.run(train_op)
+      saver.save(sess, ckpt_path)
+
+    for name, shape in checkpoint_utils.list_variables(ckpt_path):
+      if name == "var_1-freqs":
+        value = checkpoint_utils.load_variable(ckpt_path, name)
+        self.assertAllEqual(value, [3, 3, 1, 3, 2])
+
+    del os.environ["TF_RECORD_FREQ"]
+  
+  def testCountsDenseAndSparseTensorWithGradientDescent(self):
+    os.environ["TF_RECORD_FREQ"] = "1"
+    checkpoint_directory = self.get_temp_dir()
+    ckpt_path = os.path.join(checkpoint_directory, "model.ckpt")
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+          embedding_dim = 3)
+      sp1 = sparse_tensor.SparseTensor(
+                      indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]],
+                      values=math_ops.cast([0,0,0,1,1,2], dtypes.int64),
+                      dense_shape=[6, 1])
+      ids = constant_op.constant([3,3,3,4,4,1], dtype=dtypes.int64)
+      emb1 = embedding_ops.embedding_lookup_sparse(var, sp1, None)
+      emb2 = embedding_ops.embedding_lookup(var, ids)
       emb = emb1 + emb2
       fun = math_ops.multiply(emb, 2.0, name='multiply')
       loss = math_ops.reduce_sum(fun, name='reduce_sum')
