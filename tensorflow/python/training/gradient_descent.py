@@ -19,9 +19,11 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import gen_hash_training_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
@@ -72,22 +74,28 @@ class GradientDescentOptimizer(optimizer.Optimizer):
     if isinstance(handle, kv_variable_ops.EmbeddingVariable):
       global_step = training_util.get_or_create_global_step()
       if handle.need_counts() and len(handle._counts_tensor.keys()) != 0:
+        extra_counts, extra_indices = [], []
         if indices.op.type == "ConcatV2":
-          total_counts = []
           for tensor in indices.op.inputs:
             if tensor.op.type == "Reshape":
               indices_tensor = tensor.op.inputs[0]
-              total_counts.append(handle._counts_tensor[indices_tensor])
-          from tensorflow.python.ops import array_ops
-          counts_tensor = array_ops.concat(total_counts, 0)
+              if indices_tensor in handle._counts_tensor:
+                extra_counts.append(handle._counts_tensor[indices_tensor])
+                extra_indices.append(indices_tensor)
         elif indices.op.type == "Reshape":
           indices_tensor = indices.op.inputs[0]
-          counts_tensor = handle._counts_tensor[indices_tensor]
+          if indices_tensor in handle._counts_tensor:
+            extra_counts.append(handle._counts_tensor[indices_tensor])
+            extra_indices.append(indices_tensor)
+        unique_indices, new_index_positions, indices_counts = \
+            array_ops.unique_with_extra_counts(indices, extra_indices, extra_counts)
+        summed_grads = math_ops.unsorted_segment_sum(
+            grad, new_index_positions, array_ops.shape(unique_indices)[0])
         return training_ops.kv_resource_sparse_apply_gradient_descent_with_counts(
             handle.handle, math_ops.cast(self._learning_rate_tensor,
                                          grad.dtype.base_dtype),
-            grad, indices, global_step,
-            counts_tensor, use_locking=self._use_locking)
+            summed_grads, unique_indices, global_step,
+            indices_counts, use_locking=self._use_locking)
       else:
         return training_ops.kv_resource_sparse_apply_gradient_descent(
             handle.handle, math_ops.cast(self._learning_rate_tensor,

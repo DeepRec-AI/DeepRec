@@ -27,6 +27,7 @@ os.environ["DEEPREC_CONFIG_RAND_64"] = str(PreservedKey)
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
+from tensorflow.python.framework import constant_op
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.platform import test
@@ -278,6 +279,73 @@ class UniqueWithCountsTest(test.TestCase):
   def testUniqueWithCountsDenseHashMap(self):
     self.RunUniqueWithCountsWithDifferentMaps('GOOGLE')
 
+class UniqueWithExtraCountsTest(test.TestCase):
+
+  def testInt32(self):
+    x = np.random.randint(2, high=1000, size=700000)
+    extra_x = x[:5].tolist()
+    extra_x_tensor = [constant_op.constant(extra_x, dtypes.int64)]
+    extra_count = [500 for _ in range(5)]
+    extra_count_tensor = [constant_op.constant(extra_count, dtypes.int32)]
+    with self.cached_session() as sess:
+      y, idx, count = array_ops.unique_with_extra_counts(x, extra_x_tensor, extra_count_tensor)
+      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
+
+    self.assertEqual(len(x), len(tf_idx))
+    self.assertEqual(len(tf_y), len(np.unique(x)))
+    for i in range(len(x)):
+      self.assertEqual(x[i], tf_y[tf_idx[i]])
+    for value, count in zip(tf_y, tf_count):
+      if value in extra_x:
+        self.assertEqual(count, np.sum(x == value) + 499)
+      else:
+        self.assertEqual(count, np.sum(x == value))
+
+  def testInt32OutIdxInt64(self):
+    x = np.random.randint(2, high=1000, size=700000)
+    extra_x = x[:5].tolist()
+    extra_x_tensor = [constant_op.constant(extra_x, dtypes.int64)]
+    extra_count = [500 for _ in range(5)]
+    extra_count_tensor = [constant_op.constant(extra_count, dtypes.int64)]
+    with self.cached_session() as sess:
+      y, idx, count = array_ops.unique_with_extra_counts(x, extra_x_tensor, extra_count_tensor)
+      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
+
+    self.assertEqual(len(x), len(tf_idx))
+    self.assertEqual(len(tf_y), len(np.unique(x)))
+    for i in range(len(x)):
+      self.assertEqual(x[i], tf_y[tf_idx[i]])
+    for value, count in zip(tf_y, tf_count):
+      if value in extra_x:
+        self.assertEqual(count, np.sum(x == value) + 499)
+      else:
+        self.assertEqual(count, np.sum(x == value))
+
+  def RunUniqueWithCountsWithDifferentMaps(self, map_type):
+    recover_env = False
+    if 'DEEPREC_UNIQUE_OP_HASH_MAP' in os.environ:
+      recover_env = True
+      old_env = os.environ['DEEPREC_UNIQUE_OP_HASH_MAP']
+
+    os.environ['DEEPREC_UNIQUE_OP_HASH_MAP'] = map_type
+    self.testInt32()
+    self.testInt32OutIdxInt64()
+
+    del os.environ['DEEPREC_UNIQUE_OP_HASH_MAP']
+    if recover_env:
+      os.environ['DEEPREC_UNIQUE_OP_HASH_MAP'] = old_env
+
+  def testUniqueWithCountsMultiMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('MULTIMAP')
+
+  def testUniqueWithCountsStlMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('STL')
+
+  def testUniqueWithCountsAbslMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('ABSL')
+
+  def testUniqueWithCountsDenseHashMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('GOOGLE')
 
 if __name__ == '__main__':
   test.main()

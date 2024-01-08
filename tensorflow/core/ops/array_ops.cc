@@ -1741,6 +1741,26 @@ REGISTER_OP("UniqueWithCountsV2")
       return Status::OK();
     });
 
+// ---------------------------------------------------
+
+REGISTER_OP("UniqueWithExtraCounts")
+    .Input("x: T")
+    .Input("extra_indices: N * T")
+    .Input("extra_counts: N * out_idx")
+    .Output("y: T")
+    .Output("idx: out_idx")
+    .Output("count: out_idx")
+    .Attr("T: type")
+    .Attr("N: int >= 0")
+    .Attr("out_idx: {int32, int64} = DT_INT32")
+    .SetShapeFn([](InferenceContext* c) {
+      auto uniq = c->Vector(InferenceContext::kUnknownDim);
+      c->set_output(0, uniq);
+      c->set_output(1, c->input(0));
+      c->set_output(2, uniq);
+      return Status::OK();
+    });
+
 namespace {
 
 Status ShapeShapeFn(InferenceContext* c) {
