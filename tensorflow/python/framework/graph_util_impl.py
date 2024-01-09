@@ -169,7 +169,7 @@ def _bfs_for_reachable_nodes(target_nodes, name_to_input_name):
   return nodes_to_keep
 
 @tf_export(v1=["graph_util.create_kv_variable_init_graph"])
-def create_kv_variable_init_graph(graph, global_step_name, restore_all_op_name):
+def create_kv_variable_init_graph(graph, restore_all_op_name):
   name_to_input_name, name_to_node, name_to_seq_num = \
       _extract_graph_summary(graph)
 
@@ -184,8 +184,10 @@ def create_kv_variable_init_graph(graph, global_step_name, restore_all_op_name):
                        " {} in current graph.".format(restore_all_op_name))
 
   for restore_shard_input_full_name in restore_all_op.input:
-    restore_shard_input_name = re.sub(r"^\^", "", restore_shard_input_full_name)
-    restore_shard_input_op = name_to_node[restore_shard_input_name]
+    restore_shard_input_no_op_name = re.sub(r"^\^", "", restore_shard_input_full_name)
+    restore_shard_input_no_op = name_to_node[restore_shard_input_no_op_name]
+    restore_shard_input_op_name = re.sub(r"^\^", "",restore_shard_input_no_op.input[0])
+    restore_shard_input_op = name_to_node[restore_shard_input_op_name]
     # go through all restore_shard ops
     new_node = node_def_pb2.NodeDef()
     new_node.CopyFrom(restore_shard_input_op)
@@ -198,10 +200,6 @@ def create_kv_variable_init_graph(graph, global_step_name, restore_all_op_name):
          n_node.op == "KvResourceImportV2" or \
          n_node.op == "KvResourceImport":
         new_node.input.append(n_full_name)
-      else:
-        # Keep global_step assign op in new save/restore_all
-        if n_node.input[0] == global_step_name:
-          new_node.input.append(n_full_name)
 
     graph.node.remove(restore_shard_input_op)
     graph.node.extend([new_node])
