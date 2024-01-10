@@ -208,12 +208,12 @@ class UniqueWithCountAliOp : public UniqueAliOp<T, TIndex> {
                               .TypeConstraint<type>("T")         \
                               .TypeConstraint<int64>("out_idx"), \
                           UniqueAliOp<type, int64>)              \
-  REGISTER_KERNEL_BUILDER(Name("UniqueWithExtraCounts")          \
+  REGISTER_KERNEL_BUILDER(Name("_UniqueWithExtraCounts")         \
                               .Device(DEVICE_CPU)                \
                               .TypeConstraint<type>("T")         \
                               .TypeConstraint<int32>("out_idx"), \
                           UniqueWithCountAliOp<type, int32>)     \
-  REGISTER_KERNEL_BUILDER(Name("UniqueWithExtraCounts")          \
+  REGISTER_KERNEL_BUILDER(Name("_UniqueWithExtraCounts")         \
                               .Device(DEVICE_CPU)                \
                               .TypeConstraint<type>("T")         \
                               .TypeConstraint<int64>("out_idx"), \
@@ -242,12 +242,12 @@ REGISTER_UNIQUE(string)
                               .TypeConstraint<type>("T")         \
                               .TypeConstraint<int64>("out_idx"), \
                           UniqueAliOp<type, int64>)              \
-  REGISTER_KERNEL_BUILDER(Name("UniqueWithExtraCounts")          \
+  REGISTER_KERNEL_BUILDER(Name("_UniqueWithExtraCounts")         \
                               .Device(DEVICE_GPU)                \
                               .TypeConstraint<type>("T")         \
                               .TypeConstraint<int32>("out_idx"), \
                           UniqueWithCountAliOp<type, int32>)     \
-  REGISTER_KERNEL_BUILDER(Name("UniqueWithExtraCounts")          \
+  REGISTER_KERNEL_BUILDER(Name("_UniqueWithExtraCounts")         \
                               .Device(DEVICE_GPU)                \
                               .TypeConstraint<type>("T")         \
                               .TypeConstraint<int64>("out_idx"), \
