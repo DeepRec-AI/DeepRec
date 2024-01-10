@@ -539,13 +539,10 @@ class TrtGraphConverter(object):
       # EmbeddingVariable can not be convert to constant, so we need to
       # load ev varibles at runtime always.
       if self._use_ev:
-        global_step_collection_ops = sess.graph.get_collection("global_step")
-        global_step_name = global_step_collection_ops[0].name.split(":")[0]
         output_node_names.add(filename_tensor_name)
         output_node_names.add(save_tensor_name)
         output_node_names.add(restore_op_name)
 
-        tf_logging.info("TensorRT - global_step_name: %s" % str(global_step_name))
         tf_logging.info("TensorRT - filename_tensor_name: %s" % str(filename_tensor_name))
         tf_logging.info("TensorRT - save_tensor_name: %s" % str(save_tensor_name))
         tf_logging.info("TensorRT - restore_op_name: %s" % str(restore_op_name))
@@ -559,18 +556,19 @@ class TrtGraphConverter(object):
 
       # Freeze the variables in the SavedModel graph and copy the frozen
       # graph over.
-      variable_names_blacklist = []
       if self._use_ev:
-        variable_names_blacklist.append(global_step_name)
+        global_step_collection_ops = sess.graph.get_collection("global_step")
+        if len(global_step_collection_ops) > 0:
+          sess.run([sess.graph.get_operation_by_name("global_step/Assign")])
 
       frozen_graph_def = graph_util.convert_variables_to_constants(
           sess, sess.graph.as_graph_def(add_shapes=True),
-          list(output_node_names), variable_names_blacklist=variable_names_blacklist)
+          list(output_node_names))
 
       if self._use_ev:
         # Keep KV Variable in saver_def, these kv-vars will be initialized at runtime.
         frozen_graph_def = graph_util.create_kv_variable_init_graph(
-            frozen_graph_def, global_step_name, restore_op_name)
+            frozen_graph_def, restore_op_name)
 
       self._grappler_meta_graph_def = meta_graph_pb2.MetaGraphDef()
       self._grappler_meta_graph_def.graph_def.CopyFrom(frozen_graph_def)
