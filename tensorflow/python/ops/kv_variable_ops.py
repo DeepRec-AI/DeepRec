@@ -530,10 +530,15 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           cache_op = op
     elif self._initializer_op.type == "InitializeKvVariableOp":
       init_op = self._initializer_op
-
-    self._init_op_for_restore = g.as_graph_element(
+    if variable_def.initialize_op_for_restore:
+      self._init_op_for_restore = g.as_graph_element(
         ops.prepend_name_scope(
             variable_def.initialize_op_for_restore,
+            import_scope=import_scope))
+    else: #Backward compatibility with 2306
+      self._init_op_for_restore = g.as_graph_element(
+        ops.prepend_name_scope(
+            variable_def.initializer_name,
             import_scope=import_scope))
     self._trainable = getattr(variable_def, "trainable", True)
     if variable_def.snapshot_name:
