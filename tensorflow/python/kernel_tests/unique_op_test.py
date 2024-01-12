@@ -288,7 +288,7 @@ class UniqueWithExtraCountsTest(test.TestCase):
     extra_count = [500 for _ in range(5)]
     extra_count_tensor = [constant_op.constant(extra_count, dtypes.int32)]
     with self.cached_session() as sess:
-      y, idx, count = array_ops.unique_with_extra_counts(x, extra_x_tensor, extra_count_tensor)
+      y, idx, count = gen_array_ops._unique_with_extra_counts(x, extra_x_tensor, extra_count_tensor)
       tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
@@ -308,7 +308,7 @@ class UniqueWithExtraCountsTest(test.TestCase):
     extra_count = [500 for _ in range(5)]
     extra_count_tensor = [constant_op.constant(extra_count, dtypes.int64)]
     with self.cached_session() as sess:
-      y, idx, count = array_ops.unique_with_extra_counts(x, extra_x_tensor, extra_count_tensor)
+      y, idx, count = gen_array_ops._unique_with_extra_counts(x, extra_x_tensor, extra_count_tensor)
       tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))

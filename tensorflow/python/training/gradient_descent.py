@@ -24,6 +24,7 @@ from tensorflow.python.ops import gen_hash_training_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
@@ -88,7 +89,7 @@ class GradientDescentOptimizer(optimizer.Optimizer):
             extra_counts.append(handle._counts_tensor[indices_tensor])
             extra_indices.append(indices_tensor)
         unique_indices, new_index_positions, indices_counts = \
-            array_ops.unique_with_extra_counts(indices, extra_indices, extra_counts)
+            gen_array_ops._unique_with_extra_counts(indices, extra_indices, extra_counts)
         summed_grads = math_ops.unsorted_segment_sum(
             grad, new_index_positions, array_ops.shape(unique_indices)[0])
         return training_ops.kv_resource_sparse_apply_gradient_descent_with_counts(

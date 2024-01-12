@@ -1743,7 +1743,7 @@ REGISTER_OP("UniqueWithCountsV2")
 
 // ---------------------------------------------------
 
-REGISTER_OP("_UniqueWithExtraCounts")
+REGISTER_OP("UniqueWithExtraCounts")
     .Input("x: T")
     .Input("extra_indices: N * T")
     .Input("extra_counts: N * out_idx")

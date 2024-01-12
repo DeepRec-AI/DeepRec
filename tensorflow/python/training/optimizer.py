@@ -34,6 +34,7 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import smart_cond
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gradients
 from tensorflow.python.ops import gen_io_ops
@@ -97,7 +98,7 @@ def _deduplicate_indexed_slices_with_counts_reduction(values, indices, extra_cou
   """Sums `values` associated with any non-unique `indices`
   and return counts of each count in `values`."""
   unique_indices, new_index_positions, summed_counts = \
-      array_ops.unique_with_extra_counts(indices, extra_indices, extra_counts)
+      gen_array_ops._unique_with_extra_counts(indices, extra_indices, extra_counts)
   summed_values = math_ops.unsorted_segment_sum(
       values, new_index_positions,
       array_ops.shape(unique_indices)[0])
