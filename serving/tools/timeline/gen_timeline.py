@@ -1,6 +1,6 @@
 import sys
-import config_pb2
-import timeline
+from tensorflow.core.protobuf import config_pb2
+from tensorflow.python.client import timeline
 
 def gen_timeline(src_name, dest_name):
   run_metadata = config_pb2.RunMetadata()
