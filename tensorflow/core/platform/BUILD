@@ -86,6 +86,7 @@ cc_library(
         ":platform",
         ":types",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
@@ -176,6 +177,7 @@ cc_library(
         "platform_strings_computed.h",
     ],
     hdrs = ["platform_strings.h"],
+    alwayslink = 1,
 )
 
 cc_library(
