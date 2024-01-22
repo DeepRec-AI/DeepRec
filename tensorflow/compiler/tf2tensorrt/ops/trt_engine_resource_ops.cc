@@ -13,8 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
-#if GOOGLE_TENSORRT
+#if GOOGLE_CUDA && GOOGLE_TENSORRT
 
 #include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
@@ -39,6 +38,7 @@ REGISTER_OP("InitializeTRTResource")
 
 REGISTER_OP("SerializeTRTResource")
     .Attr("delete_resource: bool = false")
+    .Attr("save_gpu_specific_engines: bool = True")
     .Input("resource_name: string")
     .Input("filename: string")
     .SetIsStateful()
@@ -46,5 +46,4 @@ REGISTER_OP("SerializeTRTResource")
 
 }  // namespace tensorflow
 
-#endif  // GOOGLE_TENSORRT
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA && GOOGLE_TENSORRT
