@@ -22,7 +22,7 @@ set -e
 current_file="$(readlink -f "$0")"
 current_dir="$(dirname "$current_file")"
 
-bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt --config=opt //tensorflow/core/api_def:update_api_def
+bazel build //tensorflow/core/api_def:update_api_def
 bazel-bin/tensorflow/core/api_def/update_api_def \
   --api_def_dir="${current_dir}/base_api" \
   --op_file_pattern="${current_dir}/../ops/*_ops.cc"
