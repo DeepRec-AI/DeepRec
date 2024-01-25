@@ -34,6 +34,12 @@ void MarkStreamSubGraph(Graph* g, const MultiStreamOptions& opt);
 // Assign embedding graphs stream.
 void MarkEmbeddingGraph(Graph* g, int num_streams);
 
+// Auto split full graph to subgraphs,
+// and assign stream to each subgraph.
+void MarkFullGraph(Graph* g, int num_streams);
+// Return stream id vector which indexed by node id
+std::vector<int> GenerateNodeStreamId(const Graph* graph);
+
 }  // namespace stream_subgraph
 }  // namespace tensorflow
 
