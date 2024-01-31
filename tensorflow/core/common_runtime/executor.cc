@@ -730,15 +730,16 @@ Status ExecutorState<PropagatorStateType>::ProcessSync(
 
   } else if (kernel_stats_->HasExpensiveMarker(item)) {
     KernelTimer timer;
+    static uint64 update_counter = 0;
     device->Compute(op_kernel, &ctx);
-    // For expensive kernels, always update the cost estimate. For inexpensive
-    // kernels, update the cost estimate with ~1/16 probability. This assumes
-    // that the last 4 bits of the CPU cycle count is uniformly distributed.
+
     constexpr int kKernelExecutionTrackingInvocationSkipCount = 16;
     if (is_expensive ||
-        timer.start_cycles % kKernelExecutionTrackingInvocationSkipCount == 0) {
+        update_counter % kKernelExecutionTrackingInvocationSkipCount == 0) {
       kernel_stats_->UpdateCostEstimate(item, timer.ElapsedCycles());
     }
+
+    update_counter++;
   } else {
     device->Compute(op_kernel, &ctx);
   }
