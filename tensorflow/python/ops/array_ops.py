@@ -1627,7 +1627,6 @@ def unique_with_counts(x, out_idx=dtypes.int32, name=None):
 
 unique_with_counts.__doc__ = gen_array_ops.unique_with_counts.__doc__
 
-
 @tf_export("split")
 def split(value, num_or_size_splits, axis=0, num=None, name="split"):
   """Splits a tensor into sub tensors.

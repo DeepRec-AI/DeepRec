@@ -34,6 +34,7 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import smart_cond
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gradients
 from tensorflow.python.ops import gen_io_ops
@@ -93,15 +94,13 @@ def _deduplicate_indexed_slices_with_counts(values, indices):
       array_ops.shape(unique_indices)[0])
   return (summed_values, unique_indices, indices_counts)
 
-def _deduplicate_indexed_slices_with_counts_reduction(values, indices, counts):
+def _deduplicate_indexed_slices_with_counts_reduction(values, indices, extra_counts, extra_indices):
   """Sums `values` associated with any non-unique `indices`
   and return counts of each count in `values`."""
-  unique_indices, new_index_positions = array_ops.unique(indices)
+  unique_indices, new_index_positions, summed_counts = \
+      gen_array_ops._unique_with_extra_counts(indices, extra_indices, extra_counts)
   summed_values = math_ops.unsorted_segment_sum(
       values, new_index_positions,
-      array_ops.shape(unique_indices)[0])
-  summed_counts = math_ops.unsorted_segment_sum(
-      counts, new_index_positions,
       array_ops.shape(unique_indices)[0])
   return (summed_values, unique_indices, summed_counts)
 
@@ -1105,19 +1104,22 @@ class Optimizer(
             _deduplicate_indexed_slices_with_counts(
                 values=grad, indices=indices)
       else:
+        extra_counts, extra_indices = [], []
         if indices.op.type == "ConcatV2":
-          total_counts = []
           for tensor in indices.op.inputs:
             if tensor.op.type == "Reshape":
               indices_tensor = tensor.op.inputs[0]
-              total_counts.append(handle._counts_tensor[indices_tensor])
-          counts_tensor = array_ops.concat(total_counts, 0)
+              if indices_tensor in handle._counts_tensor:
+                extra_counts.append(handle._counts_tensor[indices_tensor])
+                extra_indices.append(indices_tensor)
         elif indices.op.type == "Reshape":
           indices_tensor = indices.op.inputs[0]
-          counts_tensor = handle._counts_tensor[indices_tensor]
+          if indices_tensor in handle._counts_tensor:
+            extra_counts.append(handle._counts_tensor[indices_tensor])
+            extra_indices.append(indices_tensor)
         summed_grad, unique_indices, indices_counts = \
             _deduplicate_indexed_slices_with_counts_reduction(
-                grad, indices, counts_tensor)
+                grad, indices, extra_counts, extra_indices)
       return self._resource_apply_sparse(
           summed_grad, handle, unique_indices, indices_counts)
     else:
