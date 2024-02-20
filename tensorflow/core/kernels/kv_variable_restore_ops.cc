@@ -373,6 +373,12 @@ class KvResourceImportV3Op: public AsyncOpKernel {
 
     core::ScopedUnref unref_me(ev);
 
+    // EV should not be initialized at this time.
+    if (ev->IsInitialized()) {
+      LOG(ERROR) << "Import parameter for EV (" << name_string
+                 << ") failed, this EV has already been initialized.";
+    }
+
     auto do_compute = [this, context, file_name_string, ev,
          name_string, done] () {
       BundleReader reader(Env::Default(), file_name_string);
