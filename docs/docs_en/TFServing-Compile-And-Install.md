@@ -39,7 +39,7 @@ We provide optimized TFServing which could highly improve performance in inferen
 
 Source Code: [https://github.com/DeepRec-AI/serving](https://github.com/DeepRec-AI/serving)
 
-Develop Branch: master, Latest Release Branch: deeprec2310
+Develop Branch: master, Latest Release Branch: deeprec2402
 
 ## TFServing Build
 
