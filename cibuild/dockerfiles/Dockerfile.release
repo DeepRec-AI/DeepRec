@@ -1,0 +1,32 @@
+# build DeepRec & estimator wheel
+FROM alideeprec/deeprec-base:deeprec-base-cpu-py38-ubuntu20.04 AS deeprec_build
+
+ARG TF_COMMIT=deeprec2402
+
+RUN mkdir -p /src
+RUN wget -nv -O /src/install_bazel.sh \
+    http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/bazel-0.26.1-installer-linux-x86_64.sh && \
+    bash /src/install_bazel.sh
+
+RUN git clone https://github.com/DeepRec-AI/DeepRec.git /src/DeepRec && \
+    cd /src/DeepRec && \
+    git checkout ${TF_COMMIT}
+RUN cd /src/DeepRec && \
+    yes "" | bash ./configure || true && \
+    bazel build -c opt --config=opt //tensorflow/tools/pip_package:build_pip_package && \
+    bazel-bin/tensorflow/tools/pip_package/build_pip_package /src/
+
+RUN pip install /src/tensorflow-1.15.5+${TF_COMMIT}-cp38-cp38-linux_x86_64.whl 
+
+RUN git clone https://github.com/DeepRec-AI/estimator.git /src/estimator && \
+    cd /src/estimator && \
+    git checkout ${TF_COMMIT}
+RUN cd /src/estimator && \
+    bazel build //tensorflow_estimator/tools/pip_package:build_pip_package && \
+    bazel-bin/tensorflow_estimator/tools/pip_package/build_pip_package /src/
+
+# build DeeepRec release image
+FROM alideeprec/deeprec-base:deeprec-base-cpu-py38-ubuntu20.04
+COPY --from=deeprec_build /src/*.whl /
+RUN pip install /tensorflow-1.15.5+${TF_COMMIT}-cp38-cp38-linux_x86_64.whl tensorflow_estimator-1.15.2+${TF_COMMIT}-py2.py3-none-any.whl
+RUN rm -f /tensorflow-1.15.5+${TF_COMMIT}-cp38-cp38-linux_x86_64.whl /tensorflow_estimator-1.15.2+${TF_COMMIT}-py2.py3-none-any.whl
