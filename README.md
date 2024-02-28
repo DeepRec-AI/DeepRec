@@ -95,13 +95,13 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux
 #### Image for CPU
 
 ```
-alideeprec/deeprec-release:deeprec2310-cpu-py38-ubuntu20.04
+alideeprec/deeprec-release:deeprec2402-cpu-py38-ubuntu20.04
 ```
 
 #### Image for GPU CUDA11.6
 
 ```
-alideeprec/deeprec-release:deeprec2310-gpu-py38-cu116-ubuntu20.04
+alideeprec/deeprec-release:deeprec2402-gpu-py38-cu116-ubuntu20.04
 ```
 
 ***
