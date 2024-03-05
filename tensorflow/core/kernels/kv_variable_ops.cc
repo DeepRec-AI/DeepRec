@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/embedding_var.h"
+#include "tensorflow/core/framework/embedding/storage_factory.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/resource_mgr.h"

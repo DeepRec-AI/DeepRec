@@ -236,7 +236,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
     T** dev_a = dev_v + task_size;
     CHECK(dev_a);
     CHECK(dev_v);
-    DeviceMemoryBase dev_v_ptr(dev_v, sizeof(T*) * task_size * 2);
+    se::DeviceMemoryBase dev_v_ptr(dev_v, sizeof(T*) * task_size * 2);
     stream->ThenMemcpy(&dev_v_ptr, v, sizeof(T*) * task_size * 2);
 
     int block_size = 128;
@@ -1606,7 +1606,7 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
     CHECK(dev_m_ptr);
     CHECK(dev_v_ptr);
 
-    DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
+    se::DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
     stream->ThenMemcpy(&dst_ptr, var_ptr, sizeof(T*) * task_size * 3);
 
     int block_size = 128;
@@ -2579,7 +2579,7 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
     CHECK(dev_m_ptr);
     CHECK(dev_v_ptr);
 
-    DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
+    se::DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
     stream->ThenMemcpy(&dst_ptr, var_ptr, sizeof(T*) * task_size * 3);
 
     int block_size = 128;
@@ -3236,7 +3236,7 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
     CHECK(dev_m_ptr);
     CHECK(dev_v_ptr);
 
-    DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
+    se::DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
     stream->ThenMemcpy(&dst_ptr, var_ptr, sizeof(T*) * task_size * 3);
 
     int block_size = 128;

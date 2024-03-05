@@ -34,7 +34,6 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/gpu_hash_map_kv.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
 #include "tensorflow/core/framework/embedding/storage.h"
-#include "tensorflow/core/framework/embedding/storage_factory.h"
 #include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
