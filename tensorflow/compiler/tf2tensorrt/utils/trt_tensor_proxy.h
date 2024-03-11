@@ -13,15 +13,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_COMPILER_TF2TENSORRT_CONVERT_TRT_TENSOR_PROXY_H
-#define TENSORFLOW_COMPILER_TF2TENSORRT_CONVERT_TRT_TENSOR_PROXY_H
+#ifndef TENSORFLOW_COMPILER_TF2TENSORRT_UTILS_TRT_TENSOR_PROXY_H_
+#define TENSORFLOW_COMPILER_TF2TENSORRT_UTILS_TRT_TENSOR_PROXY_H_
 
-#include <cassert>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "tensorflow/compiler/tf2tensorrt/common/utils.h"
+#include "tensorflow/core/platform/logging.h"
 
 #if GOOGLE_CUDA && GOOGLE_TENSORRT
 #include "third_party/tensorrt/NvInfer.h"
@@ -142,28 +143,26 @@ class ITensorProxy {
         ttype_(TensorType::kSIMPLE) {}
 
   bool is_trt_tensor() const {
-    assert(validate());
-    assert(ttype_ == TensorType::kTRT);
+    CHECK(validate());
     return trt_tensor_ != nullptr;
   }
 
   bool is_simple_tensor() const {
-    assert(validate());
-    assert(ttype_ == TensorType::kSIMPLE);
+    CHECK(validate());
     return simple_tensor_ != nullptr;
   }
 
   TensorType ttype() const { return ttype_; }
 
   nvinfer1::ITensor* trt_tensor() const {
-    assert(trt_tensor_ != nullptr);
-    assert(ttype_ == TensorType::kTRT);
+    CHECK_NOTNULL(trt_tensor_);
+    CHECK(ttype_ == TensorType::kTRT);
     return trt_tensor_;
   }
 
   SimpleITensor* simple_tensor() const {
-    assert(simple_tensor_ != nullptr);
-    assert(ttype_ == TensorType::kSIMPLE);
+    CHECK_NOTNULL(simple_tensor_);
+    CHECK(ttype_ == TensorType::kSIMPLE);
     return simple_tensor_.get();
   }
 
@@ -174,7 +173,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setName(name);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   const char* getName() const {
@@ -184,7 +183,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getName();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   void setDimensions(nvinfer1::Dims dimensions) {
@@ -194,7 +193,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setDimensions(dimensions);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   nvinfer1::Dims getDimensions() const {
@@ -204,7 +203,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getDimensions();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   void setType(nvinfer1::DataType type) {
@@ -214,7 +213,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setType(type);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   nvinfer1::DataType getType() const {
@@ -224,7 +223,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getType();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool isNetworkInput() const {
@@ -234,7 +233,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->isNetworkInput();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool isNetworkOutput() const {
@@ -244,7 +243,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->isNetworkOutput();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   void setBroadcastAcrossBatch(bool broadcastAcrossBatch) {
@@ -254,7 +253,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setBroadcastAcrossBatch(broadcastAcrossBatch);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool getBroadcastAcrossBatch() const {
@@ -264,7 +263,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getBroadcastAcrossBatch();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   nvinfer1::TensorLocation getLocation() const {
@@ -274,7 +273,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getLocation();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   void setLocation(nvinfer1::TensorLocation location) {
@@ -284,7 +283,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setLocation(location);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool setDynamicRange(float min, float max) {
@@ -294,7 +293,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setDynamicRange(min, max);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool dynamicRangeIsSet() const {
@@ -304,7 +303,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->dynamicRangeIsSet();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   void resetDynamicRange() {
@@ -314,7 +313,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->resetDynamicRange();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
   float getDynamicRangeMin() const {
     switch (ttype_) {
@@ -323,7 +322,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getDynamicRangeMin();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   float getDynamicRangeMax() const {
@@ -333,9 +332,9 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getDynamicRangeMax();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
-#if IS_TRT_VERSION_GE(5, 0, 0, 0) && !IS_TRT_VERSION_GE(8, 0, 0, 0)
+#if !IS_TRT_VERSION_GE(8, 0, 0, 0)
   float getDynamicRange() const {
     switch (ttype_) {
       case TensorType::kTRT:
@@ -343,7 +342,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getDynamicRange();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 #endif
   void setAllowedFormats(nvinfer1::TensorFormats formats) {
@@ -353,7 +352,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->setAllowedFormats(formats);
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   nvinfer1::TensorFormats getAllowedFormats() const {
@@ -363,7 +362,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->getAllowedFormats();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool isShapeTensor() const {
@@ -373,7 +372,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->isShapeTensor();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
   bool isExecutionTensor() const {
@@ -383,7 +382,7 @@ class ITensorProxy {
       case TensorType::kSIMPLE:
         return simple_tensor_->isExecutionTensor();
     }
-    assert(0 && "Unsupported itensor_ type");
+    LOG(FATAL) << "Unsupported itensor_ type";
   }
 
  private:
@@ -412,7 +411,7 @@ class ITensorProxy {
 
 class ITensorProxyPtr {
  public:
-  ITensorProxyPtr(nullptr_t) : p_(nullptr) {}
+  ITensorProxyPtr(std::nullptr_t) : p_(nullptr) {}
   ITensorProxyPtr(ITensorProxy* p) : p_(p) {}
   ITensorProxyPtr(nvinfer1::ITensor* p) : p_(new ITensorProxy(p)) {}
   ITensorProxyPtr(SimpleITensor* p) : p_(new ITensorProxy(p)) {}
@@ -442,6 +441,10 @@ inline bool operator==(const ITensorProxyPtr& p1, const ITensorProxyPtr& p2) {
            p1->simple_tensor() == p2->simple_tensor()));
 }
 
+inline bool operator!=(const ITensorProxyPtr& p1, const ITensorProxyPtr& p2) {
+  return !(p1 == p2);
+}
+
 struct ITensorProxyHash {
   size_t operator()(const ITensorProxyPtr& tensor) const {
     return reinterpret_cast<std::uintptr_t>(tensor.p_.get());
@@ -452,4 +455,4 @@ struct ITensorProxyHash {
 }  // namespace tensorflow
 #endif  // GOOGLE_CUDA && GOOGLE_TENSORRT
 
-#endif  // TENSORFLOW_COMPILER_TF2TENSORRT_CONVERT_TRT_TENSOR_PROXY_H
+#endif  // TENSORFLOW_COMPILER_TF2TENSORRT_UTILS_TRT_TENSOR_PROXY_H_

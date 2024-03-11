@@ -74,6 +74,22 @@ class DeviceNameUtils {
              (has_id ? (other.has_id && id == other.id) : !other.has_id);
     }
 
+    bool operator!=(const ParsedName& other) const {
+      return (has_job ? ((other.has_job && job != other.job) || !other.has_job)
+                      : other.has_job) ||
+             (has_replica ? ((other.has_replica && replica == other.replica) ||
+                             !other.has_replica)
+                          : other.has_replica) ||
+             (has_task
+                  ? ((other.has_task && task == other.task) || !other.has_task)
+                  : other.has_task) ||
+             (has_type
+                  ? ((other.has_type && type == other.type) || !other.has_type)
+                  : other.has_type) ||
+             (has_id ? ((other.has_id && id == other.id) || !other.has_id)
+                     : other.has_id);
+    }
+
     bool has_job = false;
     string job;
     bool has_replica = false;

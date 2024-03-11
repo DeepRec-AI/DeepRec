@@ -20,8 +20,7 @@ limitations under the License.
 
 #include "tensorflow/core/platform/logging.h"
 
-#if GOOGLE_CUDA
-#if GOOGLE_TENSORRT
+#if GOOGLE_CUDA && GOOGLE_TENSORRT
 #include "third_party/tensorrt/NvInfer.h"
 
 namespace tensorflow {
@@ -30,7 +29,6 @@ namespace tensorrt {
 extern const char* kTfTrtPluginVersion;
 extern const char* kTfTrtPluginNamespace;
 
-#if NV_TENSORRT_MAJOR > 5 || (NV_TENSORRT_MAJOR == 5 && NV_TENSORRT_MINOR >= 1)
 // A wrapper class for TensorRT plugin. User application should inherit from
 // this class to write custom kernels.
 class TrtPlugin : public nvinfer1::IPluginV2Ext {
@@ -51,7 +49,9 @@ class TrtPlugin : public nvinfer1::IPluginV2Ext {
     namespace_ = plugin_namespace;
   }
 
-  const char* getPluginNamespace() const noexcept override { return namespace_.c_str(); }
+  const char* getPluginNamespace() const noexcept override {
+    return namespace_.c_str();
+  }
 
  protected:
   template <typename T>
@@ -70,7 +70,6 @@ class TrtPlugin : public nvinfer1::IPluginV2Ext {
  private:
   std::string namespace_;
 };
-#endif
 
 template <typename T>
 class TrtPluginRegistrar {
@@ -90,7 +89,6 @@ class TrtPluginRegistrar {
 }  // namespace tensorrt
 }  // namespace tensorflow
 
-#endif  // GOOGLE_TENSORRT
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA && GOOGLE_TENSORRT
 
 #endif  // TENSORFLOW_COMPILER_TF2TENSORRT_PLUGIN_TRT_PLUGIN_H_
