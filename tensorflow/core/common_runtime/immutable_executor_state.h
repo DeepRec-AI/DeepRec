@@ -77,14 +77,15 @@ class ImmutableExecutorState {
     int32 parallel_iterations;
   };
 
-  explicit ImmutableExecutorState(const LocalExecutorParams& p,
-                                  std::unique_ptr<const Graph> g)
-      : params_(p), gview_(), graph_(std::move(g)) {}
+  explicit ImmutableExecutorState(const LocalExecutorParams& p)
+      : params_(p), gview_() {}
   ~ImmutableExecutorState();
 
-  Status Initialize();
+  Status Initialize(const Graph& graph);
 
-  Status InitializeScheduleInfo(ExecutorInternal::KernelStats* kernel_stats);
+  Status InitializeScheduleInfo(
+      ExecutorInternal::KernelStats* kernel_stats,
+      const Graph& graph);
 
   // Process all Nodes in the current graph, attempting to infer the
   // memory allocation attributes to be used wherever they may allocate
@@ -93,7 +94,6 @@ class ImmutableExecutorState {
 
   const LocalExecutorParams& params() const { return params_; }
   const GraphView& graph_view() const { return gview_; }
-  const Graph* graph() const { return graph_.get(); }
   const std::vector<PendingCounts::Handle>& pending_ids() const {
     return pending_ids_;
   }
@@ -138,7 +138,6 @@ class ImmutableExecutorState {
   // Owned.
   LocalExecutorParams params_;
   GraphView gview_;
-  std::unique_ptr<const Graph> graph_;
   bool requires_control_flow_;
   std::vector<PendingCounts::Handle> pending_ids_;
 

@@ -179,8 +179,7 @@ struct LocalExecutorParams {
 // "params" provides a set of context for the executor. We expect that
 // different context would provide different implementations.
 ::tensorflow::Status NewLocalExecutor(const LocalExecutorParams& params,
-                                      std::unique_ptr<const Graph> graph,
-                                      Executor** executor);
+                                      const Graph& graph, Executor** executor);
 
 // A class to help run multiple executors in parallel and wait until
 // all of them are complete.
