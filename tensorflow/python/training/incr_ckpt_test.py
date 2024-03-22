@@ -451,5 +451,59 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     saver.build()
     incr_saver = incr_saver_module._get_incremental_saver(True, saver)
 
+  def testIncrementalSaverSaveAndRestore(self):
+    tmp_path = self.get_temp_dir()
+    full_ckpt_dir = os.path.join(tmp_path, "model.ckpt")
+    incr_ckpt_dir = os.path.join(tmp_path, "incr.ckpt")
+    full_ckpt_path = None
+    incr_ckpt_path = None
+
+    # construct graph
+    emb_var = variable_scope.get_embedding_variable("emb", embedding_dim=3,
+                initializer = init_ops.ones_initializer(dtypes.float32))
+    emb = embedding_ops.embedding_lookup(emb_var,
+            math_ops.cast([0, 1, 2, 3, 4], dtypes.int64))
+    loss = math_ops.reduce_sum(emb, name = 'reduce_sum')
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables.global_variables_initializer()
+    saver = saver_module.Saver(sharded=True, incremental_save_restore=True)
+    incr_saver = \
+      incr_saver_module.IncrementalSaver(sharded=True,
+                          saver_def=saver.saver_def, defer_build=True)
+    incr_saver.build(saver._builder.filename_tensor)
+
+    # generate full ckpt and incr ckpt.
+    full_ckpt_value=None
+    incr_ckpt_value=None
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      sess.run([train_op])
+      full_ckpt_path = saver.save(sess, full_ckpt_dir, global_step = 10)
+      full_ckpt_value = sess.run([emb])
+      print("full_ckpt: {}".format(full_ckpt_value))
+      sess.run([train_op])
+      incr_ckpt_path = \
+        incr_saver.incremental_save(sess, incr_ckpt_dir, global_step=20)
+      incr_ckpt_value = sess.run([emb])
+      print("incr_ckpt: {}".format(incr_ckpt_value))
+
+    # check the value after restoring parameter.
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      saver.restore(sess, full_ckpt_path)
+      restore_full_ckpt_value = sess.run([emb])
+      print("restore_full_ckpt: {}".format(restore_full_ckpt_value))
+      incr_saver.incremental_restore(sess, full_ckpt_path, incr_ckpt_path)
+      restore_incr_ckpt_value = sess.run([emb])
+      print("restore_incr_ckpt: {}".format(restore_incr_ckpt_value))
+      self.assertAllClose(full_ckpt_value, restore_full_ckpt_value)
+      self.assertAllClose(incr_ckpt_value, restore_incr_ckpt_value)
+
 if __name__ == "__main__":
   googletest.main()

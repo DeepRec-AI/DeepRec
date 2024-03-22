@@ -102,45 +102,48 @@ void CheckpointLoader<K, V>::RestoreInternal(
   Tensor part_filter_offset_tensor;
   if (!restore_args_.m_is_oldform) {
     /****** InitPartOffsetTensor ******/
-    TensorShape part_offset_shape, part_filter_offset_shape;
-    DataType part_offset_type, part_filter_offset_type;
+    TensorShape part_offset_shape;
+    DataType part_offset_type;
     string offset_tensor_name;
     if (!restore_args_.m_is_incr) {
       offset_tensor_name = name_string + kPartOffsetTensorSuffsix;
     } else {
       offset_tensor_name = name_string + kIncrPartOffsetTensorSuffsix;
     }
-  
-    string offset_filter_tensor_name =
-        name_string + kPartFilterOffsetTensorSuffsix;
+
     Status s = reader_->LookupDtypeAndShape(
         offset_tensor_name, &part_offset_type, &part_offset_shape);
     if (!s.ok()) {
       LOG(ERROR) << "EV restoring fail:" << s.error_message();
     }
-    s = reader_->LookupDtypeAndShape(offset_filter_tensor_name,
-                                     &part_filter_offset_type,
-                                     &part_filter_offset_shape);
-    if (!s.ok()) {
-      LOG(ERROR) << "EV restoring fail: " << s.error_message();
-    }
     part_offset_tensor =
         Tensor(cpu_allocator(), part_offset_type, part_offset_shape);
-    part_filter_offset_tensor = Tensor(
-        cpu_allocator(), part_filter_offset_type, part_filter_offset_shape);
     s = reader_->Lookup(offset_tensor_name, &part_offset_tensor);
     if (!s.ok()) {
       LOG(ERROR) << "EV restoring fail:" << s.error_message();
     }
 
-    s = reader_->Lookup(offset_filter_tensor_name,
-                        &part_filter_offset_tensor);
-    if (!s.ok()) {
-      LOG(ERROR) << "EV restoring fail: " << s.error_message();
+    if (restore_args_.m_has_filter) {
+      TensorShape part_filter_offset_shape;
+      DataType part_filter_offset_type;
+      string offset_filter_tensor_name =
+        name_string + kPartFilterOffsetTensorSuffsix;
+      s = reader_->LookupDtypeAndShape(offset_filter_tensor_name,
+                                       &part_filter_offset_type,
+                                       &part_filter_offset_shape);
+      if (!s.ok()) {
+        LOG(ERROR) << "EV restoring fail: " << s.error_message();
+      }
+      part_filter_offset_tensor = \
+        Tensor(cpu_allocator(), part_filter_offset_type,
+               part_filter_offset_shape);
+      s = reader_->Lookup(offset_filter_tensor_name,
+                          &part_filter_offset_tensor);
+      if (!s.ok()) {
+        LOG(ERROR) << "EV restoring fail: " << s.error_message();
+      }
     }
   }
-  auto part_offset_flat = part_offset_tensor.flat<int32>();
-  auto part_filter_offset_flat = part_filter_offset_tensor.flat<int32>();
   
   if (restore_args_.m_is_oldform) {
     VLOG(1) << "old form, EV name:" << name_string
@@ -164,6 +167,7 @@ void CheckpointLoader<K, V>::RestoreInternal(
     VLOG(1) << "new form checkpoint... :" << name_string
             << " , partition_id:" << restore_args_.m_partition_id
             << " , partition_num:" << restore_args_.m_partition_num;
+    auto part_offset_flat = part_offset_tensor.flat<int32>();
     for (size_t i = 0; i < restore_args_.m_loaded_parts.size(); i++) {
       int subpart_id = restore_args_.m_loaded_parts[i];
       size_t value_unit_bytes = sizeof(V) * restore_args_.m_old_dim;
@@ -183,6 +187,7 @@ void CheckpointLoader<K, V>::RestoreInternal(
                         new_dim, emb_config, device);
 
       if (restore_args_.m_has_filter) {
+        auto part_filter_offset_flat = part_filter_offset_tensor.flat<int32>();
         Status s = EVRestoreFilteredFeatures(
             subpart_id, new_dim, restore_buff, part_filter_offset_flat,
             emb_config, device);
@@ -444,7 +449,7 @@ Status CheckpointLoader<K, V>::EVInitTensorNameAndShape(
     }
     st = reader_->LookupHeader(restore_args_.m_tensor_version + "_filtered",
                                sizeof(K) * version_filter_shape.dim_size(0));
-    if (!st.ok()) {
+    if (!st.ok() && st.code() != error::NOT_FOUND) {
       return st;
     }
     st = reader_->LookupTensorShape(restore_args_.m_tensor_freq + "_filtered",
@@ -463,7 +468,8 @@ Status CheckpointLoader<K, V>::EVInitTensorNameAndShape(
       return st;
     }
   }
-  return st;
+
+  return Status::OK();
 }
 #define REGISTER_KERNELS(ktype, vtype)                               \
   template Status CheckpointLoader<ktype, vtype>::EVInitTensorNameAndShape(\
