@@ -1060,10 +1060,14 @@ def wraps_estimator(cls):
             self._eval_drop_remainder = kwargs.pop('eval_drop_remainder', True)
             self._predict_drop_remainder = kwargs.pop(
                 'predict_drop_remainder', True)
+            config = kwargs.get('config', None)
+            if config is None:
+              config = run_config_lib.RunConfig()
+            else:
+              kwargs.pop('config')
 
             super().__init__(
-                wraps_model_fn(model_fn, model_dir, kwargs['config']),
-                **kwargs)
+                wraps_model_fn(model_fn, model_dir, config), **kwargs)
 
         def _assert_members_are_not_overridden(self):
             r'''disable the overridden check here.
