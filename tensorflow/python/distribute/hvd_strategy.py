@@ -388,20 +388,16 @@ def wraps_optimizer(cls):
       HvdOptimizer
     '''
     class HvdOptimizer(cls, optimizer.Optimizer):
-        def __init__(self, *args, **kwargs):
-            kwargs["learning_rate"] = kwargs.get("learning_rate", 0.001) *\
-                                                 HvdContext.get().world_size
-            super(HvdOptimizer, self).__init__(*args, **kwargs)
+        def __init__(self, learning_rate=0.001, *args, **kwargs):
+            learning_rate = learning_rate * HvdContext.get().world_size
+            super(HvdOptimizer, self).__init__(learning_rate, *args, **kwargs)
         
-        def compute_gradients(self, loss, **kwargs):
-            loss = hvd.allreduce(loss, op=hvd.Sum)
-            return super().compute_gradients(loss, **kwargs)
-
     if isinstance(cls, HvdOptimizer):
         return cls
     else:
         def horovod_optimizer(*args, **kwargs):
-            return HvdOptimizer(*args, **kwargs)
+            from horovod.tensorflow import DistributedOptimizer
+            return DistributedOptimizer(HvdOptimizer(*args, **kwargs))
         return horovod_optimizer
 
 
@@ -478,16 +474,6 @@ def wraps_monitored_training_session(fn):
         kwargs['config'] = wraps_session_config(kwargs.pop('config', None))
         kwargs['is_chief'] = True
         args = list(args)
-        if args:
-            master = args[0]
-            if not master:
-                master = ''
-            args[0] = master
-        else:
-            master = kwargs.pop('master', None)
-            if not master:
-                master = ''
-            kwargs['master'] = master
 
         prev_monitored_session = _monitored_session.MonitoredSession
         sess = fn(*args, **kwargs)
