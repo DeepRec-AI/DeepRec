@@ -397,7 +397,15 @@ def wraps_optimizer(cls):
     else:
         def horovod_optimizer(*args, **kwargs):
             from horovod.tensorflow import DistributedOptimizer
-            return DistributedOptimizer(HvdOptimizer(*args, **kwargs))
+            horovod_args = DistributedOptimizer.__code__.co_varnames
+            horovod_real_kargs = {}
+            candidate_keys = list(kwargs.keys())
+            for kwarg in candidate_keys:
+                if kwarg in horovod_args:
+                    value = kwargs[kwarg]
+                    del kwargs[kwarg]
+                    horovod_real_kargs[kwarg] = value
+            return DistributedOptimizer(HvdOptimizer(*args, **kwargs), **horovod_real_kargs)
         return horovod_optimizer
 
 
