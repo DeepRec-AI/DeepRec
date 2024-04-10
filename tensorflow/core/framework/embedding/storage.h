@@ -210,6 +210,8 @@ class Storage {
     return Status::OK();
   }
 
+  virtual void CleanUp() = 0;
+
  protected:
   virtual Status RestoreSSD(int64 emb_index, int64 emb_slot_num,
                             int64 value_len,

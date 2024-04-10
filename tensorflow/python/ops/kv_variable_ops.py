@@ -382,7 +382,17 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                                                            dtype=self._dtype))
         if initial_value is not None:
           with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
-            with ops.control_dependencies(None if self._is_primary else [self._primary.initializer]):
+            if self._is_primary:
+              self._clean_up_op = \
+                gen_kv_variable_ops.kv_resource_clean_up(self._handle, \
+                                Tkeys=self._invalid_key_type, dtype=self._dtype)
+            else:
+              self._clean_up_op = self._primary.clean_up_op
+
+            control_dep = [self._clean_up_op]
+            if not self._is_primary:
+              control_dep.append(self._primary.initializer)
+            with ops.control_dependencies(control_dep):
               self._init_op = gen_kv_variable_ops.initialize_kv_variable_v2_op(
                     self._handle,
                     self._primary._handle,
@@ -450,7 +460,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
 
 
   def create_init_op_for_restore(self, name, initial_value, invalid_key, rank):
-        with ops.control_dependencies(None if self._is_primary else [self._primary._init_op_for_restore]):
+        control_dep = [self._clean_up_op]
+        if not self._is_primary:
+          control_dep.append(self._primary._init_op_for_restore)
+        with ops.control_dependencies(control_dep):
           self._initializer_for_restore = gen_kv_variable_ops.initialize_kv_variable_v2_op(
               self._handle,
               self._primary._handle,
@@ -494,6 +507,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
 
   def need_counts(self):
     return (self._record_freq or (self._filter_freq > 0) or self._is_multi_tier)
+
+  @property
+  def clean_up_op(self):
+    return self._clean_up_op
+
   @property
   def gather_op(self):
     return self._gather_op
@@ -585,6 +603,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._primary_handle = g.as_graph_element(
             ops.prepend_name_scope(
                 primary_name, import_scope=import_scope))
+
+    self._clean_up_op = g.as_graph_element(ops.prepend_name_scope(
+      variable_def.clean_up_op_name, import_scope=import_scope))
     self._dtype = dtypes.as_dtype(self._handle.op.get_attr("dtype"))
     self._invalid_key = -1
     self._steps_to_live = init_op.get_attr("steps_to_live")
@@ -913,6 +934,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
             self._save_slice_info.to_proto(export_scope=export_scope))
       var_def.initialize_op_for_restore = ops.strip_name_scope(
           self._init_op_for_restore.name, export_scope)
+      var_def.clean_up_op_name = \
+        ops.strip_name_scope(self._clean_up_op.name, export_scope)
       return var_def
     else:
       return None

@@ -733,6 +733,12 @@ class EmbeddingVar : public ResourceBase {
     return filter_;
   }
 
+  void CleanUp() {
+    if (emb_config_.is_primary() && emb_config_.primary_emb_index == 0) {
+      storage_->CleanUp();
+    }
+  }
+
  protected:
   ~EmbeddingVar() override {
     // When dynamic dimension embedding is used,

@@ -893,4 +893,13 @@ REGISTER_OP("KvResourceLookupResource")
     })
     .Doc(R"doc()doc");
 
+REGISTER_OP("KvResourceCleanUp")
+    .Input("resource_handle: resource")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("dtype: type = DT_FLOAT")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
 }  // namespace tensorflow

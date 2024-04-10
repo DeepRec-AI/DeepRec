@@ -248,6 +248,11 @@ class MultiTierStorage : public Storage<K, V> {
                                    FeatureDescriptor<V>* hbm_feat_desc,
                                    FeatureDescriptor<V>* dram_feat_desc);
 #endif //GOOGL_CUDA
+
+  void CleanUp() {
+    LOG(FATAL) << "Function [CleanUp] of MultiTierStorage is not implemented.";
+  }
+
  private:
   virtual Status EvictionWithDelayedDestroy(K* evict_ids, int64 evict_size) {}
 

@@ -76,6 +76,8 @@ message VariableDef {
   bool is_embedding_var = 91;
 
   string initialize_op_for_restore = 92;
+
+  string clean_up_op_name = 93;
 }
 
 message SaveSliceInfoDef {

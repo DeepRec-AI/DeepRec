@@ -307,6 +307,18 @@ class SingleTierStorage : public Storage<K, V> {
                                false/*to_dram*/, is_incr, restore_buff);
     return s;
   }
+
+  void CleanUp() override {
+    std::vector<K> key_list;
+    std::vector<void*> value_ptr_list;
+    kv_->GetSnapshot(&key_list, &value_ptr_list);
+
+    int list_size = key_list.size();
+    for (int i = 0; i < list_size; i++) {
+      kv_->Remove(key_list[i]);
+      feat_desc_->Deallocate(value_ptr_list[i]);
+    }
+  }
  
  protected:
   virtual void Shrink(std::vector<K>& key_list,
@@ -453,6 +465,10 @@ class HbmStorage : public SingleTierStorage<K, V> {
   GPUHashTable<K, V>* HashTable() override {
     return SingleTierStorage<K, V>::kv_->HashTable();
   }
+
+  void CleanUp() override {
+    LOG(FATAL) << "Function [CleanUp] of HbmStorage is not implemented.";
+  }
  protected:
   Status RestoreFeatures(int64 key_num, int bucket_num, int64 partition_id,
                          int64 partition_num, int64 value_len, bool is_filter,
@@ -495,6 +511,11 @@ class HbmStorageWithCpuKv: public SingleTierStorage<K, V> {
   Status TryInsert(K key, void* value_ptr) {
     return SingleTierStorage<K, V>::kv_->Insert(key, value_ptr);
   }
+
+  void CleanUp() override {
+    LOG(FATAL) << "Function [CleanUp] of HbmStorageWithCPUKv is not implemented.";
+  }
+
  public:
   friend class HbmDramStorage<K, V>;
   friend class HbmDramSsdStorage<K, V>;
@@ -521,6 +542,10 @@ class PmemMemkindStorage : public SingleTierStorage<K, V> {
   }
   ~PmemMemkindStorage() override {}
 
+  void CleanUp() override {
+    LOG(FATAL) << "Function [CleanUp] of PmemMemkindStorage is not implemented.";
+  }
+
   TF_DISALLOW_COPY_AND_ASSIGN(PmemMemkindStorage);
 };
 
@@ -535,6 +560,10 @@ class PmemLibpmemStorage : public SingleTierStorage<K, V> {
 
   Status Commit(K keys, const void* value_ptr) {
     return SingleTierStorage<K, V>::kv_->Commit(keys, value_ptr);
+  }
+
+  void CleanUp() override {
+    LOG(FATAL) << "Function [CleanUp] of PmemLibpmemStorage is not implemented.";
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(PmemLibpmemStorage);
@@ -577,6 +606,11 @@ class LevelDBStore : public SingleTierStorage<K, V> {
         key_list, emb_index, value_len,
         leveldb_kv, SingleTierStorage<K, V>::feat_desc_);
   }
+
+  void CleanUp() override {
+    LOG(FATAL) << "Function [CleanUp] of LevelDBStorage is not implemented.";
+  }
+
  public:
   friend class DramLevelDBStore<K, V>;
 };
@@ -645,6 +679,10 @@ class SsdHashStorage : public SingleTierStorage<K, V> {
     SSDHashKV<K, V>* ssd_kv =
         reinterpret_cast<SSDHashKV<K, V>*>(SingleTierStorage<K, V>::kv_);
     ssd_kv->SetSsdRecordDescriptor(ssd_rec_desc);
+  }
+
+  void CleanUp() override {
+    LOG(FATAL) << "Function [CleanUp] of SsdHashStorage is not implemented.";
   }
  public:
   friend class DramSsdHashStorage<K, V>;

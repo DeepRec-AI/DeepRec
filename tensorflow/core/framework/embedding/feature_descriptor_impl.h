@@ -74,6 +74,7 @@ class NonFreqDescriptor: public BaseFreqDescriptor {
  public:
   int64 GetFreq(void* value_ptr) override {
     LOG(FATAL)<<"Can not get freq from NonFreqCounter.";
+    return 0;
   }
 
   BaseFreqDescriptor* Clone() override {

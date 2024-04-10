@@ -557,5 +557,56 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
 
 #undef REGISTER_KERNELS_ALL
 #undef REGISTER_KERNELS
+
+template <typename TKey, typename TValue>
+class KvResourceCleanUpOp : public OpKernel {
+ public:
+  explicit KvResourceCleanUpOp(OpKernelConstruction* ctx)
+    :OpKernel(ctx) {
+    TF_CHECK_OK(ReadBoolFromEnvVar("ENABLE_EV_CLEAN_UP", false, &enable_));
+  }
+
+  void Compute(OpKernelContext* ctx) {
+    if (!enable_) {
+      return;
+    }
+
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    Status s = LookupResource(ctx, HandleFromInput(ctx, 0), &ev);
+
+    if (s.ok()) {
+      ev->Unref();
+      ev->CleanUp();
+    }
+  }
+
+ private:
+  bool enable_;
+};
+
+#define REGISTER_KERNELS(dev, ktype, vtype)                     \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceCleanUp")             \
+                          .Device(DEVICE_##dev)                 \
+                          .TypeConstraint<ktype>("Tkeys")       \
+                          .TypeConstraint<vtype>("dtype"),      \
+                          KvResourceCleanUpOp<ktype, vtype>);
+
+#define REGISTER_KERNELS_ALL(dev, type)         \
+  REGISTER_KERNELS(dev, int32, type)            \
+  REGISTER_KERNELS(dev, int64, type)
+
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
+
+#if GOOGLE_CUDA
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
+#endif // End of macro GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
+
 }  // namespace tensorflow
 
