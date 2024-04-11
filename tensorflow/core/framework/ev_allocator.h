@@ -546,15 +546,15 @@ class EVAllocatorImpl {
     page_map_ = new PageMap<ChunkType>();
     page_map_->Init();
 
-    int64 arena_array_size = ARENA_ARRAY_SIZE;
+    arena_array_size_ = ARENA_ARRAY_SIZE;
     Status s = ReadInt64FromEnvVar("ARENA_ARRAY_SIZE",
-        ARENA_ARRAY_SIZE, &arena_array_size);
+        ARENA_ARRAY_SIZE, &arena_array_size_);
     if (!s.ok()) {
       LOG(ERROR) << "Read ARENA_ARRAY_SIZE env error: " << s.error_message();
     }
-    LOG(INFO) << "EVAllocator set arena array size: " << arena_array_size;
+    LOG(INFO) << "EVAllocator set arena array size: " << arena_array_size_;
 
-    arenas_ = new std::vector<Arena<ChunkType>>(arena_array_size, page_map_);
+    arenas_ = new std::vector<Arena<ChunkType>>(arena_array_size_, page_map_);
     arena_cur_index = 0;
   }
 
@@ -602,7 +602,7 @@ class EVAllocatorImpl {
     {
       mutex_lock l(mu_arena_index_);
       ret = &((*arenas_)[arena_cur_index]);
-      arena_cur_index = (arena_cur_index + 1) % ARENA_ARRAY_SIZE;
+      arena_cur_index = (arena_cur_index + 1) % arena_array_size_;
     }
 
     return ret;
@@ -619,6 +619,7 @@ class EVAllocatorImpl {
   PageMap<ChunkType>* page_map_ = nullptr;
   std::vector<Arena<ChunkType>> *arenas_ = nullptr;
   int arena_cur_index GUARDED_BY(mu_arena_index_);
+  int64 arena_array_size_;
 };
 
 template<typename ChunkType>
