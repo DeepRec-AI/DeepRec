@@ -743,9 +743,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         default_value = ev_init_value
         is_use_default_value_tensor = True
       else:
-        from tensorflow.python.ops import variable_scope
-        default_type = variable_scope.get_variable_scope().dtype
-        default_value = ops.convert_to_tensor(1.0, dtype=default_type)
+        default_value = ops.convert_to_tensor(1.0, dtype=self.dtype)
         is_use_default_value_tensor = False
       if counts != None:
         value = gen_kv_variable_ops.kv_resource_gather_v1(self._handle,
