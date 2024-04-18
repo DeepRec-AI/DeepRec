@@ -858,10 +858,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       if self._trainable:
         tape.variable_accessed(self)
       if ev_init_value is not None:
-        default_value = ev_init_value
+        default_value = math_ops.cast(ev_init_value, self.dtype)
         is_use_default_value_tensor = True
       else:
-        default_value = ops.convert_to_tensor(1.0)
+        default_value = ops.convert_to_tensor(1.0, dtype=self.dtype)
         is_use_default_value_tensor = False
       if counts != None:
         value = gen_kv_variable_ops.kv_resource_gather_v1(self._handle,
