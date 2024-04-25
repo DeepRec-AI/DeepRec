@@ -109,6 +109,20 @@ class SessionRunHook(object):
     """
     pass
 
+  def before_create_session(self):
+    """Called before new TensorFlow session is created.
+
+    This has two essential differences with the situation in which `begin` is
+    called:
+
+    * Do not modify the graph in this method, ops should not be added to graph.
+        The modification of the graph should take place within the begin
+        interface.
+    * This method will also be called prior to the recovery of a wrapped
+        session, not just at the beginning of the overall session.
+    """
+    pass
+
   def after_create_session(self, session, coord):  # pylint: disable=unused-argument
     """Called when new TensorFlow session is created.
 

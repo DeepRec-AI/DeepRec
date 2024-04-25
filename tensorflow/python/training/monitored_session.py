@@ -957,6 +957,8 @@ class _MonitoredSession(object):
     def create_session(self):
       """Creates a coordinated session."""
       # Keep the tf_sess for unit testing.
+      for hook in self._hooks:
+        hook.before_create_session()
       self.tf_sess = self._session_creator.create_session()
       # We don't want coordinator to suppress any exception.
       self.coord = coordinator.Coordinator(clean_stop_exception_types=[])
@@ -1027,6 +1029,7 @@ class MonitoredSession(_MonitoredSession):
   in given order:
 
   * calls `hook.begin()` for each given hook
+  * calls `hook.before_create_session()`
   * finalizes the graph via `scaffold.finalize()`
   * create session
   * initializes the model via initialization ops provided by `Scaffold`
