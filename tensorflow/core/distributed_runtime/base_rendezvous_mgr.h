@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_BASE_RENDEZVOUS_MGR_H_
 
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "tensorflow/core/distributed_runtime/rendezvous_mgr_interface.h"
@@ -86,6 +87,10 @@ class BaseRendezvousMgr : public RendezvousMgrInterface {
                           const std::vector<Rendezvous::ParsedKey>& parsed_keys,
                           Rendezvous::FuseDoneCallback done) override;
 
+  void FlowControlRecvLocalAsync(int64 step_id, const StringPiece& tag,
+                                 const Rendezvous::ParsedKey& parsed,
+                                 Rendezvous::DoneCallback done) override;
+
   // Removes rendezvous for "step_id".
   //
   // TODO(zhifengc): Have a background thread in worker that
@@ -140,12 +145,21 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
   Status Send(const ParsedKey& key, const Rendezvous::Args& args,
               Tensor* val, mutex* mu, const bool is_dead) override;
 
+  Status FlowControlSend(const StringPiece& tag, const ParsedKey& key,
+                         const Args& args, const Tensor& val,
+                         const bool is_dead,
+                         const int64 timeout_millis) override;
+
   // This method is called only by the RecvOp.  It tests to see
   // whether the value will be produced by a local or remote device
   // and handles accordingly.  In the local case it forwards to
   // local_, in the remote case it initiates an RPC request.
   void RecvAsync(const ParsedKey& key, const Rendezvous::Args& args,
                  DoneCallback done) override;
+
+  void FlowControlRecvAsync(const StringPiece& tag,
+                            const ParsedKey& parsed_key,
+                            const Args& args, DoneCallback done) override;
 
   void StartAbort(const Status& status) override;
 
@@ -171,9 +185,17 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
   void FuseRecvLocalSync(const std::vector<ParsedKey>& parsed_keys,
                          FuseDoneCallback done);
 
+  void FlowControlRecvLocalAsync(const StringPiece& tag,
+                                 const ParsedKey& parsed, DoneCallback done);
+
   // For ref send/recv
   void RecvAsync(const ParsedKey& key, const Rendezvous::Args& args,
                  RefDoneCallback done) override;
+
+  // Obtain statistical information
+  int64 GetAllFlowControlItemNum() override;
+
+  int64 GetFlowControlItemNum(StringPiece tag) override;
 
  protected:
   virtual void RecvFromRemoteAsync(const Rendezvous::ParsedKey& parsed,
@@ -184,6 +206,10 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
       const std::vector<Rendezvous::ParsedKey>& parsed_keys,
       const Rendezvous::Args& args,
       FuseDoneCallback done);
+
+  virtual void FlowControlRecvFromRemoteAsync(const StringPiece& tag,
+                 const Rendezvous::ParsedKey& parsed,
+                 const Rendezvous::Args& args, DoneCallback done);
 
   // Returns true if "src" and "dst" are located in the same worker,
   // and hence may use a local rendezvous.
@@ -210,6 +236,12 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
 
   mutable mutex mu_;
 
+  // For Flow Control.
+  int64 flow_control_max_size_;
+  int64 flow_control_num_ GUARDED_BY(mu_);
+  std::unordered_map<string, int64> flow_control_counters_ GUARDED_BY(mu_);
+  tensorflow::condition_variable flow_control_cv_;
+
   // Status given by StartAbort() if any.
   Status status_ GUARDED_BY(mu_);
   WorkerSession* session_ GUARDED_BY(mu_);  // Not owned.
@@ -232,6 +264,16 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
                      FuseDoneCallback done);
   };
   std::vector<DeferredFuseCall> deferred_fuse_calls_ GUARDED_BY(mu_);
+
+  struct DeferredFlowControlCall {
+    const StringPiece tag;
+    const ParsedKey parsed;
+    DoneCallback done;
+
+    DeferredFlowControlCall(const StringPiece& tag, const ParsedKey& parsed,
+                            DoneCallback done);
+  };
+  std::vector<DeferredFlowControlCall> deferred_flow_control_calls_ GUARDED_BY(mu_);
 
   typedef std::function<void()> InactiveCallback;
 
@@ -262,6 +304,9 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
 
   void FuseRecvLocalAsyncInternal(const std::vector<ParsedKey>& parsed_keys,
                                   FuseDoneCallback done);
+  void FlowControlRecvLocalAsyncInternal(const StringPiece& tag,
+                                         const ParsedKey& parsed,
+                                         DoneCallback done);
 
   TF_DISALLOW_COPY_AND_ASSIGN(BaseRemoteRendezvous);
 };

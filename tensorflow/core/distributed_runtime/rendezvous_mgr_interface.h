@@ -40,6 +40,11 @@ class RemoteRendezvous : public Rendezvous {
  public:
   // Fully construct the RemoteRendezvous.
   virtual Status Initialize(WorkerSession* session) = 0;
+
+  // Obtain statistical information
+  virtual int64 GetAllFlowControlItemNum() = 0;
+
+  virtual int64 GetFlowControlItemNum(StringPiece tag) = 0;
 };
 
 // RendezvousMgr keeps track of a set of local rendezvous instances.
@@ -87,7 +92,11 @@ class RendezvousMgrInterface {
 
   virtual void FuseRecvLocalAsync(
       int64 step_id, const std::vector<Rendezvous::ParsedKey>& parsed_keys,
-      Rendezvous::FuseDoneCallback done) = 0;
+                                  Rendezvous::FuseDoneCallback done) = 0;
+
+  virtual void FlowControlRecvLocalAsync(int64 step_id, const StringPiece& tag,
+                                         const Rendezvous::ParsedKey& parsed,
+                                         Rendezvous::DoneCallback done) = 0;
 
   // Removes rendezvous for "step_id".
   //

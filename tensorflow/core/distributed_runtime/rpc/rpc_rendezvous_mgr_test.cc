@@ -211,6 +211,32 @@ TEST_F(RpcRendezvousMgrTest, CleanupAll) {
   }
 }
 
+TEST_F(RpcRendezvousMgrTest, FlowControlSend) {
+  setenv("REMOTE_RENDEZVOUS_FLOW_CONTROL_MAX_SIZE", "2", 1);
+  const int64 step_id = 123;
+  const Rendezvous::ParsedKey key = MakeKey(Rendezvous::CreateKey(
+      "/job:mnist/replica:1/task:2/cpu:0", 7890,
+      "/job:mnist/replica:1/task:2/cpu:1", "foo", FrameAndIter(0, 0)));
+  {
+    RemoteRendezvous* rendez = rmgr_.Find(step_id);
+    TF_ASSERT_OK(rendez->Initialize(&worker_session_));
+    core::ScopedUnref unref(rendez);
+    Rendezvous::Args args;
+    TF_ASSERT_OK(
+      rendez->FlowControlSend("TEST", key, args, V("peach_0"), false));
+    TF_ASSERT_OK(
+      rendez->FlowControlSend("TEST", key, args, V("peach_1"), false));
+
+    EXPECT_NE(
+      rendez->FlowControlSend("TEST", key, args, V("peach_2"), false, 100),
+      Status::OK());
+    EXPECT_EQ(rendez->GetAllFlowControlItemNum(), 2);
+    EXPECT_EQ(rendez->GetFlowControlItemNum("TEST"), 2);
+  }
+
+  unsetenv("REMOTE_RENDEZVOUS_FLOW_CONTROL_MAX_SIZE");
+}
+
 class DummyDeviceContext : public DeviceContext {
  public:
   explicit DummyDeviceContext(int stream_id) : stream_id_(stream_id) {}

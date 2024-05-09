@@ -30,11 +30,10 @@ SliceSendOp::SliceSendOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
   OP_REQUIRES_OK(
       ctx, ctx->GetAttr("send_device_incarnation",
                         reinterpret_cast<int64*>(&send_device_incarnation)));
-  string tensor_name;
-  OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name));
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name_));
   key_prefix_ = \
     slice_sendrecv::GetSliceRendezvousKeyPrefix(send_device,
-                      recv_device, send_device_incarnation, tensor_name);
+                      recv_device, send_device_incarnation, tensor_name_);
 
   if (!ctx->GetAttr("_hostmem_sendrecv", &hostmem_sendrecv_).ok()) {
     hostmem_sendrecv_ = false;
@@ -171,8 +170,9 @@ Status SliceSendOp::SendString(OpKernelContext* ctx,
                                             frame_iter, &parsed_key.buf_);
       VLOG(2) << "SliceSend " << parsed_key.buf_;
       TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-      TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, data_t,
-                                                 ctx->is_input_dead()));
+      TF_RETURN_IF_ERROR(
+        ctx->rendezvous()->FlowControlSend(tensor_name_, parsed_key, args,
+                                           data_t, ctx->is_input_dead()));
     } else {
       TF_RETURN_IF_ERROR(SendStringSlice(ctx, frame_iter, elem, i));
     }
@@ -209,8 +209,9 @@ Status SliceSendOp::SendStringSlice(OpKernelContext* ctx,
                                           frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-    TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, data_t,
-                                               ctx->is_input_dead()));
+    TF_RETURN_IF_ERROR(
+      ctx->rendezvous()->FlowControlSend(tensor_name_, parsed_key, args, data_t,
+                                         ctx->is_input_dead()));
   }
 
   return Status::OK();
@@ -248,8 +249,9 @@ Status SliceSendOp::SendBasicType(OpKernelContext* ctx,
                                           frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-    TF_RETURN_IF_ERROR(ctx->rendezvous()->Send(parsed_key, args, data_t,
-                                               ctx->is_input_dead()));
+    TF_RETURN_IF_ERROR(
+      ctx->rendezvous()->FlowControlSend(tensor_name_, parsed_key, args, data_t,
+                                         ctx->is_input_dead()));
   }
 
   return Status::OK();
@@ -270,11 +272,10 @@ SliceRecvOp::SliceRecvOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
   OP_REQUIRES_OK(
       ctx, ctx->GetAttr("send_device_incarnation",
                         reinterpret_cast<int64*>(&send_device_incarnation)));
-  string tensor_name;
-  OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name));
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name_));
   key_prefix_ = \
     slice_sendrecv::GetSliceRendezvousKeyPrefix(send_device,
-                      recv_device, send_device_incarnation, tensor_name);
+                      recv_device, send_device_incarnation, tensor_name_);
   if (!ctx->GetAttr("_hostmem_sendrecv", &hostmem_sendrecv_).ok()) {
     hostmem_sendrecv_ = false;
   }
@@ -440,8 +441,9 @@ Status SliceRecvOp::RecvString(OpKernelContext* ctx,
                                             frame_iter, &parsed_key.buf_);
       VLOG(2) << "SliceRecv " << parsed_key.buf_;
       TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-      TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &data_t,
-                                                 &is_dead, timeout_ms_));
+      TF_RETURN_IF_ERROR(
+        ctx->rendezvous()->FlowControlRecv(tensor_name_, parsed_key, args,
+                                           &data_t, &is_dead, timeout_ms_));
       // This shouldn't be a dead tensor.
       CHECK_EQ(is_dead, false);
       output_flat(i) = data_t.scalar<tstring>()();
@@ -484,8 +486,9 @@ Status SliceRecvOp::RecvStringSlice(OpKernelContext* ctx,
                                           frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceRecv " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-    TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &data_t,
-                                               &is_dead, timeout_ms_));
+    TF_RETURN_IF_ERROR(
+      ctx->rendezvous()->FlowControlRecv(tensor_name_, parsed_key, args,
+                                         &data_t, &is_dead, timeout_ms_));
     // This shouldn't be a dead tensor.
     CHECK_EQ(is_dead, false);
     output_flat(index) += data_t.scalar<tstring>()();
@@ -529,8 +532,9 @@ Status SliceRecvOp::RecvBasicType(OpKernelContext* ctx,
                                           frame_iter, &parsed_key.buf_);
     VLOG(2) << "SliceSend " << parsed_key.buf_;
     TF_RETURN_IF_ERROR(Rendezvous::ParseKey(parsed_key.buf_, &parsed_key));
-    TF_RETURN_IF_ERROR(ctx->rendezvous()->Recv(parsed_key, args, &data_t,
-                                               &is_dead, timeout_ms_));
+    TF_RETURN_IF_ERROR(
+      ctx->rendezvous()->FlowControlRecv(tensor_name_, parsed_key, args,
+                                         &data_t, &is_dead, timeout_ms_));
     // This shouldn't be a dead tensor.
     CHECK_EQ(is_dead, false);
     auto data_base = data_t.data();

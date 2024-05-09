@@ -51,6 +51,10 @@ class GrpcWorker : public Worker {
                                        ::grpc::ByteBuffer* response,
                                        StatusCallback done);
 
+  virtual void GrpcFlowControlRecvTensorAsync(CallOptions* opts,
+                   const FlowControlRecvTensorRequest* request,
+                   ::grpc::ByteBuffer* response, StatusCallback done);
+
   void LoggingAsync(const LoggingRequest* request, LoggingResponse* response,
                     StatusCallback done) override;
 

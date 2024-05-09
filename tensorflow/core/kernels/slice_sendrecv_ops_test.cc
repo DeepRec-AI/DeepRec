@@ -50,6 +50,13 @@ class DummyRendezvous : public Rendezvous {
     kv_.erase(key_str);
     return Status::OK();
   }
+
+  Status FlowControlSend(const StringPiece& tag, const ParsedKey& key,
+                         const Args& args, const Tensor& val,
+                         const bool is_dead) {
+    return Send(key, args, val, is_dead);
+  }
+
   void RecvAsync(const ParsedKey& key, const Args& args,
                  DoneCallback done) override {
     std::string key_str = { key.FullKey().data(), key.FullKey().size() };
@@ -72,6 +79,12 @@ class DummyRendezvous : public Rendezvous {
     done(Status::OK(), var.args, args, var.data, var.is_dead);
     kv_.erase(key_str);
   }
+
+  void FlowControlRecvAsync(const StringPiece& tag, const ParsedKey& parsed_key,
+                            const Args& args, DoneCallback done) {
+    RecvAsync(parsed_key, args, done);
+  }
+  
   void StartAbort(const Status& status) override {}
 
  private:

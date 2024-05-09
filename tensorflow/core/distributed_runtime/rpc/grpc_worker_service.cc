@@ -170,6 +170,15 @@ class GrpcWorkerServiceThread {
       EnqueueFuseRecvTensorRequestRaw();
     }
 
+    // Support FlowControlRecv
+    for (int i = 0;
+         i < gtl::FindWithDefault(
+                 queue_depth_, static_cast<int>(GrpcWorkerMethod::kFlowControlRecvTensor),
+                 1000);
+         ++i) {
+      EnqueueFlowControlRecvTensorRequestRaw();
+    }
+
     void* tag;
     bool ok;
 
@@ -312,6 +321,24 @@ class GrpcWorkerServiceThread {
       EnqueueFuseRecvTensorRequestRaw();
     }
 
+  void FlowControlRecvTensorHandlerRaw(
+         WorkerCall<FlowControlRecvTensorRequest, ::grpc::ByteBuffer>* call) {
+    Schedule([this, call]() {
+      CallOptions* call_opts = new CallOptions;
+      call->SetCancelCallback([call_opts]() { call_opts->StartCancel(); });
+
+      worker_->GrpcFlowControlRecvTensorAsync(call_opts, &call->request,
+                                       &call->response,
+                                       [call, call_opts
+                                       ](const Status& s) {
+                                         call->ClearCancelCallback();
+                                         delete call_opts;
+                                         call->SendResponse(ToGrpcStatus(s));
+                                       });
+    });
+    EnqueueFlowControlRecvTensorRequestRaw();
+  }
+
   void RecvBufHandler(WorkerCall<RecvBufRequest, RecvBufResponse>* call) {
     Schedule([this, call]() {
       CallOptions* call_opts = new CallOptions;
@@ -390,6 +417,19 @@ class GrpcWorkerServiceThread {
               worker_service_, cq_.get(),
               static_cast<int>(GrpcWorkerMethod::kFuseRecvTensor),
               &GrpcWorkerServiceThread::FuseRecvTensorHandlerRaw,
+              true /* supports cancel*/);
+    }
+  }
+
+  void EnqueueFlowControlRecvTensorRequestRaw() {
+    mutex_lock l(shutdown_mu_);
+    if (!is_shutdown_) {
+      Call<GrpcWorkerServiceThread, grpc::WorkerService::AsyncService,
+           FlowControlRecvTensorRequest, ::grpc::ByteBuffer>::
+          EnqueueRequestForMethod(
+              worker_service_, cq_.get(),
+              static_cast<int>(GrpcWorkerMethod::kFlowControlRecvTensor),
+              &GrpcWorkerServiceThread::FlowControlRecvTensorHandlerRaw,
               true /* supports cancel*/);
     }
   }
@@ -743,6 +783,128 @@ void GrpcWorker::GrpcFuseRecvTensorAsync(CallOptions* opts,
           //  !s.ok()
           done(status);
         }
+      });
+}
+
+// GrpcFlowControlRecvTensorAsync: unlike the other Worker methods, which use
+// protocol buffers for a response object, to avoid extra protocol buffer
+// serialization overhead we generate our response directly into a
+// ::grpc::ByteBuffer object
+void GrpcWorker::GrpcFlowControlRecvTensorAsync(CallOptions* opts,
+                   const FlowControlRecvTensorRequest* request,
+                   ::grpc::ByteBuffer* response, StatusCallback done) {
+  VLOG(1) << "GrpcFlowControlRecvTensorAsync req: " << request->DebugString();
+  const int64 request_id = request->request_id();
+  const int64 step_id = request->step_id();
+
+  bool cache_enabled = (response_cache_ != nullptr && request_id != 0);
+
+  auto do_response = [response, done, cache_enabled](const Tensor& tensor,
+                                                     bool is_dead,
+                                                     const Status& status) {
+    if (status.ok()) {
+      grpc::EncodeTensorToByteBuffer(is_dead, tensor, cache_enabled, response);
+    }
+    done(status);
+  };
+
+  // If response cache is enabled and the response cache already contains the
+  // request, we delegate this retry request to the response cache. Otherwise,
+  // we add the request to the response cache and start the computation to
+  // retrieve the requested data.
+  if (cache_enabled &&
+      response_cache_->QueueRequest(request_id, step_id, do_response)) {
+    return;
+  }
+
+  auto rendezvous_done = [this, request_id, do_response, cache_enabled](
+                             const Tensor& tensor, bool is_dead,
+                             const Status& status) {
+    if (cache_enabled) {
+      // Data is ready. Process all pending requests in the response cache.
+      response_cache_->OnRequestFinished(request_id, tensor, is_dead, status);
+    } else {
+      do_response(tensor, is_dead, status);
+    }
+  };
+
+  auto fail = [&rendezvous_done](const Status& status) {
+    rendezvous_done(Tensor(), false, status);
+  };
+
+  Status s = recent_request_ids_.TrackUnique(
+      request_id, "RecvTensor (GrpcWorker)", *request);
+  if (!s.ok()) {
+    fail(s);
+    return;
+  }
+
+  const string& key = request->rendezvous_key();
+  TRACEPRINTF("RecvTensor: %lld %s", step_id, key.c_str());
+  Rendezvous::ParsedKey parsed;
+  s = Rendezvous::ParseKey(key, &parsed);
+  Device* src_dev = nullptr;
+  if (s.ok()) {
+    s = PrepareRecvTensor(parsed, &src_dev);
+  }
+  if (!s.ok()) {
+    fail(s);
+    return;
+  }
+
+  // Request the tensor associated with the rendezvous key.
+  // Note that we log the cancellation here but do not abort the current step.
+  // gRPC can generate cancellations in response to transient network failures,
+  // and aborting the step eliminates the opportunity for client side retries.
+  // Repeated client failures will eventually cause the step to be aborted by
+  // the client.
+  opts->SetCancelCallback(
+      [step_id]() { LOG(WARNING) << "RecvTensor cancelled for " << step_id; });
+  StringPiece tag = request->tag();
+  env_->rendezvous_mgr->FlowControlRecvLocalAsync(
+      step_id, tag, parsed,
+      [opts, rendezvous_done, src_dev, request](
+          const Status& status, const Rendezvous::Args& send_args,
+          const Rendezvous::Args& recv_args, const Tensor& val,
+          const bool is_dead) {
+        opts->ClearCancelCallback();
+        if (status.ok()) {
+          // DMA can only be used for Tensors that do not fall into
+          // the following three odd edge cases: 1) a zero-size
+          // buffer, 2) a dead tensor which has an uninit value, and
+          // 3) the tensor has the on_host allocation attribute,
+          // i.e. it's in CPU RAM *independent of its assigned
+          // device type*.
+          const bool on_host = send_args.alloc_attrs.on_host();
+          {
+            // Non-DMA cases.
+            if (src_dev->tensorflow_gpu_device_info() && (!on_host)) {
+              DeviceContext* send_dev_context = send_args.device_context;
+              AllocatorAttributes alloc_attrs;
+              alloc_attrs.set_gpu_compatible(true);
+              alloc_attrs.set_on_host(true);
+              Allocator* alloc = src_dev->GetAllocator(alloc_attrs);
+              Tensor* copy = new Tensor(alloc, val.dtype(), val.shape());
+              CHECK(send_dev_context)
+                  << "send dev name: " << src_dev->name()
+                  << " gpu_info: " << src_dev->tensorflow_gpu_device_info();
+              // "val" is on an accelerator device. Uses the device_context to
+              // fill the copy on host.
+              StatusCallback copy_ready = [rendezvous_done, copy,
+                                           is_dead](const Status& s) {
+                // The value is now ready to be returned on the wire.
+                rendezvous_done(*copy, is_dead, s);
+                delete copy;
+              };
+
+              CopyDeviceToHost(&val, alloc, alloc, request->rendezvous_key(),
+                               src_dev, copy, send_dev_context, copy_ready);
+              return;
+            }
+          }
+        }
+
+        rendezvous_done(val, is_dead, status);
       });
 }
 

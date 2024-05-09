@@ -146,6 +146,47 @@ Status Rendezvous::Recv(const ParsedKey& key, const Args& args, Tensor* val,
   return Recv(key, args, val, is_dead, no_timeout);
 }
 
+Status Rendezvous::FlowControlSend(const StringPiece& tag, const ParsedKey& key,
+                                   const Args& args, const Tensor& val,
+                                   const bool is_dead) {
+  int64 no_timeout = 300000;
+  return FlowControlSend(tag, key, args, val, is_dead, no_timeout);
+}
+
+Status Rendezvous::FlowControlRecv(const StringPiece& tag, const ParsedKey& key,
+                                   const Args& args, Tensor* val, bool* is_dead,
+                                   int64 timeout_ms) {
+  Status ret;
+  Notification n;
+  FlowControlRecvAsync(tag, key, args, [&ret, &n, val, is_dead](
+                       const Status& s, const Args& send_args,
+                       const Args& recv_args, const Tensor& v,
+                       const bool dead) {
+    ret = s;
+    *val = v;
+    *is_dead = dead;
+    n.Notify();
+  });
+  if (timeout_ms > 0) {
+    int64 timeout_us = timeout_ms * 1000;
+    bool notified = WaitForNotificationWithTimeout(&n, timeout_us);
+    if (!notified) {
+      return Status(error::DEADLINE_EXCEEDED,
+                    "Timed out waiting for notification");
+    }
+  } else {
+    n.WaitForNotification();
+  }
+  return ret;
+}
+
+Status Rendezvous::FlowControlRecv(const StringPiece& tag, const ParsedKey& key,
+                                   const Args& args, Tensor* val,
+                                   bool* is_dead) {
+  const int64 no_timeout = 0;
+  return FlowControlRecv(tag, key, args, val, is_dead, no_timeout);
+}
+
 class LocalRendezvousImpl : public Rendezvous {
  public:
   explicit LocalRendezvousImpl() {}

@@ -48,6 +48,8 @@ const char* GrpcWorkerMethodName(GrpcWorkerMethod id) {
       return "/tensorflow.WorkerService/RecvTensor";
     case GrpcWorkerMethod::kFuseRecvTensor:
       return "/tensorflow.WorkerService/FuseRecvTensor";
+    case GrpcWorkerMethod::kFlowControlRecvTensor:
+      return "/tensorflow.WorkerService/FlowControlRecvTensor";
     case GrpcWorkerMethod::kRecvBuf:
       return "/tensorflow.WorkerService/RecvBuf";
     case GrpcWorkerMethod::kLogging:
