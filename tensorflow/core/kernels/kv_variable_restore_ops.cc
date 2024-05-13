@@ -376,8 +376,8 @@ class KvResourceImportV3Op: public AsyncOpKernel {
 
     // EV should not be initialized at this time.
     if (ev->IsInitialized()) {
-      LOG(ERROR) << "Import parameter for EV (" << name_string
-                 << ") failed, this EV has already been initialized.";
+      LOG(WARNING) << "EV (" << name_string
+                   << ") has already been initialized.";
     }
 
     auto do_compute = [this, context, file_name_string, ev,
