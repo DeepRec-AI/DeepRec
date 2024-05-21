@@ -108,6 +108,17 @@ class Rendezvous : public core::RefCounted {
   virtual Status Send(const ParsedKey& key, const Args& args, Tensor* ref_val,
                       mutex* ref_mu, const bool is_dead) { return Status::OK(); }
 
+  virtual Status FlowControlSend(const StringPiece& tag, const ParsedKey& key,
+                                 const Args& args, const Tensor& val,
+                                 const bool is_dead,
+                                 const int64 timeout_millis) {
+    return errors::Unimplemented("[Rendezvous] unimplement FlowControlSend.");
+  }
+
+  virtual Status FlowControlSend(const StringPiece& tag, const ParsedKey& key,
+                                 const Args& args, const Tensor& val,
+                                 const bool is_dead);
+
   // Callback provided by a tensor consumer waiting on the rendezvous.
   // It will be invoked when the tensor is available, or when a non-OK
   // status arises in the production of that tensor.  It also gets
@@ -139,11 +150,26 @@ class Rendezvous : public core::RefCounted {
   virtual void FuseRecvAsync(const std::vector<ParsedKey>& parsed_keys,
                              const Args& args, FuseDoneCallback done) {}
 
+  // Local rendezvous does not need this.
+  virtual void FlowControlRecvAsync(const StringPiece& tag,
+                 const ParsedKey& parsed_key, const Args& args,
+                 DoneCallback done) {
+    CHECK(false) << "[Rendezvous] unimplement FlowControlRecvAsync.";
+  }
+
   // Synchronous wrapper for RecvAsync.
   Status Recv(const ParsedKey& key, const Args& args, Tensor* val,
               bool* is_dead, int64 timeout_ms);
   Status Recv(const ParsedKey& key, const Args& args, Tensor* val,
               bool* is_dead);
+
+  // Synchronous wrapper for FlowControlRecvAsync.
+  Status FlowControlRecv(const StringPiece& tag, const ParsedKey& key,
+                         const Args& args, Tensor* val, bool* is_dead,
+                         int64 timeout_ms);
+
+  Status FlowControlRecv(const StringPiece& tag, const ParsedKey& key,
+                         const Args& args, Tensor* val, bool* is_dead);
 
   // Aborts all pending and future Send/Recv with the given "status".
   //

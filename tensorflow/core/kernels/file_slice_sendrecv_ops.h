@@ -28,6 +28,7 @@ class FileSliceSendOp : public OpKernel {
 
  private:
   // Variables.
+  string tensor_name_;
   string key_prefix_;
   bool hostmem_sendrecv_;
   int32 slice_size_;
@@ -63,6 +64,7 @@ class FileSliceRecvOp: public OpKernel {
 
  private:
   // Variables.
+  string tensor_name_;
   string key_prefix_;
   bool hostmem_sendrecv_;
   string recv_dir_;

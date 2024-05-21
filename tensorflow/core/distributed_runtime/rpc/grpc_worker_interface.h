@@ -6,6 +6,8 @@ namespace tensorflow {
 class CallOptions;
 class FuseTensorResponse;
 class FuseRecvTensorRequest;
+class FlowControlRecvTensorRequest;
+class TensorResponse;
 
 class GrpcWorkerInterface {
  public:
@@ -13,6 +15,10 @@ class GrpcWorkerInterface {
                                    const FuseRecvTensorRequest* request,
                                    FuseTensorResponse* response,
                                    StatusCallback done) = 0;
+
+  virtual void FlowControlRecvTensorAsync(CallOptions* call_opts,
+                 const FlowControlRecvTensorRequest* request,
+                 TensorResponse* response, StatusCallback done) = 0;
 };
 
 } // namespace tensorflow

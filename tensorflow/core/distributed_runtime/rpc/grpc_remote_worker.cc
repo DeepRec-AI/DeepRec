@@ -63,6 +63,7 @@ class GrpcRemoteWorker :
         cleanupall_(Method(GrpcWorkerMethod::kCleanupAll)),
         recvtensor_(Method(GrpcWorkerMethod::kRecvTensor)),
         fuserecvtensor_(Method(GrpcWorkerMethod::kFuseRecvTensor)),
+        flowcontrolrecvtensor_(Method(GrpcWorkerMethod::kFlowControlRecvTensor)),
         recvbuf_(Method(GrpcWorkerMethod::kRecvBuf)),
         logging_(Method(GrpcWorkerMethod::kLogging)),
         tracing_(Method(GrpcWorkerMethod::kTracing)),
@@ -210,6 +211,14 @@ class GrpcRemoteWorker :
     IssueRequest(request, response, fuserecvtensor_, done, call_opts);
   }
 
+  void FlowControlRecvTensorAsync(CallOptions* call_opts,
+                                  const FlowControlRecvTensorRequest* request,
+                                  TensorResponse* response,
+                                  StatusCallback done) {
+    VLOG(1) << "FlowControlRecvTensorAsync req: " << request->DebugString();
+    IssueRequest(request, response, flowcontrolrecvtensor_, done, call_opts);
+  }
+
   void RecvTensorAsync(CallOptions* call_opts, const RecvTensorRequest* request,
                        TensorResponse* response, StatusCallback done) override {
     VLOG(1) << "RecvTensorAsync req: " << request->DebugString();
@@ -341,6 +350,7 @@ class GrpcRemoteWorker :
   const ::grpc::string cleanupall_;
   const ::grpc::string recvtensor_;
   const ::grpc::string fuserecvtensor_;
+  const ::grpc::string flowcontrolrecvtensor_;
   const ::grpc::string recvbuf_;
   const ::grpc::string logging_;
   const ::grpc::string tracing_;
