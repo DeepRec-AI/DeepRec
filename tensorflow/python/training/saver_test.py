@@ -852,6 +852,12 @@ class SaverTest(test.TestCase):
     for orig, restored in zip(orig_vals, restored_vals):
       self.assertAllEqual(orig, restored)
 
+  def testEnableSaverShardedWhenUseEmbeddingVariable(self):
+    with ops_lib.Graph().as_default():
+      emb_var = \
+        variable_scope.get_embedding_variable(name="emb_var", embedding_dim=64)
+      with self.assertRaisesRegexp(ValueError, "EmbeddingVariable"):
+        saver_module.Saver([emb_var], sharded=False)
 
 class SaveRestoreShardedTest(test.TestCase):
 

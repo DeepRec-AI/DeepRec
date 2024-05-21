@@ -7527,7 +7527,7 @@ class EmbeddingColumnTest(test.TestCase):
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables_lib.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
@@ -7758,7 +7758,7 @@ class EmbeddingColumnTest(test.TestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     init = variables_lib.global_variables_initializer()
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
 
   @test_util.run_deprecated_v1
   def testEmbeddingVariableForInt32ID(self):
@@ -7783,7 +7783,7 @@ class EmbeddingColumnTest(test.TestCase):
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables_lib.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))

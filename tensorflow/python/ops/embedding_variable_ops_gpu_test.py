@@ -63,7 +63,8 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     graph = ops.get_default_graph()
-    meta_graph_def = saver_module.export_meta_graph()
+    saver = saver_module.Saver(sharded=True)
+    meta_graph_def = saver_module.export_meta_graph(saver_def=saver.as_saver_def())
     ops.reset_default_graph()
     with self.test_session() as sess:
       res = saver_module.import_meta_graph(meta_graph_def)
@@ -748,7 +749,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, global_step=gs)
     init = variables.global_variables_initializer()
-    saver = saver = saver_module.Saver()
+    saver = saver = saver_module.Saver(sharded=True)
     checkpoint_directory = self.get_temp_dir()
     model_path = os.path.join(checkpoint_directory, "model.ckpt")
     with self.test_session() as sess:
@@ -816,7 +817,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
         opt = adagrad.AdagradOptimizer(0.1)
         g_v = opt.compute_gradients(loss)
         train_op = opt.apply_gradients(g_v, gs)
-        saver = saver_module.Saver()
+        saver = saver_module.Saver(sharded=True)
         graph = ops.get_default_graph()
         with self.test_session(graph = graph) as sess:
           saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
