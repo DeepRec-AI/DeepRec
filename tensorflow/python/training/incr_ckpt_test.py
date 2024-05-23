@@ -75,7 +75,7 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
     with ops.device("/device:CPU:0"):
       apply_incr = gen_io_ops.record_sparse_indices(math_ops.cast([0,1,2,5,6,7], dtypes.int64), "var_ev1")
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     ev_var_name = "var_ev1"
     incr_save_op = gen_io_ops.incr_save(incr_ckpt_path, [ev_var_name], [], [True],[var.handle])
@@ -178,7 +178,7 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     activate_op = gen_io_ops. activate_sparse_recorder(["var_ev1","var_norm1"])
  
   
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     incr_save_op = gen_io_ops.incr_save(incr_ckpt_path, ["var_norm1", "var_ev1"], [], [True, True], [var_norm, var_ev.handle])
     
@@ -445,6 +445,7 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     variable_scope.get_variable('var', shape=[100], use_resource=False)
     variable_scope.get_embedding_variable('ev', embedding_dim=100)
     saver = saver_module.Saver(
+        sharded=True,
         save_relative_paths=True,
         incremental_save_restore=True,
     )

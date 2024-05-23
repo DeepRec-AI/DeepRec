@@ -1071,10 +1071,14 @@ class Saver(object):
         # pylint: disable=protected-access
         self._var_list = variables._all_saveable_objects()
       from tensorflow.python.ops import hash_table
+      from tensorflow.python.ops import kv_variable_ops
       if isinstance(self._var_list, dict):
+        ev = {}
         ht = {}
         lst = {}
         for name, x in self._var_list.items():
+          if isinstance(x, kv_variable_ops.EmbeddingVariable):
+            ev[name] = x
           if isinstance(x, hash_table.HashTable):
             if x.hash_table not in ht:
               ht[x.hash_table] = [x]
@@ -1084,15 +1088,20 @@ class Saver(object):
             lst[name] = BloomFilterSaveable(x)
           else:
             lst[name] = x
+        if len(ev) != 0 and not self._sharded:
+          raise ValueError("EmbeddingVariable can only use sharded saver")
         if len(ht) != 0 and not self._sharded:
           raise ValueError("HashTable can only use sharded saver")
         for x, y in ht.items():
           lst[x.name] = HashTableSaveable(y)
         self._var_list = lst
       else:
+        ev = []
         ht = {}
         lst = []
         for x in self._var_list:
+          if isinstance(x, kv_variable_ops.EmbeddingVariable):
+            ev.append(x)
           if isinstance(x, hash_table.HashTable):
             if x.hash_table not in ht:
               ht[x.hash_table] = [x]
@@ -1102,6 +1111,8 @@ class Saver(object):
             lst.append(BloomFilterSaveable(x))
           else:
             lst.append(x)
+        if len(ev) != 0 and not self._sharded:
+          raise ValueError("EmbeddingVariable can only use sharded saver")
         if len(ht) != 0 and not self._sharded:
           raise ValueError("HashTable can only use sharded saver")
         for x, y in ht.items():

@@ -162,7 +162,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = self._CreateOptimizer(optimizer)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -194,7 +194,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = self._CreateOptimizer(optimizer)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -232,7 +232,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, global_step=gs)
     init = variables.global_variables_initializer()
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     model_path = os.path.join(checkpoint_directory, "model.ckpt")
     with self.test_session() as sess:
       sess.run([init])
@@ -269,7 +269,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adagrad.AdagradOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -313,7 +313,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = gradient_descent.GradientDescentOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -387,7 +387,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     graph = ops.get_default_graph()
-    meta_graph_def = saver_module.export_meta_graph()
+    saver = saver_module.Saver(sharded=True)
+    meta_graph_def = saver_module.export_meta_graph(saver_def=saver.as_saver_def())
     ops.reset_default_graph()
     with self.test_session() as sess:
       res = saver_module.import_meta_graph(meta_graph_def)
@@ -406,7 +407,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     graph = ops.get_default_graph()
-    meta_graph_def = saver_module.export_meta_graph()
+    saver = saver_module.Saver(sharded=True)
+    meta_graph_def = saver_module.export_meta_graph(saver_def=saver.as_saver_def())
     ops.reset_default_graph()
     with self.test_session() as sess:
       res = saver_module.import_meta_graph(meta_graph_def)
@@ -450,7 +452,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adam.AdamOptimizer(0.01)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
@@ -643,7 +645,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
@@ -682,7 +684,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adagrad.AdagradOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, global_step=gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       sess.run([init])
@@ -720,7 +722,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
@@ -1534,7 +1536,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     model_path = os.path.join(checkpoint_directory, "model.ckpt")
     with self.test_session() as sess:
       sess.run([init])
@@ -1567,7 +1569,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
@@ -1724,7 +1726,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad.AdagradOptimizer(0.1)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v, global_step=gs)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
       model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -1778,7 +1780,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad.AdagradOptimizer(0.1)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v, global_step=gs)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
       model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -1849,7 +1851,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad.AdagradOptimizer(0.1)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v, global_step=gs)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
       model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -1923,7 +1925,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adagrad.AdagradOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -1963,7 +1965,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adagrad.AdagradOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -2278,7 +2280,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
 
   def testSaveV3(self):
     print("testSaveV3")
@@ -2295,7 +2297,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, global_step=gs)
     init = variables.global_variables_initializer()
-    saver = saver = saver_module.Saver()
+    saver = saver = saver_module.Saver(sharded=True)
     checkpoint_directory = self.get_temp_dir()
     model_path = os.path.join(checkpoint_directory, "model.ckpt")
     with self.test_session() as sess:
@@ -2326,7 +2328,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adagrad.AdagradOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -2359,7 +2361,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     opt = adagrad.AdagradOptimizer(0.1)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v, gs)
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     model_path = os.path.join(checkpoint_directory,
                               "model1.ckpt")
@@ -2390,7 +2392,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad.AdagradOptimizer(0.1)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v, gs)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
       with self.test_session() as sess:
         sess.run([init])
@@ -2412,7 +2414,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb = embedding_ops.embedding_lookup(emb_var, ids)
       tires = kv_variable_ops.lookup_tier(emb_var,
                   math_ops.cast([1,2,3,4], dtypes.int64))
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       graph = ops.get_default_graph()
       with self.test_session(graph = graph) as sess:
         saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt"))
@@ -2784,7 +2786,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
-    saver = saver_module.Saver()
+    saver = saver_module.Saver(sharded=True)
     with self.test_session() as sess:
       result = sess.run(var._is_initialized_op)
       self.assertEqual(False, result)
@@ -2806,7 +2808,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
       with self.test_session(graph=g) as sess:
         sess.run([init])
@@ -2823,7 +2825,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
       with self.test_session(graph=g) as sess:
         result = sess.run(var._is_initialized_op)
@@ -2860,7 +2862,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
     with self.test_session(graph=g) as sess:
       sess.run([init])
@@ -2893,7 +2895,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
     with self.test_session(graph=g) as sess:
       sess.run([init])
@@ -2929,7 +2931,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = gradient_descent.GradientDescentOptimizer(0.1)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
     with self.test_session(graph=g) as sess:
       sess.run([init])
@@ -2964,7 +2966,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       opt = gradient_descent.GradientDescentOptimizer(0.1)
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
-      saver = saver_module.Saver()
+      saver = saver_module.Saver(sharded=True)
       init = variables.global_variables_initializer()
     with self.test_session(graph=g) as sess:
       sess.run([init])
