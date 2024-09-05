@@ -83,6 +83,8 @@ class LocklessHashMap : public KVInterface<K, V> {
     std::pair<std::pair<const K, ValuePtr<V>*>*, long unsigned int> it = hash_map_.GetSnapshot();
     hash_map_dump = it.first;
     bucket_count = it.second;
+    key_list->reserve(bucket_count);
+    value_ptr_list->reserve(bucket_count);
     for (int64 j = 0; j < bucket_count; j++) {
       if (hash_map_dump[j].first != LocklessHashMap<K, V>::EMPTY_KEY_ 
            && hash_map_dump[j].first != LocklessHashMap<K, V>::DELETED_KEY_) {
