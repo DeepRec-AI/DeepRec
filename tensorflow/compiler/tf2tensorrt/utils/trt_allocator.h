@@ -19,12 +19,11 @@ limitations under the License.
 #include <unordered_map>
 
 #include "tensorflow/core/framework/allocator.h"
+#include "tensorflow/core/platform/mutex.h"
 
-#if GOOGLE_CUDA
-#if GOOGLE_TENSORRT
+#if GOOGLE_CUDA && GOOGLE_TENSORRT
 #include "third_party/tensorrt/NvInfer.h"
-#endif  // GOOGLE_TENSORRT
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA && GOOGLE_TENSORRT
 
 namespace tensorflow {
 namespace tensorrt {
@@ -33,8 +32,7 @@ void* Align(uint64_t alignment, uint64_t size, void*& ptr, uint64_t& space);
 }  // namespace tensorrt
 }  // namespace tensorflow
 
-#if GOOGLE_CUDA
-#if GOOGLE_TENSORRT
+#if GOOGLE_CUDA && GOOGLE_TENSORRT
 
 namespace tensorflow {
 namespace tensorrt {
@@ -56,19 +54,20 @@ class TRTDeviceAllocator : public TRTBaseAllocator {
   virtual ~TRTDeviceAllocator() {
     VLOG(1) << "Destroying allocator attached to " << allocator_->Name();
   }
-  void* allocate(uint64_t size, uint64_t alignment, uint32_t flags) noexcept override;
+  void* allocate(uint64_t size, uint64_t alignment,
+                 uint32_t flags) noexcept override;
   void free(void* memory) noexcept override;
 
  private:
+  mutex mu_;
   Allocator* allocator_;
 
   // supporting alignment from allocation request requires a map to free;
-  std::unordered_map<void*, void*> mem_map_;
+  std::unordered_map<void*, void*> mem_map_ TF_GUARDED_BY(mu_);
 };
 
 }  // namespace tensorrt
 }  // namespace tensorflow
 
-#endif  // GOOGLE_TENSORRT
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA && GOOGLE_TENSORRT
 #endif  // TENSORFLOW_COMPILER_TF2TENSORRT_UTILS_TRT_ALLOCATOR_H_
