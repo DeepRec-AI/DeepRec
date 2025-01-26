@@ -101,7 +101,7 @@ class CollectiveStrategy:
             from tensorflow.python.distribute.hvd_strategy import wraps_estimator
             _estimator = wraps_estimator(_estimator_lib.Estimator)
         elif self._hb:
-            _estimator = hb.estimator.Estimator
+            _estimator = self._hb.estimator.Estimator
         
         return _estimator(model_fn, **kwargs)
 
