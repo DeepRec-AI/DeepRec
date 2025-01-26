@@ -154,9 +154,8 @@ typedef gtl::InlinedVector<AllocatorAttributes, 4> AllocatorAttributeVec;
 
 class ExecutorImpl : public Executor {
  public:
-  explicit ExecutorImpl(const LocalExecutorParams& p,
-                        std::unique_ptr<const Graph> g)
-      : immutable_state_(p, std::move(g)) {
+  explicit ExecutorImpl(const LocalExecutorParams& p)
+      : immutable_state_(p) {
     Status s = ReadBoolFromEnvVar(
         nodestats::enable_cost_model_env_name, true, &enable_cost_model_);
     if (!s.ok()) {
@@ -171,12 +170,11 @@ class ExecutorImpl : public Executor {
     }
   }
 
-  Status Initialize() {
-    TF_RETURN_IF_ERROR(immutable_state_.Initialize());
-    kernel_stats_.Initialize(immutable_state_.graph_view(),
-                             immutable_state_.graph());
+  Status Initialize(const Graph& graph) {
+    TF_RETURN_IF_ERROR(immutable_state_.Initialize(graph));
+    kernel_stats_.Initialize(immutable_state_.graph_view(), &graph);
     if (immutable_state_.params().run_cost_model_executor) {
-      immutable_state_.InitializeScheduleInfo(&kernel_stats_);
+      immutable_state_.InitializeScheduleInfo(&kernel_stats_, graph);
     }
     return Status::OK();
   }
@@ -1762,10 +1760,9 @@ void ExecutorImpl::RunAsync(const Args& args, DoneCallback done) {
 }  // namespace
 
 Status NewLocalExecutor(const LocalExecutorParams& params,
-                        std::unique_ptr<const Graph> graph,
-                        Executor** executor) {
-  ExecutorImpl* impl = new ExecutorImpl(params, std::move(graph));
-  const Status s = impl->Initialize();
+                        const Graph& graph, Executor** executor) {
+  ExecutorImpl* impl = new ExecutorImpl(params);
+  const Status s = impl->Initialize(graph);
   if (s.ok()) {
     *executor = impl;
   } else {
@@ -1797,8 +1794,7 @@ class DefaultExecutorRegistrar {
 
  private:
   class Factory : public ExecutorFactory {
-    Status NewExecutor(const LocalExecutorParams& params,
-                       std::unique_ptr<const Graph> graph,
+    Status NewExecutor(const LocalExecutorParams& params, const Graph& graph,
                        std::unique_ptr<Executor>* out_executor) override {
       Executor* ret = nullptr;
       TF_RETURN_IF_ERROR(NewLocalExecutor(params, std::move(graph), &ret));
