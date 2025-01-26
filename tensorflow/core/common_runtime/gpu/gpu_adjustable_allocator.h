@@ -46,6 +46,7 @@ class GPUAdjustableAllocator final {
   size_t FreeEmptyMemory(size_t target_memory_bytes,
                          BFCAllocator* bfc_allocator)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+    mutex lock_;
 };
 
 }  // namespace tensorflow
