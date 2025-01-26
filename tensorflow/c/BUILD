@@ -86,6 +86,7 @@ tf_cuda_library(
         ":tf_status_internal",
         ":tf_tensor_internal",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
@@ -110,6 +111,8 @@ tf_cuda_library(
         ":c_api_internal",
         ":tf_attrtype",
         ":tf_status_internal",
+        ":tf_status",
+        "@com_google_protobuf//:protobuf",
     ] + select({
         "//tensorflow:with_xla_support": [
             "//tensorflow/compiler/tf2xla:xla_compiler",
@@ -117,6 +120,7 @@ tf_cuda_library(
         ],
         "//conditions:default": [],
     }),
+    alwayslink = 1,
 )
 
 tf_cuda_library(
@@ -176,6 +180,7 @@ tf_cuda_library(
             "//tensorflow/core:lib",
         ],
     }),
+    alwayslink = 1,
 )
 
 cc_library(
@@ -192,6 +197,7 @@ cc_library(
             "//tensorflow/core:lib",
         ],
     }),
+    alwayslink = 1,
 )
 
 cc_library(

@@ -1,0 +1,37 @@
+From 18efd193ad8e10e2ea95bcf1754459fe34f6e96a Mon Sep 17 00:00:00 2001
+From: Tongxuan Liu <tongxuan.ltx@alibaba-inc.com>
+Date: Thu, 27 Apr 2023 16:10:04 +0800
+Subject: [PATCH] update zlib urls.
+
+---
+ WORKSPACE                | 2 +-
+ closure/repositories.bzl | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/WORKSPACE b/WORKSPACE
+index cb9eee5..1b03da7 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -11,7 +11,7 @@ http_archive(
+     build_file = "//:third_party/zlib.BUILD",
+     sha256 = "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1",
+     strip_prefix = "zlib-1.2.11",
+-    urls = ["https://zlib.net/zlib-1.2.11.tar.gz"],
++    urls = ["https://mirror.bazel.build/zlib.net/zlib-1.2.11.tar.gz"],
+ )
+ 
+ http_archive(
+diff --git a/closure/repositories.bzl b/closure/repositories.bzl
+index f21ff2b..dee10ba 100644
+--- a/closure/repositories.bzl
++++ b/closure/repositories.bzl
+@@ -1005,5 +1005,5 @@ def zlib():
+         build_file = "@io_bazel_rules_closure//:third_party/zlib.BUILD",
+         sha256 = "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1",
+         strip_prefix = "zlib-1.2.11",
+-        urls = ["https://zlib.net/zlib-1.2.11.tar.gz"],
++        urls = ["https://mirror.bazel.build/zlib.net/zlib-1.2.11.tar.gz"],
+     )
+-- 
+2.37.1
+

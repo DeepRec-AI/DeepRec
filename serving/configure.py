@@ -26,6 +26,7 @@ def write_config():
             bazel_rc.write('build --define grpc_no_ares=true\n')
 
             bazel_rc.write('build --define open_source_build=true\n')
+            bazel_rc.write('build --spawn_strategy=standalone\n')
             bazel_rc.write('build --cxxopt="-std=c++14"\n')
             bazel_rc.write('build --host_cxxopt=-std=c++14\n')
             bazel_rc.write('build --action_env TF_USE_CCACHE="0"\n')
