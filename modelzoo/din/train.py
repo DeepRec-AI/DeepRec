@@ -665,6 +665,66 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
                 print("Evaluation complete:[{}/{}]".format(_in, steps))
                 print("ACC = {}\nAUC = {}".format(eval_acc, eval_auc))
 
+def save_saved_model(sess, model, checkpoint_dir, export_dir):
+    """保存 SavedModel 格式"""
+    print("Saving saved_model to {}".format(export_dir))
+
+    # 确保模型已经从检查点恢复
+    checkpoint_path = tf.train.latest_checkpoint(checkpoint_dir)
+    if checkpoint_path:
+        saver = tf.train.Saver()
+        saver.restore(sess, checkpoint_path)
+        print("Restored from checkpoint: {}".format(checkpoint_path))
+    else:
+        print("No checkpoint found!")
+        return
+
+    # 构建签名定义
+    # 使用模型的特征作为输入
+    inputs_dict = {}
+    for key, tensor in model._feature.items():
+        inputs_dict[key] = tensor
+
+    # 使用模型的输出作为输出
+    outputs_dict = {
+        'probability': model.probability,
+        'output': model.output,
+        'logits': tf.squeeze(model._logits)
+    }
+
+    # 创建预测签名
+    try:
+        # TensorFlow 1.15 兼容性
+        predict_signature = tf.saved_model.signature_def_utils.predict_signature_def(
+            inputs=inputs_dict,
+            outputs=outputs_dict
+        )
+    except AttributeError:
+        # 备用方法
+        predict_signature = (
+            tf.saved_model.signature_def_utils.build_signature_def(
+                inputs=inputs_dict,
+                outputs=outputs_dict,
+                method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME
+            )
+        )
+
+    # 构建 SavedModelBuilder
+    builder = tf.saved_model.builder.SavedModelBuilder(export_dir)
+
+    # 添加图和变量
+    builder.add_meta_graph_and_variables(
+        sess,
+        [tf.saved_model.tag_constants.SERVING],
+        signature_def_map={
+            tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+            predict_signature
+        }
+    )
+
+    # 保存 SavedModel
+    builder.save()
+    print("SavedModel saved successfully to {}".format(export_dir))
 
 def main(tf_config=None, server=None):
     # check dataset and count data set size
@@ -792,6 +852,23 @@ def main(tf_config=None, server=None):
     if not (args.no_eval or tf_config):
         eval(sess_config, hooks, model, test_init_op, test_steps,
              checkpoint_dir)
+
+    # Save saved_model after training completes
+    if not tf_config and args.save_saved_model:  # 只在非分布式训练且开启保存时保存 saved_model
+        saved_model_dir = os.path.join(args.output_dir, 'saved_model')
+        if not os.path.exists(saved_model_dir):
+            os.makedirs(saved_model_dir)
+
+        # 使用训练时的会话来保存 saved_model
+        with tf.Session(config=sess_config) as sess:
+            # 初始化变量和表
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.tables_initializer())
+
+            # 初始化测试数据集以确保模型完全构建
+            sess.run(test_init_op)
+
+            save_saved_model(sess, model, checkpoint_dir, saved_model_dir)
 
 
 def boolean_string(string):
@@ -941,6 +1018,10 @@ def get_arg_parser():
                       type=str,
                       choices=[None, 'localized', 'collective'],
                       default=None)
+    parser.add_argument('--save_saved_model',
+                        help='Whether to save the model as SavedModel format after training. Default to True.',
+                        type=boolean_string,
+                        default=True)
     return parser
 
 
