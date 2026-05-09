@@ -595,7 +595,6 @@ static PyObject* EagerTensor_shape_tuple(EagerTensor* self) {
       // Cleanup self->status before returning.
       TF_SetStatus(self->status, TF_OK, "");
       Py_DECREF(shape);
-      if (dim != nullptr) Py_DECREF(dim);
       PyErr_SetString(PyExc_RuntimeError, "Error while creating shape");
       return nullptr;
     }
